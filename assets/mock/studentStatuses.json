@@ -1,0 +1,8 @@
+[
+  { "id": "ST-PAID",    "name": "حضر ودفع",        "category": "attendance", "presence": "present", "payment": "paid",   "tone": "success" },
+  { "id": "ST-UNPAID",  "name": "حضر بدون دفع",     "category": "attendance", "presence": "present", "payment": "unpaid", "tone": "info" },
+  { "id": "ST-EXCUSED", "name": "غياب بإذن",        "category": "attendance", "presence": "absent",  "payment": "none",   "tone": "warning" },
+  { "id": "ST-ABSENT",  "name": "غياب بدون إذن",    "category": "attendance", "presence": "absent",  "payment": "none",   "tone": "danger" },
+  { "id": "ST-CALL",    "name": "استدعاء ولى أمر",  "category": "action",     "presence": null,      "payment": "none",   "tone": "warning" },
+  { "id": "ST-EXPEL",   "name": "طرد",              "category": "action",     "presence": null,      "payment": "none",   "tone": "danger" }
+]

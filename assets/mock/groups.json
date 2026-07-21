@@ -1,0 +1,14 @@
+[
+  { "id": "GRP-11", "code": "11", "gradeId": "GR1", "name": "مجموعة السبت 9:30 ص", "days": ["السبت"], "time": "09:30", "duration": 90, "capacity": 20, "sessionPrice": 50 },
+  { "id": "GRP-12", "code": "12", "gradeId": "GR1", "name": "مجموعة السبت 1:30 م", "days": ["السبت"], "time": "13:30", "duration": 90, "capacity": 20, "sessionPrice": 50 },
+  { "id": "GRP-13", "code": "13", "gradeId": "GR1", "name": "مجموعة السبت 4:30 م", "days": ["السبت"], "time": "16:30", "duration": 90, "capacity": 20, "sessionPrice": 50 },
+  { "id": "GRP-14", "code": "14", "gradeId": "GR1", "name": "مجموعة السبت 6:30 م", "days": ["السبت"], "time": "18:30", "duration": 90, "capacity": 20, "sessionPrice": 50 },
+
+  { "id": "GRP-21", "code": "21", "gradeId": "GR2", "name": "مجموعة الأحد 1:30 م", "days": ["الأحد"], "time": "13:30", "duration": 90, "capacity": 20, "sessionPrice": 60 },
+  { "id": "GRP-22", "code": "22", "gradeId": "GR2", "name": "مجموعة الأحد 4:30 م", "days": ["الأحد"], "time": "16:30", "duration": 90, "capacity": 20, "sessionPrice": 60 },
+  { "id": "GRP-23", "code": "23", "gradeId": "GR2", "name": "مجموعة الأحد 6:30 م", "days": ["الأحد"], "time": "18:30", "duration": 90, "capacity": 20, "sessionPrice": 60 },
+
+  { "id": "GRP-31", "code": "31", "gradeId": "GR3", "name": "مجموعة الاثنين 1:30 م", "days": ["الاثنين"], "time": "13:30", "duration": 90, "capacity": 20, "sessionPrice": 70 },
+  { "id": "GRP-32", "code": "32", "gradeId": "GR3", "name": "مجموعة الاثنين 4:30 م", "days": ["الاثنين"], "time": "16:30", "duration": 90, "capacity": 20, "sessionPrice": 70 },
+  { "id": "GRP-33", "code": "33", "gradeId": "GR3", "name": "مجموعة الاثنين 6:30 م", "days": ["الاثنين"], "time": "18:30", "duration": 90, "capacity": 20, "sessionPrice": 70 }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "PAY-1",
+    "studentId": "STU-2001",
+    "groupId": "GRP-11",
+    "attendanceId": "ATT-1",
+    "date": "__TODAY__",
+    "amount": 50,
+    "status": "paid",
+    "note": "قيمة حصة"
+  },
+  {
+    "id": "PAY-2",
+    "studentId": "STU-2201",
+    "groupId": "GRP-21",
+    "attendanceId": "ATT-2",
+    "date": "__TODAY__",
+    "amount": 60,
+    "status": "paid",
+    "note": "قيمة حصة"
+  },
+  {
+    "id": "PAY-3",
+    "studentId": "STU-2251",
+    "groupId": "GRP-22",
+    "attendanceId": "ATT-5",
+    "date": "__TODAY__",
+    "amount": 60,
+    "status": "unpaid",
+    "note": "قيمة حصة"
+  },
+  {
+    "id": "PAY-4",
+    "studentId": "STU-2351",
+    "groupId": "GRP-31",
+    "attendanceId": "ATT-8",
+    "date": "__YESTERDAY__",
+    "amount": 70,
+    "status": "paid",
+    "note": "قيمة حصة"
+  },
+  {
+    "id": "PAY-5",
+    "studentId": "STU-2352",
+    "groupId": "GRP-31",
+    "attendanceId": "ATT-10",
+    "date": "__YESTERDAY__",
+    "amount": 70,
+    "status": "paid",
+    "note": "قيمة حصة"
+  }
+]

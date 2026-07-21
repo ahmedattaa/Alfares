@@ -1,0 +1,49 @@
+[
+  {
+    "id": "EXM-1",
+    "title": "امتحان الشهر الأول",
+    "date": "__YESTERDAY__",
+    "groupId": "GRP-11",
+    "maxScore": 50,
+    "results": [
+      {
+        "studentId": "STU-2001",
+        "score": 45
+      },
+      {
+        "studentId": "STU-2002",
+        "score": 38
+      }
+    ]
+  },
+  {
+    "id": "EXM-2",
+    "title": "امتحان الوحدة الثانية",
+    "date": "__YESTERDAY__",
+    "groupId": "GRP-12",
+    "maxScore": 40,
+    "results": [
+      {
+        "studentId": "STU-2051",
+        "score": 36
+      }
+    ]
+  },
+  {
+    "id": "EXM-3",
+    "title": "امتحان شامل",
+    "date": "__TODAY__",
+    "groupId": "GRP-21",
+    "maxScore": 60,
+    "results": [
+      {
+        "studentId": "STU-2201",
+        "score": 50
+      },
+      {
+        "studentId": "STU-2202",
+        "score": 55
+      }
+    ]
+  }
+]

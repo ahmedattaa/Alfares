@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام إدارة السنتر التعليمي</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<script>
+(function(){
+  try {
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('center_active_theme') || 'default');
+  } catch(e) {}
+})();
+</script>
+</head>
+<body>
+
+<div class="auth-screen">
+  <div class="spinner spinner-dark" style="width:34px;height:34px;"></div>
+</div>
+
+<script type="module">
+  import { seedIfNeeded, isLoggedIn } from "./assets/js/storage.js";
+  await seedIfNeeded();
+  window.location.replace(isLoggedIn() ? "dashboard.html" : "login.html");
+</script>
+</body>
+</html>

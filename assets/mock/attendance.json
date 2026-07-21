@@ -1,0 +1,90 @@
+[
+  {
+    "id": "ATT-1",
+    "studentId": "STU-2001",
+    "date": "__TODAY__",
+    "statusId": "ST-PAID",
+    "category": "attendance",
+    "time": "17:05"
+  },
+  {
+    "id": "ATT-2",
+    "studentId": "STU-2201",
+    "date": "__TODAY__",
+    "statusId": "ST-PAID",
+    "category": "attendance",
+    "time": "17:10"
+  },
+  {
+    "id": "ATT-3",
+    "studentId": "STU-2351",
+    "date": "__TODAY__",
+    "statusId": "ST-ABSENT",
+    "category": "attendance",
+    "time": "-"
+  },
+  {
+    "id": "ATT-4",
+    "studentId": "STU-2002",
+    "date": "__TODAY__",
+    "statusId": "ST-EXCUSED",
+    "category": "attendance",
+    "time": "-"
+  },
+  {
+    "id": "ATT-5",
+    "studentId": "STU-2251",
+    "date": "__TODAY__",
+    "statusId": "ST-UNPAID",
+    "category": "attendance",
+    "time": "17:20"
+  },
+  {
+    "id": "ATT-6",
+    "studentId": "STU-2001",
+    "date": "__YESTERDAY__",
+    "statusId": "ST-PAID",
+    "category": "attendance",
+    "time": "16:58"
+  },
+  {
+    "id": "ATT-7",
+    "studentId": "STU-2201",
+    "date": "__YESTERDAY__",
+    "statusId": "ST-ABSENT",
+    "category": "attendance",
+    "time": "-"
+  },
+  {
+    "id": "ATT-8",
+    "studentId": "STU-2351",
+    "date": "__YESTERDAY__",
+    "statusId": "ST-PAID",
+    "category": "attendance",
+    "time": "16:40"
+  },
+  {
+    "id": "ATT-9",
+    "studentId": "STU-2051",
+    "date": "__YESTERDAY__",
+    "statusId": "ST-PAID",
+    "category": "attendance",
+    "time": "19:02"
+  },
+  {
+    "id": "ATT-10",
+    "studentId": "STU-2352",
+    "date": "__YESTERDAY__",
+    "statusId": "ST-PAID",
+    "category": "attendance",
+    "time": "18:55"
+  },
+  {
+    "id": "ATT-11",
+    "studentId": "STU-2202",
+    "date": "__YESTERDAY__",
+    "statusId": "ST-CALL",
+    "category": "action",
+    "time": "18:10"
+  }
+]
