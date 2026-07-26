@@ -1,48 +1,360 @@
 [
   {
     "id": "EXM-1",
-    "title": "امتحان الشهر الأول",
-    "date": "__YESTERDAY__",
+    "title": "امتحان الشهر الأول — الفصل الأول",
+    "date": "2026-06-27",
+    "gradeId": "GR1",
     "groupId": "GRP-11",
     "maxScore": 50,
     "results": [
       {
         "studentId": "STU-2001",
-        "score": 45
+        "score": 41
       },
       {
         "studentId": "STU-2002",
-        "score": 38
+        "score": 49
+      },
+      {
+        "studentId": "STU-2003",
+        "score": 47
+      },
+      {
+        "studentId": "STU-2004",
+        "score": 47
+      },
+      {
+        "studentId": "STU-2005",
+        "score": 49
+      },
+      {
+        "studentId": "STU-2006",
+        "score": 32
+      },
+      {
+        "studentId": "STU-2007",
+        "score": 24
+      },
+      {
+        "studentId": "STU-2008",
+        "score": 26
+      },
+      {
+        "studentId": "STU-2009",
+        "score": 32
+      },
+      {
+        "studentId": "STU-2010",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2011",
+        "score": 25
+      },
+      {
+        "studentId": "STU-2012",
+        "score": 23
       }
     ]
   },
   {
     "id": "EXM-2",
-    "title": "امتحان الوحدة الثانية",
-    "date": "__YESTERDAY__",
-    "groupId": "GRP-12",
-    "maxScore": 40,
+    "title": "امتحان الشهر الثاني — الفصل الأول",
+    "date": "2026-07-18",
+    "gradeId": "GR1",
+    "groupId": "GRP-11",
+    "maxScore": 50,
     "results": [
       {
-        "studentId": "STU-2051",
-        "score": 36
+        "studentId": "STU-2001",
+        "score": 28
+      },
+      {
+        "studentId": "STU-2002",
+        "score": 44
+      },
+      {
+        "studentId": "STU-2003",
+        "score": 48
+      },
+      {
+        "studentId": "STU-2004",
+        "score": 29
+      },
+      {
+        "studentId": "STU-2005",
+        "score": 43
+      },
+      {
+        "studentId": "STU-2006",
+        "score": 25
+      },
+      {
+        "studentId": "STU-2007",
+        "score": 10
+      },
+      {
+        "studentId": "STU-2008",
+        "score": 28
+      },
+      {
+        "studentId": "STU-2009",
+        "score": 22
+      },
+      {
+        "studentId": "STU-2010",
+        "score": 29
+      },
+      {
+        "studentId": "STU-2011",
+        "score": 31
+      },
+      {
+        "studentId": "STU-2012",
+        "score": 0,
+        "absent": true
       }
     ]
   },
   {
     "id": "EXM-3",
-    "title": "امتحان شامل",
-    "date": "__TODAY__",
-    "groupId": "GRP-21",
+    "title": "امتحان نصف الفصل — شامل",
+    "date": "2026-07-25",
+    "gradeId": "GR1",
+    "groupId": "GRP-11",
     "maxScore": 60,
     "results": [
       {
-        "studentId": "STU-2201",
-        "score": 50
+        "studentId": "STU-2001",
+        "score": 16
       },
       {
-        "studentId": "STU-2202",
-        "score": 55
+        "studentId": "STU-2002",
+        "score": 47
+      },
+      {
+        "studentId": "STU-2003",
+        "score": 25
+      },
+      {
+        "studentId": "STU-2004",
+        "score": 18
+      },
+      {
+        "studentId": "STU-2005",
+        "score": 43
+      },
+      {
+        "studentId": "STU-2006",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2007",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2008",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2009",
+        "score": 48
+      },
+      {
+        "studentId": "STU-2010",
+        "score": 15
+      },
+      {
+        "studentId": "STU-2011",
+        "score": 25
+      },
+      {
+        "studentId": "STU-2012",
+        "score": 15
+      }
+    ]
+  },
+  {
+    "id": "EXM-4",
+    "title": "امتحان التقويم الأول",
+    "date": "2026-07-12",
+    "gradeId": "GR2",
+    "groupId": "GRP-21",
+    "maxScore": 50,
+    "results": [
+      {
+        "studentId": "STU-2031",
+        "score": 47
+      },
+      {
+        "studentId": "STU-2032",
+        "score": 38
+      },
+      {
+        "studentId": "STU-2033",
+        "score": 46
+      },
+      {
+        "studentId": "STU-2034",
+        "score": 28
+      },
+      {
+        "studentId": "STU-2035",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2036",
+        "score": 46
+      },
+      {
+        "studentId": "STU-2037",
+        "score": 10
+      },
+      {
+        "studentId": "STU-2038",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2039",
+        "score": 10
+      },
+      {
+        "studentId": "STU-2040",
+        "score": 36
+      },
+      {
+        "studentId": "STU-2041",
+        "score": 45
+      },
+      {
+        "studentId": "STU-2042",
+        "score": 27
+      }
+    ]
+  },
+  {
+    "id": "EXM-5",
+    "title": "امتحان التقويم الثاني",
+    "date": "2026-07-26",
+    "gradeId": "GR2",
+    "groupId": "GRP-21",
+    "maxScore": 50,
+    "results": [
+      {
+        "studentId": "STU-2031",
+        "score": 48
+      },
+      {
+        "studentId": "STU-2032",
+        "score": 27
+      },
+      {
+        "studentId": "STU-2033",
+        "score": 47
+      },
+      {
+        "studentId": "STU-2034",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2035",
+        "score": 37
+      },
+      {
+        "studentId": "STU-2036",
+        "score": 23
+      },
+      {
+        "studentId": "STU-2037",
+        "score": 30
+      },
+      {
+        "studentId": "STU-2038",
+        "score": 38
+      },
+      {
+        "studentId": "STU-2039",
+        "score": 26
+      },
+      {
+        "studentId": "STU-2040",
+        "score": 34
+      },
+      {
+        "studentId": "STU-2041",
+        "score": 0,
+        "absent": true
+      },
+      {
+        "studentId": "STU-2042",
+        "score": 0,
+        "absent": true
+      }
+    ]
+  },
+  {
+    "id": "EXM-6",
+    "title": "امتحان شامل — الفصل الأول",
+    "date": "2026-07-20",
+    "gradeId": "GR3",
+    "groupId": "GRP-31",
+    "maxScore": 60,
+    "results": [
+      {
+        "studentId": "STU-2061",
+        "score": 51
+      },
+      {
+        "studentId": "STU-2062",
+        "score": 39
+      },
+      {
+        "studentId": "STU-2063",
+        "score": 42
+      },
+      {
+        "studentId": "STU-2064",
+        "score": 59
+      },
+      {
+        "studentId": "STU-2065",
+        "score": 28
+      },
+      {
+        "studentId": "STU-2066",
+        "score": 14
+      },
+      {
+        "studentId": "STU-2067",
+        "score": 48
+      },
+      {
+        "studentId": "STU-2068",
+        "score": 24
+      },
+      {
+        "studentId": "STU-2069",
+        "score": 41
+      },
+      {
+        "studentId": "STU-2070",
+        "score": 22
+      },
+      {
+        "studentId": "STU-2071",
+        "score": 30
+      },
+      {
+        "studentId": "STU-2072",
+        "score": 0,
+        "absent": true
       }
     ]
   }

@@ -3,31 +3,42 @@
 // =========================================================
 
 import { icons } from "./icons.js";
-import { initials, formatHeaderDate } from "./helpers.js";
-import { getSession, logout, getSettings, flushPendingWrites } from "./storage.js";
+import { initials, formatHeaderDate, escapeHTML } from "./helpers.js";
+import { getSession, logout, getSettings, flushPendingWrites, getCurrentShift } from "./storage.js";
 import { canAccessPage } from "./permissions.js";
 import { THEMES, getCurrentTheme, setCurrentTheme, applyCurrentTheme } from "./themes.js";
 
 const NAV_ITEMS = [
   { page: "dashboard", label: "الرئيسية", icon: icons.home, href: "dashboard.html" },
   { page: "session", label: "إدارة الحصة", icon: icons.grid, href: "session.html" },
+  { page: "quick-attendance", label: "حضور الطلاب", icon: icons.check, href: "quick-attendance.html" },
   { page: "reception", label: "استقبال الطلاب", icon: icons.inbox, href: "reception.html" },
+  { page: "parent-reception", label: "استقبال ولي الأمر", icon: icons.users, href: "parent-reception.html" },
   { page: "students", label: "الطلاب", icon: icons.users, href: "students.html" },
   { page: "followup", label: "المتابعة", icon: icons.clipboard, href: "followup.html" },
+  { page: "teacher-insights", label: "لوحة المعلم", icon: icons.shield, href: "teacher-insights.html" },
   { page: "exams", label: "الامتحانات", icon: icons.chart, href: "exams.html" },
   { page: "finance", label: "اليومية المالية", icon: icons.wallet, href: "finance.html" },
+  { page: "shift", label: "الصندوق", icon: icons.wallet, href: "shift.html" },
+  { page: "rollover", label: "ترحيل الطلاب", icon: icons.calendar, href: "rollover.html" },
   { page: "settings", label: "الإعدادات", icon: icons.settings, href: "settings.html" },
 ];
 
 const PAGE_TITLES = {
   dashboard: "الرئيسية",
+  "quick-attendance": "حضور الطلاب",
   session: "إدارة الحصة",
   reception: "استقبال الطلاب",
+  "parent-reception": "استقبال ولي الأمر",
+  "attendance-tracker": "متابعة الحضور والغياب",
   students: "الطلاب",
   student: "تفاصيل الطالب",
   followup: "المتابعة",
+  "teacher-insights": "لوحة المعلم",
   exams: "الامتحانات",
   finance: "اليومية المالية",
+  shift: "الصندوق",
+  rollover: "ترحيل الطلاب",
   settings: "الإعدادات",
 };
 
@@ -80,9 +91,19 @@ export function renderShell(activePage) {
             </div>
           </div>
           <div class="topbar__right">
+            ${(() => {
+              const shift = getCurrentShift();
+              return shift
+                ? `<span class="shift-indicator shift-indicator--open" title="وردية مفتوحة — فتحها ${escapeHTML(shift.openedBy)}">${icons.wallet} وردية مفتوحة</span>`
+                : `<span class="shift-indicator shift-indicator--closed" title="لا توجد وردية مفتوحة" style="cursor:pointer;" onclick="window.location.href='shift.html'">${icons.alert} افتح صندوق</span>`;
+            })()}
             <span class="topbar__date">${formatHeaderDate()}</span>
             <div class="theme-switcher" id="themeSwitcher">
-              <button class="btn-logout" id="themeToggleBtn" title="تغيير المظهر">${icons.palette}</button>
+              <button class="theme-switcher__btn" id="themeToggleBtn" title="تغيير المظهر">
+                <span class="theme-switcher__swatch" style="background:${THEMES.find((t) => t.id === getCurrentTheme())?.swatch || "#2563EB"};"></span>
+                <span class="theme-switcher__label">المظهر</span>
+                ${icons.palette}
+              </button>
               <div class="theme-menu" id="themeMenu">
                 ${THEMES.map(
                   (t) => `
@@ -101,8 +122,9 @@ export function renderShell(activePage) {
                 <div class="user-chip__role">${session?.role === "admin" ? "مدير" : session?.role === "assistant" ? "مدرس مساعد" : ""}</div>
               </div>
             </div>
-            <button class="btn-logout" id="logoutBtn" title="تسجيل الخروج">
+            <button class="topbar-logout" id="logoutBtn" title="تسجيل الخروج">
               ${icons.logout}
+              <span>خروج</span>
             </button>
           </div>
         </header>
@@ -157,6 +179,10 @@ function bindShellEvents() {
       themeMenu.querySelectorAll(".theme-menu__item").forEach((b) => b.classList.toggle("is-active", b === btn));
       themeMenu.querySelectorAll(".theme-menu__item svg").forEach((s) => s.remove());
       btn.insertAdjacentHTML("beforeend", icons.check);
+      // تحديث لون السواتش على الزرار
+      const newSwatch = THEMES.find((t) => t.id === btn.dataset.themeId)?.swatch;
+      const btnSwatch = document.querySelector(".theme-switcher__btn .theme-switcher__swatch");
+      if (btnSwatch && newSwatch) btnSwatch.style.background = newSwatch;
     })
   );
   document.addEventListener("click", (e) => {
@@ -184,7 +210,7 @@ export function toast(message, type = "success", duration = 3200) {
 /* ================= Confirm / Prompt Dialog ================= */
 let overlayEl = null;
 
-function ensureOverlay() {
+export function ensureOverlay() {
   if (overlayEl) return overlayEl;
   overlayEl = document.createElement("div");
   overlayEl.className = "modal-overlay";

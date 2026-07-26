@@ -4,10 +4,13 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getAttendance, getPayments, savePayments, getStudents, saveStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges } from "./storage.js";
-import { escapeHTML, initials, formatMoney, todayISO, formatDateAr, addDays, startOfWeek, weekdayNameAr, generateId } from "./helpers.js";
+import { getAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, deductFromWallet, getAcademicYears, getTerms, getAcademicMonths, recordCashCollection, recordLedgerOnly } from "./storage.js";
+import { escapeHTML, initials, formatMoney, todayISO, formatDateAr, addDays, startOfWeek, weekdayNameAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
-import { groupName, gradeName, groupsForGrade } from "./lookups.js";
+import { groupName, gradeName, groupsForGrade, findGroup, dueAmount } from "./lookups.js";
+import { formatTimeAr, weekdayArForDate, isScheduledOnDate } from "./schedule.js";
+import { getSessionsForDate } from "./session-overview.js";
+import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 
 const content = await initPage("finance");
 let activeTab = "daily";
@@ -20,15 +23,17 @@ function render() {
   content.innerHTML = `
     <div class="page__header">
       <div>
-        <div class="page__title">اليومية المالية</div>
-        <div class="page__subtitle">تقرير يومى وتقرير أسبوعى للحضور والمدفوعات</div>
+        <div class="page__title">التقارير المالية</div>
+        <div class="page__subtitle">تقارير يومية وأسبوعية + متأخرات + إيرادات شهرية</div>
       </div>
     </div>
 
     <div class="tabs" id="financeTabs">
-      <button class="tab-btn ${activeTab === "daily" ? "is-active" : ""}" data-tab="daily">${icons.wallet}<span>التقرير اليومى</span></button>
-      <button class="tab-btn ${activeTab === "weekly" ? "is-active" : ""}" data-tab="weekly">${icons.chart}<span>التقرير الأسبوعى</span></button>
-      <button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات مالية</span></button>
+      <button class="tab-btn ${activeTab === "daily" ? "is-active" : ""}" data-tab="daily">${icons.wallet}<span>اليومى</span></button>
+      <button class="tab-btn ${activeTab === "weekly" ? "is-active" : ""}" data-tab="weekly">${icons.chart}<span>الأسبوعى</span></button>
+      <button class="tab-btn ${activeTab === "late" ? "is-active" : ""}" data-tab="late">${icons.alert}<span>المتأخرات</span></button>
+      <button class="tab-btn ${activeTab === "monthly" ? "is-active" : ""}" data-tab="monthly">${icons.shield}<span>الإيرادات الشهرية</span></button>
+      <button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات</span></button>
     </div>
 
     <div id="tabContent"></div>
@@ -49,6 +54,8 @@ function renderTabContent() {
   const box = document.getElementById("tabContent");
   if (activeTab === "daily") return renderDailyTab(box);
   if (activeTab === "weekly") return renderWeeklyTab(box);
+  if (activeTab === "late") return renderLateTab(box);
+  if (activeTab === "monthly") return renderMonthlyTab(box);
   return renderChargesTab(box);
 }
 
@@ -56,14 +63,18 @@ function renderTabContent() {
 function renderDailyTab(box) {
   box.innerHTML = `
     <div class="page__header" style="margin-bottom:14px;">
-      <div class="page__subtitle" style="margin:0;">ملخص الحضور والمدفوعات ليوم ${formatDateAr(selectedDate)}</div>
-      <input class="input" type="date" id="dateFilter" style="max-width:180px;" value="${selectedDate}">
+      <div class="page__subtitle" style="margin:0;">ملخص كل مجموعة على حدة ليوم ${formatDateAr(selectedDate)}</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-outline btn-sm" id="dailyExportExcelBtn">${icons.download} تصدير Excel</button>
+        <button class="btn btn-outline btn-sm" id="dailyExportPdfBtn">${icons.print} طباعة / PDF</button>
+        <input class="input" type="date" id="dateFilter" style="max-width:180px;" value="${selectedDate}">
+      </div>
     </div>
 
-    <div class="stat-grid" id="statsGrid"></div>
+    <div id="groupsBreakdown" style="margin-bottom:20px;"></div>
 
     <div class="card card-pad">
-      <div class="card__head"><div class="card__title">عمليات الدفع</div></div>
+      <div class="card__head"><div class="card__title">طلاب بانتظار الدفع</div></div>
       <div id="paymentsTable"></div>
     </div>
   `;
@@ -73,30 +84,178 @@ function renderDailyTab(box) {
     renderDailyTab(box);
   });
 
-  renderStats();
+  document.getElementById("dailyExportExcelBtn")?.addEventListener("click", () => exportTableToExcel("#groupsBreakdown table", `التقرير_اليومى_${selectedDate}`));
+  document.getElementById("dailyExportPdfBtn")?.addEventListener("click", () => printTableAsPDF("#groupsBreakdown table", `التقرير اليومى — ${formatDateAr(selectedDate)}`));
+
+  renderGroupsBreakdown();
   renderPaymentsTable();
 }
 
-function renderStats() {
-  const box = document.getElementById("statsGrid");
-  const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance");
-  const payments = getPayments().filter((p) => p.date === selectedDate);
-  const students = getStudents();
-  const statuses = getStudentStatuses();
+function renderGroupsBreakdown() {
+  const box = document.getElementById("groupsBreakdown");
+  const sessions = getSessionsForDate(selectedDate);
 
-  const presentCount = attendance.filter((a) => statuses.find((s) => s.id === a.statusId)?.presence === "present").length;
-  const paidCount = payments.filter((p) => p.status === "paid").length;
-  const unpaidCount = payments.filter((p) => p.status === "unpaid").length;
-  const totalRevenue = payments.filter((p) => p.status === "paid").reduce((sum, p) => sum + Number(p.amount || 0), 0);
-  const totalDues = students.reduce((sum, s) => sum + Number(s.lateBalance || 0), 0);
+  if (!sessions.length) {
+    box.innerHTML = emptyStateHTML({ icon: icons.grid, title: "لا توجد حصص مجدولة فى هذا اليوم" });
+    return;
+  }
+
+  const allStudents = getStudents();
+  const allPayments = getPayments().filter((p) => p.date === selectedDate);
+  const allStatuses = getStudentStatuses();
+  const allAttendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance");
+
+  const grandTotal = {
+    present: sessions.reduce((sum, s) => sum + s.presentCount, 0),
+    paid: sessions.reduce((sum, s) => sum + s.paidCount, 0),
+    unpaid: sessions.reduce((sum, s) => sum + s.unpaidCount, 0),
+    revenue: sessions.reduce((sum, s) => sum + s.collected, 0),
+  };
 
   box.innerHTML = `
-    ${statCard("tone-success", icons.check, presentCount, "عدد الحضور")}
-    ${statCard("tone-primary", icons.money, paidCount, "عدد المدفوع")}
-    ${statCard("tone-warning", icons.clock, unpaidCount, "عدد غير المدفوع")}
-    ${statCard("tone-primary", icons.wallet, formatMoney(totalRevenue), "إيرادات اليوم")}
-    ${statCard("tone-danger", icons.alert, formatMoney(totalDues), "إجمالى المتأخرات")}
+    <div style="display:grid; grid-template-columns:1fr; gap:14px; margin-bottom:16px;">
+      ${sessions
+        .map((s, i) => {
+          const palette = GROUP_CARD_PALETTE[i % GROUP_CARD_PALETTE.length];
+          const groupStudents = allStudents.filter((st) => st.groupId === s.group.id && st.status === "active");
+          const sessionPrice = s.group.sessionPrice || 0;
+
+          const breakdownRows = groupStudents.map((st) => {
+            const record = allAttendance.find((a) => a.studentId === st.id);
+            const studentDue = dueAmount(st, s.group);
+            const discount = Math.min(sessionPrice, Number(st.discount || 0));
+            const pay = allPayments.find((p) => p.studentId === st.id);
+
+            let status = "absent";
+            let statusLabel = "غائب";
+            let paidAmount = 0;
+
+            if (record) {
+              const stStatus = allStatuses.find((x) => x.id === record.statusId);
+              if (stStatus?.id === "ST-PAID") {
+                status = "paid";
+                statusLabel = "حضر ودفع";
+                paidAmount = pay ? Number(pay.amount || 0) : 0;
+              } else if (stStatus?.id === "ST-UNPAID") {
+                status = "unpaid";
+                statusLabel = "حضر بدون دفع";
+              } else if (stStatus?.id === "ST-EXCUSED") {
+                status = "excused";
+                statusLabel = "غائب بإذن";
+              } else if (stStatus?.id === "ST-CALL") {
+                status = "called";
+                statusLabel = "استدعاء";
+              }
+            }
+
+            return {
+              name: st.name,
+              code: st.code || "-",
+              discount,
+              due: studentDue,
+              paid: paidAmount,
+              diff: paidAmount - studentDue,
+              status,
+              statusLabel,
+            };
+          });
+
+          const sorted = [
+            ...breakdownRows.filter((r) => r.status === "unpaid"),
+            ...breakdownRows.filter((r) => r.status === "paid" && r.discount > 0),
+            ...breakdownRows.filter((r) => r.status === "paid" && r.discount === 0),
+            ...breakdownRows.filter((r) => !["unpaid", "paid"].includes(r.status)),
+          ];
+
+          const totalExpected = breakdownRows.filter((r) => r.status === "paid" || r.status === "unpaid").reduce((sum, r) => sum + r.due, 0);
+          const totalCollected = breakdownRows.filter((r) => r.status === "paid").reduce((sum, r) => sum + r.paid, 0);
+
+          return `
+          <div class="finance-group-card finance-group-card--wide" style="background:${palette.bg}; border-color:${palette.border};">
+            <div class="finance-group-card__top">
+              <div>
+                <div class="finance-group-card__name" style="color:${palette.text};">${escapeHTML(s.group.name)}</div>
+                <div class="finance-group-card__time">${escapeHTML(s.gradeLabel)} — ${formatTimeAr(s.group.time)}</div>
+              </div>
+              <div class="finance-group-card__stats">
+                <div class="finance-group-card__stat"><span class="finance-group-card__value">${s.presentCount}</span><span class="finance-group-card__label">حضور</span></div>
+                <div class="finance-group-card__stat"><span class="finance-group-card__value">${s.paidCount}</span><span class="finance-group-card__label">مدفوع</span></div>
+                <div class="finance-group-card__stat"><span class="finance-group-card__value">${s.unpaidCount}</span><span class="finance-group-card__label">غير مدفوع</span></div>
+              </div>
+            </div>
+            <div class="finance-group-card__revenue" style="border-color:${palette.border};">
+              <span>إيرادات: <strong>${formatMoney(s.collected)}</strong></span>
+              <span style="margin-right:auto; margin-left:0; font-weight:600; font-size:12px; color:var(--muted);">المتوقع: ${formatMoney(totalExpected)}</span>
+            </div>
+            <div class="sa-breakdown" style="border:none; border-radius:0; margin:0; background:transparent;">
+              <button type="button" class="sa-breakdown__toggle" data-group-toggle="${s.group.id}" style="font-size:13px; padding:10px 0;">
+                <span style="color:${palette.text};">تفاصيل المبالغ لكل طالب (${sorted.length})</span>
+                <span class="sa-breakdown__toggle-arrow" style="color:${palette.text};" data-group-arrow="${s.group.id}">◂</span>
+              </button>
+              <div class="sa-breakdown__table-wrap" data-group-table="${s.group.id}" style="display:none;">
+                <table class="sa-breakdown__table">
+                  <thead>
+                    <tr>
+                      <th>الطالب</th>
+                      <th>الحالة</th>
+                      <th>الخصم</th>
+                      <th>المستحق</th>
+                      <th>المدفوع</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${sorted.map((r) => {
+                      const statusColor = r.status === "paid" ? "var(--success)" : r.status === "unpaid" ? "var(--danger)" : "var(--muted)";
+                      const rowBg = r.status === "paid" ? (r.discount > 0 ? "rgba(102,126,234,.06)" : "") : r.status === "unpaid" ? "rgba(239,68,68,.06)" : "";
+                      const diffBadge = r.status === "paid" && r.discount > 0
+                        ? `<span style="color:var(--primary); font-size:11px; font-weight:700;">خصم −${formatMoney(r.discount)}</span>`
+                        : r.status === "paid" && r.diff !== 0
+                          ? `<span style="color:${r.diff > 0 ? "var(--success)" : "var(--danger)"}; font-size:11px; font-weight:700;">${r.diff > 0 ? "+" : ""}${formatMoney(r.diff)}</span>`
+                          : "";
+                      return `
+                      <tr style="background:${rowBg};">
+                        <td>
+                          <span class="code-pill" style="font-size:10px;">${escapeHTML(r.code)}</span>
+                          ${escapeHTML(r.name)}
+                          ${diffBadge}
+                        </td>
+                        <td><span class="badge badge-${r.status === "paid" ? "success" : r.status === "unpaid" ? "danger" : "neutral"}" style="font-size:11px;">${escapeHTML(r.statusLabel)}</span></td>
+                        <td>${r.discount > 0 ? `<span style="color:var(--warning); font-weight:700;">−${formatMoney(r.discount)}</span>` : "—"}</td>
+                        <td style="font-weight:700;">${formatMoney(r.due)}</td>
+                        <td style="font-weight:700; color:${r.paid > 0 ? "var(--success)" : "var(--muted)"};">${r.paid > 0 ? formatMoney(r.paid) : "—"}</td>
+                      </tr>`;
+                    }).join("")}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>`;
+        })
+        .join("")}
+    </div>
+
+    <div class="finance-total-card">
+      <div class="finance-total-card__title">${icons.wallet} إجمالى اليومية المالية</div>
+      <div class="finance-total-card__grid">
+        <div class="finance-total-card__item"><span class="finance-total-card__value">${grandTotal.present}</span><span class="finance-total-card__label">عدد الحضور اليوم</span></div>
+        <div class="finance-total-card__item"><span class="finance-total-card__value">${grandTotal.paid}</span><span class="finance-total-card__label">عدد المدفوع</span></div>
+        <div class="finance-total-card__item"><span class="finance-total-card__value">${grandTotal.unpaid}</span><span class="finance-total-card__label">عدد غير المدفوع</span></div>
+        <div class="finance-total-card__item"><span class="finance-total-card__value">${formatMoney(grandTotal.revenue)}</span><span class="finance-total-card__label">الإيراد اليومى الكامل</span></div>
+      </div>
+    </div>
   `;
+
+  box.querySelectorAll("[data-group-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const groupId = btn.dataset.groupToggle;
+      const table = box.querySelector(`[data-group-table="${groupId}"]`);
+      const arrow = box.querySelector(`[data-group-arrow="${groupId}"]`);
+      if (!table) return;
+      const isVisible = table.style.display !== "none";
+      table.style.display = isVisible ? "none" : "block";
+      if (arrow) arrow.textContent = isVisible ? "◂" : "▾";
+    });
+  });
 }
 
 function statCard(tone, icon, value, label) {
@@ -112,23 +271,32 @@ function statCard(tone, icon, value, label) {
 function renderPaymentsTable() {
   const box = document.getElementById("paymentsTable");
   const students = getStudents();
-  const payments = getPayments()
-    .filter((p) => p.date === selectedDate)
+  const groups = getGroups();
+  const payments = getPayments();
+  const allStatuses = getStudentStatuses();
+
+  const scheduledGroupIds = new Set(groups.filter((g) => isScheduledOnDate(g, selectedDate)).map((g) => g.id));
+  const unpaidPayments = payments
+    .filter((p) => p.date === selectedDate && p.status === "unpaid" && scheduledGroupIds.has(p.groupId))
     .sort((a, b) => (a.id < b.id ? 1 : -1));
 
-  if (!payments.length) {
-    box.innerHTML = emptyStateHTML({ icon: icons.wallet, title: "لا توجد عمليات دفع فى هذا اليوم" });
+  if (!unpaidPayments.length) {
+    box.innerHTML = emptyStateHTML({ icon: icons.check, title: "لا يوجد طلاب غير مدفوعين فى هذا اليوم" });
     return;
   }
+
+  const studentsMap = {};
+  students.forEach((s) => (studentsMap[s.id] = s));
 
   box.innerHTML = `
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>الطالب</th><th>المبلغ</th><th>البيان</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th>الطالب</th><th>المجموعة</th><th>المبلغ</th><th>الحالة</th><th></th></tr></thead>
         <tbody>
-          ${payments
+          ${unpaidPayments
             .map((p) => {
-              const s = students.find((st) => st.id === p.studentId);
+              const s = studentsMap[p.studentId];
+              const group = findGroup(groups, p.groupId);
               return `
               <tr>
                 <td>
@@ -137,15 +305,11 @@ function renderPaymentsTable() {
                     <div class="cell-user__name">${escapeHTML(s?.name || "طالب محذوف")}</div>
                   </div>
                 </td>
+                <td class="text-muted">${escapeHTML(group?.name || "-")}</td>
                 <td>${formatMoney(p.amount)}</td>
-                <td class="text-muted">${escapeHTML(p.note || "-")}</td>
-                <td>${p.status === "paid" ? `<span class="badge badge-success">مدفوع</span>` : `<span class="badge badge-warning">غير مدفوع</span>`}</td>
+                <td><span class="badge badge-warning">غير مدفوع</span></td>
                 <td>
-                  ${
-                    p.status === "unpaid"
-                      ? `<button class="btn btn-outline btn-sm markPaidBtn" data-id="${p.id}">تحصيل المبلغ</button>`
-                      : ""
-                  }
+                  <button class="btn btn-outline btn-sm markPaidBtn" data-student-id="${p.studentId}" data-payment-id="${p.id}">تحصيل المبلغ</button>
                 </td>
               </tr>`;
             })
@@ -155,12 +319,115 @@ function renderPaymentsTable() {
     </div>
   `;
 
-  box.querySelectorAll(".markPaidBtn").forEach((btn) => btn.addEventListener("click", () => markPaid(btn.dataset.id)));
+  box.querySelectorAll(".markPaidBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const studentId = btn.dataset.studentId;
+      const paymentId = btn.dataset.paymentId;
+      handleCollectPayment(studentId, paymentId);
+    });
+  });
 }
 
-async function markPaid(paymentId) {
-  const payments = getPayments();
-  const payment = payments.find((p) => p.id === paymentId);
+async function handleCollectPayment(studentId, currentPaymentId) {
+  const payments = getAllPayments();
+  const students = getStudents();
+  const groups = getGroups();
+  const student = students.find((s) => s.id === studentId);
+  if (!student) return;
+
+  const allUnpaidPayments = payments
+    .filter((p) => p.studentId === studentId && p.status === "unpaid")
+    .sort((a, b) => (a.sessionDate || a.date || "").localeCompare(b.sessionDate || b.date || ""));
+
+  if (allUnpaidPayments.length <= 1) {
+    await markSinglePaid(allUnpaidPayments[0] || payments.find((p) => p.id === currentPaymentId));
+    return;
+  }
+
+  let bodyHTML = `
+    <div style="margin-bottom:12px; font-size:13px; color:var(--muted);">
+      الطالب <strong>${escapeHTML(student.name)}</strong> عليه ${allUnpaidPayments.length} حصص غير مدفوعة:
+    </div>
+    <div id="unpaidSessionsList" style="max-height:400px; overflow-y:auto;">
+  `;
+
+  allUnpaidPayments.forEach((p) => {
+    const group = findGroup(groups, p.groupId);
+    const sessionDate = p.sessionDate || p.date;
+    const weekday = weekdayArForDate(sessionDate);
+    const time = formatTimeAr(group?.time || "");
+    const sessionLabel = `حصة ${weekday} ${time}`;
+    const isCurrent = p.id === currentPaymentId;
+
+    bodyHTML += `
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:6px; border:1px solid var(--border); border-radius:8px; ${isCurrent ? "background:var(--bg-2); border-color:var(--primary);" : ""}">
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:13px;">${escapeHTML(sessionLabel)}</div>
+          <div style="font-size:11px; color:var(--muted);">بتاريخ ${formatDateAr(sessionDate)} · ${escapeHTML(group?.name || "")}</div>
+        </div>
+        <div style="font-weight:700; font-size:14px; white-space:nowrap;">${formatMoney(p.amount)}</div>
+        <button class="btn btn-primary btn-sm collectSingleBtn" data-payment-id="${p.id}">تحصيل</button>
+      </div>
+    `;
+  });
+
+  bodyHTML += `</div>`;
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;";
+  modal.innerHTML = `
+    <div style="background:var(--bg); border-radius:12px; padding:24px; max-width:500px; width:100%; max-height:90vh; overflow-y:auto;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+        <div style="font-weight:800; font-size:16px;">تحصيل المبالغ</div>
+        <button class="btn btn-outline btn-sm closeModalBtn" style="padding:4px 8px;">✕</button>
+      </div>
+      ${bodyHTML}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:12px; border-top:1px solid var(--border);">
+        <div style="font-weight:700;">الإجمالى: <span style="color:var(--danger);">${formatMoney(allUnpaidPayments.reduce((s, p) => s + Number(p.amount || 0), 0))}</span></div>
+        <button class="btn btn-primary btn-sm collectAllBtn">تحصيل الكل</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector(".closeModalBtn").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+
+  modal.querySelectorAll(".collectSingleBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const paymentId = btn.dataset.paymentId;
+      const payment = payments.find((p) => p.id === paymentId);
+      if (!payment) return;
+      await markSinglePaid(payment);
+      modal.remove();
+    });
+  });
+
+  modal.querySelector(".collectAllBtn").addEventListener("click", async () => {
+    for (const p of allUnpaidPayments) {
+      const freshPayments = getAllPayments();
+      const freshPayment = freshPayments.find((pp) => pp.id === p.id && pp.status === "unpaid");
+      if (freshPayment) {
+        freshPayment.status = "paid";
+        savePayments(freshPayments);
+        const freshStudents = getStudents();
+        const freshStudent = freshStudents.find((s) => s.id === freshPayment.studentId);
+        if (freshStudent) {
+          freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - Number(freshPayment.amount || 0));
+          saveStudents(freshStudents);
+        }
+      }
+    }
+    toast(`تم تحصيل ${allUnpaidPayments.length} حصص بنجاح`, "success");
+    modal.remove();
+    renderGroupsBreakdown();
+    renderPaymentsTable();
+  });
+}
+
+async function markSinglePaid(payment) {
   if (!payment) return;
 
   const students = getStudents();
@@ -174,8 +441,12 @@ async function markPaid(paymentId) {
   });
   if (!ok) return;
 
-  payment.status = "paid";
-  savePayments(payments);
+  const payments = getAllPayments();
+  const freshPayment = payments.find((p) => p.id === payment.id);
+  if (freshPayment) {
+    freshPayment.status = "paid";
+    savePayments(payments);
+  }
 
   if (student) {
     student.lateBalance = Math.max(0, (student.lateBalance || 0) - Number(payment.amount || 0));
@@ -183,7 +454,7 @@ async function markPaid(paymentId) {
   }
 
   toast("تم تسجيل تحصيل المبلغ بنجاح", "success");
-  renderStats();
+  renderGroupsBreakdown();
   renderPaymentsTable();
 }
 
@@ -417,4 +688,577 @@ async function openChargeForm() {
   saveExtraCharges(charges);
   toast(`تم تطبيق الاستحقاق على ${groupStudents.length} طالب بنجاح`, "success");
   renderChargesTable();
+}
+
+/* ================= تقرير المتأخرات المتكرر ================= */
+let lateBucket = "all";
+let lateTermFilter = "";
+let lateMonthFilter = "";
+
+function renderLateTab(box) {
+  const years = getAcademicYears();
+  const allTerms = getTerms().map((t) => ({ ...t, yearName: years.find((y) => y.id === t.yearId)?.name || "" }));
+  const allMonths = getAcademicMonths().map((m) => {
+    const term = allTerms.find((t) => t.id === m.termId);
+    return { ...m, termName: term?.name || "", yearName: term?.yearName || "" };
+  });
+
+  const students = getStudents().filter((s) => (s.status === "active" || s.status === "paused") && Number(s.lateBalance || 0) > 0);
+  const groups = getGroups();
+  const grades = getGrades();
+  const payments = getPayments();
+  const extraCharges = getExtraCharges();
+  const now = new Date();
+
+  const sorted = [...students].sort((a, b) => Number(b.lateBalance || 0) - Number(a.lateBalance || 0));
+  const totalLate = sorted.reduce((sum, s) => sum + Number(s.lateBalance || 0), 0);
+
+  // تصنيف حسب المدة
+  const buckets = {
+    fresh: { label: "أقل من أسبوع", color: "var(--warning)", students: [], total: 0 },
+    twoWeeks: { label: "أسبوع — أسبوعين", color: "#f97316", students: [], total: 0 },
+    month: { label: "أكثر من شهر", color: "var(--danger)", students: [], total: 0 },
+  };
+
+  sorted.forEach((s) => {
+    const lastPay = filteredPayments
+      .filter((p) => p.studentId === s.id && p.status === "paid")
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+
+    let daysSince = 999;
+    if (lastPay && lastPay.date) {
+      daysSince = Math.floor((now - new Date(lastPay.date)) / 86400000);
+    } else if (s.joinDate) {
+      daysSince = Math.floor((now - new Date(s.joinDate)) / 86400000);
+    }
+
+    const amount = Number(s.lateBalance || 0);
+    if (daysSince <= 7) {
+      buckets.fresh.students.push(s);
+      buckets.fresh.total += amount;
+    } else if (daysSince <= 14) {
+      buckets.twoWeeks.students.push(s);
+      buckets.twoWeeks.total += amount;
+    } else {
+      buckets.month.students.push(s);
+      buckets.month.total += amount;
+    }
+  });
+
+  // الطلاب المعروضين حسب الفلتر
+  const shown = lateBucket === "all" ? sorted : (buckets[lateBucket]?.students || []);
+
+  box.innerHTML = `
+    <div class="finance-total-card" style="margin-bottom:20px; background: linear-gradient(135deg, #dc2626, #b91c1c);">
+      <div class="finance-total-card__title">${icons.alert} إجمالى المتأخرات</div>
+      <div class="finance-total-card__grid">
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${sorted.length}</span>
+          <span class="finance-total-card__label">طالب متأخر</span>
+        </div>
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${formatMoney(totalLate)}</span>
+          <span class="finance-total-card__label">إجمالى المتأخرات</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
+        <div style="font-weight:800; font-size:14px;">اختر الفئة</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <select class="select" id="lateBucketSelect" style="max-width:240px;">
+            <option value="all" ${lateBucket === "all" ? "selected" : ""}>الكل (${sorted.length} طالب — ${formatMoney(totalLate)})</option>
+            <option value="fresh" ${lateBucket === "fresh" ? "selected" : ""}>🟡 أقل من أسبوع (${buckets.fresh.students.length} — ${formatMoney(buckets.fresh.total)})</option>
+            <option value="twoWeeks" ${lateBucket === "twoWeeks" ? "selected" : ""}>🟠 أسبوع — أسبوعين (${buckets.twoWeeks.students.length} — ${formatMoney(buckets.twoWeeks.total)})</option>
+            <option value="month" ${lateBucket === "month" ? "selected" : ""}>🔴 أكثر من شهر (${buckets.month.students.length} — ${formatMoney(buckets.month.total)})</option>
+          </select>
+          <select class="select" id="lateTermFilterSelect" style="max-width:200px;">
+            <option value="">كل الأترام</option>
+            ${allTerms.map((t) => `<option value="${t.id}" ${lateTermFilter === t.id ? "selected" : ""}>${escapeHTML(t.name)} (${escapeHTML(t.yearName)})</option>`).join("")}
+          </select>
+          <select class="select" id="lateMonthFilterSelect" style="max-width:200px;">
+            <option value="">كل الشهور</option>
+            ${allMonths
+              .filter((m) => !lateTermFilter || m.termId === lateTermFilter)
+              .map((m) => `<option value="${m.id}" ${lateMonthFilter === m.id ? "selected" : ""}>${escapeHTML(m.name)}</option>`)
+              .join("")}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button class="btn btn-outline btn-sm" id="lateExportExcelBtn">${icons.download} تصدير Excel</button>
+      <button class="btn btn-outline btn-sm" id="lateExportPdfBtn">${icons.print} طباعة / PDF</button>
+    </div>
+
+    <div id="lateStudentsList"></div>
+  `;
+
+  document.getElementById("lateBucketSelect").addEventListener("change", (e) => {
+    lateBucket = e.target.value;
+    renderLateStudentsList();
+  });
+
+  document.getElementById("lateTermFilterSelect").addEventListener("change", (e) => {
+    lateTermFilter = e.target.value;
+    lateMonthFilter = "";
+    renderLateTab(box);
+  });
+  document.getElementById("lateMonthFilterSelect").addEventListener("change", (e) => {
+    lateMonthFilter = e.target.value;
+    renderLateStudentsList();
+  });
+
+  document.getElementById("lateExportExcelBtn")?.addEventListener("click", () => exportTableToExcel("#lateStudentsList table", "المتأخرات_المالية"));
+  document.getElementById("lateExportPdfBtn")?.addEventListener("click", () => printTableAsPDF("#lateStudentsList table", "المتأخرات المالية"));
+
+  renderLateStudentsList();
+}
+
+function renderLateStudentsList() {
+  const box = document.getElementById("lateStudentsList");
+  if (!box) return;
+
+  const students = getStudents().filter((s) => (s.status === "active" || s.status === "paused") && Number(s.lateBalance || 0) > 0);
+  const groups = getGroups();
+  const grades = getGrades();
+  const payments = getPayments();
+  const extraCharges = getExtraCharges();
+  const now = new Date();
+
+  const sorted = [...students].sort((a, b) => Number(b.lateBalance || 0) - Number(a.lateBalance || 0));
+
+  // تصفية حسب الفترة الأكاديمية
+  let filteredPayments = payments;
+  if (lateTermFilter) filteredPayments = filteredPayments.filter((p) => p.termId === lateTermFilter);
+  if (lateMonthFilter) filteredPayments = filteredPayments.filter((p) => p.monthId === lateMonthFilter);
+
+  const buckets = {
+    fresh: { students: [] },
+    twoWeeks: { students: [] },
+    month: { students: [] },
+  };
+
+  sorted.forEach((s) => {
+    const lastPay = filteredPayments
+      .filter((p) => p.studentId === s.id && p.status === "paid")
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+
+    let daysSince = 999;
+    if (lastPay && lastPay.date) {
+      daysSince = Math.floor((now - new Date(lastPay.date)) / 86400000);
+    } else if (s.joinDate) {
+      daysSince = Math.floor((now - new Date(s.joinDate)) / 86400000);
+    }
+
+    if (daysSince <= 7) buckets.fresh.students.push(s);
+    else if (daysSince <= 14) buckets.twoWeeks.students.push(s);
+    else buckets.month.students.push(s);
+  });
+
+  const shown = lateBucket === "all" ? sorted : (buckets[lateBucket]?.students || []);
+
+  if (!shown.length) {
+    box.innerHTML = emptyStateHTML({ icon: icons.check, title: "لا يوجد طلاب متأخرين في هذه الفئة", text: "كل الطلاب محدّثين." });
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>الطالب</th>
+            <th>السنة</th>
+            <th>المجموعة</th>
+            <th>المتأخرات</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${shown.map((s) => {
+            const g = findGroup(groups, s.groupId);
+            const gr = g ? grades.find((x) => x.id === g.gradeId) : null;
+            return `
+              <tr>
+                <td>
+                  <span class="code-pill" style="margin-left:6px;">${escapeHTML(s.code || "-")}</span>
+                  ${escapeHTML(s.name)}
+                  ${s.status === "paused" ? `<span class="badge badge-neutral" style="font-size:10px; margin-right:4px;">متوقف</span>` : ""}
+                </td>
+                <td class="text-muted">${escapeHTML(gr?.name || "—")}</td>
+                <td class="text-muted">${escapeHTML(g?.name || "—")}</td>
+                <td style="font-weight:800; color:var(--danger);">${formatMoney(s.lateBalance)}</td>
+                <td>
+                  <button class="btn btn-success btn-sm latePayBtn" data-id="${s.id}">${icons.money} تحصيل</button>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  box.querySelectorAll(".latePayBtn").forEach((btn) =>
+    btn.addEventListener("click", () => openLatePayPopup(btn.dataset.id))
+  );
+}
+
+async function openLatePayPopup(studentId) {
+  const student = getStudents().find((s) => s.id === studentId);
+  if (!student) return;
+
+  const group = findGroup(getGroups(), student.groupId);
+  const grades = getGrades();
+  const gr = group ? grades.find((x) => x.id === group.gradeId) : null;
+  const extraCharges = getExtraCharges();
+  const payments = getPayments();
+
+  const lateBalance = Number(student.lateBalance || 0);
+  const items = [];
+
+  // حصص غير مدفوعة (كل واحدة لوحدها)
+  const unpaidPayments = payments
+    .filter((p) => p.studentId === student.id && p.status === "unpaid" && Number(p.lateBalanceDelta || 0) > 0)
+    .sort((a, b) => (a.sessionDate || a.date || "").localeCompare(b.sessionDate || b.date || ""));
+
+  unpaidPayments.forEach((p) => {
+    const sessionAmount = Number(p.lateBalanceDelta || 0);
+    const sessionDate = p.sessionDate || p.date || "";
+    items.push({
+      type: "session",
+      label: `حصة ${sessionDate}`,
+      amount: sessionAmount,
+      id: p.id,
+    });
+  });
+
+  // مستحقات مالية (كل واحدة لوحدها)
+  const unpaidCharges = extraCharges.filter((c) => c.studentId === student.id && c.status === "unpaid");
+  unpaidCharges.forEach((c) => {
+    items.push({ type: "charge", label: c.name, amount: Number(c.amount || 0), id: c.id });
+  });
+
+  // لو فيه متأخرات ومفيش سجلات دفع غير مدفوعة، نعرض كمية واحدة
+  const accountedFor = items.reduce((sum, i) => sum + i.amount, 0);
+  if (lateBalance > 0 && accountedFor < lateBalance) {
+    const remaining = lateBalance - accountedFor;
+    items.unshift({ type: "late", label: "متأخرات عامة", amount: remaining, id: null });
+  }
+
+  if (!items.length) {
+    toast("لا يوجد بنود متأخرة لهذا الطالب", "success");
+    return;
+  }
+
+  showLateCollectionModal(student, gr, group, items);
+}
+
+function showLateCollectionModal(student, gr, group, items) {
+  const totalDue = items.reduce((sum, i) => sum + i.amount, 0);
+  let collectedTotal = 0;
+
+  const existing = document.getElementById("lateCollectionOverlay");
+  if (existing) existing.remove();
+
+  const ov = document.createElement("div");
+  ov.className = "modal-overlay";
+  ov.id = "lateCollectionOverlay";
+  document.body.appendChild(ov);
+  ov.classList.add("is-open");
+
+  function render() {
+    const remaining = totalDue - collectedTotal;
+    const allPaid = remaining <= 0;
+
+    ov.innerHTML = `
+      <div class="modal" style="max-width:520px; max-height:85vh; display:flex; flex-direction:column;">
+        <div class="modal__head">
+          <div class="modal__title">تحصيل — ${escapeHTML(student.name)}</div>
+          <button class="btn btn-outline btn-sm closeModalBtn">✕</button>
+        </div>
+        <div class="modal__body" style="flex:1; overflow-y:auto;">
+          <div style="margin-bottom:14px; padding:12px; background:var(--bg); border-radius:var(--r-md);">
+            <div style="font-size:13px; color:var(--muted);">${escapeHTML(gr?.name || "")} — ${escapeHTML(group?.name || "")}</div>
+            <div style="display:flex; gap:16px; margin-top:8px; flex-wrap:wrap;">
+              <div>
+                <div style="font-size:11px; color:var(--muted);">الإجمالى</div>
+                <div style="font-size:18px; font-weight:800; color:var(--danger);">${formatMoney(totalDue)}</div>
+              </div>
+              <div>
+                <div style="font-size:11px; color:var(--muted);">المتحصّل</div>
+                <div style="font-size:18px; font-weight:800; color:var(--success);">${formatMoney(collectedTotal)}</div>
+              </div>
+              <div>
+                <div style="font-size:11px; color:var(--muted);">المتبقى</div>
+                <div style="font-size:18px; font-weight:800; color:${remaining > 0 ? "var(--danger)" : "var(--success)"};">${formatMoney(remaining)}</div>
+              </div>
+            </div>
+            ${allPaid ? `<div style="margin-top:10px; padding:10px; background:#dcfce7; border-radius:var(--r-sm); color:#166534; font-weight:700; text-align:center;">تم تحصيل كل البنود بنجاح ✓</div>` : ""}
+          </div>
+
+          <div id="lateItemsList" style="display:flex; flex-direction:column; gap:8px;">
+            ${items.map((item, idx) => {
+              const paid = item._paid;
+              return `
+              <div class="lateItemCard" data-idx="${idx}" style="
+                display:flex; align-items:center; justify-content:space-between;
+                padding:12px 14px; border-radius:var(--r-md); border:1px solid ${paid ? "#bbf7d0" : "var(--border)"};
+                background:${paid ? "#f0fdf4" : "var(--bg)"}; opacity:${paid ? "0.7" : "1"};
+                ${paid ? "text-decoration:line-through;" : ""}
+              ">
+                <div style="flex:1; min-width:0;">
+                  <div style="font-weight:700; font-size:14px; ${paid ? "color:var(--success);" : ""}">
+                    ${paid ? "✓ " : ""}${escapeHTML(item.label)}
+                  </div>
+                  <div style="font-size:18px; font-weight:800; color:${paid ? "var(--success)" : "var(--danger)"}; margin-top:2px;">
+                    ${paid ? "تم التحصيل" : formatMoney(item.amount)}
+                  </div>
+                </div>
+                ${paid ? "" : `
+                <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+                  <select class="select lateMethodSelect" data-idx="${idx}" style="width:100px; padding:4px 8px; font-size:12px;">
+                    <option value="cash">كاش</option>
+                    <option value="wallet" ${Number(student.walletBalance || 0) >= item.amount ? "" : "disabled"}>محفظة ${Number(student.walletBalance || 0) > 0 ? "(" + formatMoney(student.walletBalance) + ")" : ""}</option>
+                  </select>
+                  <button class="btn btn-success btn-sm paySingleBtn" data-idx="${idx}">${icons.money} دفع</button>
+                </div>
+                `}
+              </div>
+            `;}).join("")}
+          </div>
+        </div>
+        <div class="modal__actions">
+          ${allPaid ? `<button class="btn btn-success closeModalBtn">تم ✓</button>` : `<button class="btn btn-outline closeModalBtn">إغلاق</button>`}
+        </div>
+      </div>
+    `;
+
+    ov.querySelectorAll(".closeModalBtn").forEach((b) => b.addEventListener("click", close));
+    ov.querySelectorAll(".paySingleBtn").forEach((btn) => {
+      btn.addEventListener("click", () => payItem(Number(btn.dataset.idx)));
+    });
+  }
+
+  const close = () => { ov.remove(); renderLateStudentsList(); };
+  ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+
+  async function payItem(idx) {
+    const item = items[idx];
+    if (!item || item._paid || item.amount <= 0) return;
+
+    const methodEl = ov.querySelector(`.lateMethodSelect[data-idx="${idx}"]`);
+    const method = methodEl ? methodEl.value : "cash";
+
+    const ok = await confirmDialog({
+      title: "تأكيد التحصيل",
+      body: `هل تم تحصيل <strong>${formatMoney(item.amount)}</strong> (${item.label}) من <strong>${escapeHTML(student.name)}</strong>؟`,
+      confirmText: "تم التحصيل",
+      tone: "success",
+    });
+    if (!ok) return;
+
+    const freshStudents = getStudents();
+    const freshStudent = freshStudents.find((s) => s.id === student.id);
+    if (method === "wallet") {
+      const deducted = Math.min(item.amount, Number(freshStudent.walletBalance || 0));
+      freshStudent.walletBalance = Math.max(0, Number(freshStudent.walletBalance || 0) - deducted);
+      if (deducted > 0) {
+        const wtxns = getWalletTransactions();
+        wtxns.push({
+          id: generateId("WLT"),
+          studentId: student.id,
+          groupId: student.groupId,
+          amount: deducted,
+          type: "deduction",
+          note: `خصم من المحفظة — تحصيل يدوى`,
+          date: todayISO(),
+        });
+        saveWalletTransactions(wtxns);
+      }
+    }
+
+    if (item.type === "charge") {
+      const charges = getExtraCharges();
+      const chg = charges.find((c) => c.id === item.id);
+      if (chg) {
+        chg.status = "paid";
+        saveExtraCharges(charges);
+      }
+      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
+      // تسجيل التحصيل النقدي في الوردية + دفتر الأستاذ
+      if (method === "cash") {
+        recordCashCollection(student.id, item.amount, "extra_charge", `تحصيل ${chg?.name || "استحقاق"}`, { referenceId: item.id, referenceType: "charge" });
+      } else {
+        recordLedgerOnly(student.id, "wallet_payment", `سداد محفظة — ${chg?.name || "استحقاق"}`, 0, item.amount, { referenceType: "wallet" });
+      }
+    } else if (item.type === "session") {
+      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
+      const payPayments = getAllPayments();
+      const payRecord = payPayments.find((p) => p.id === item.id);
+      if (payRecord) {
+        payRecord.status = "paid";
+        payRecord.amount = item.amount;
+        payRecord.date = todayISO();
+        payRecord.walletUsed = method === "wallet" ? item.amount : 0;
+        payRecord.note = `تحصيل يدوى (${method === "wallet" ? "محفظة" : "كاش"})`;
+      }
+      savePayments(payPayments);
+      // تسجيل التحصيل النقدي في الوردية + دفتر الأستاذ
+      if (method === "cash") {
+        recordCashCollection(student.id, item.amount, "late", `تحصيل يدوى — حصة`, { referenceId: item.id, referenceType: "payment" });
+      } else {
+        recordLedgerOnly(student.id, "wallet_payment", "سداد محفظة — تحصيل يدوى", 0, item.amount, { referenceType: "wallet" });
+      }
+    } else {
+      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
+    }
+
+    saveStudents(freshStudents);
+    item._paid = true;
+    collectedTotal += item.amount;
+    student = freshStudent;
+    toast(`تم تحصيل ${formatMoney(item.amount)} ✓`, "success");
+    render();
+  }
+
+  render();
+}
+
+/* ================= تقرير الإيرادات الشهرية ================= */
+let selectedTermId = "";
+let selectedMonthId = "";
+
+function renderMonthlyTab(box) {
+  const payments = getPayments();
+  const walletTxns = getWalletTransactions();
+  const years = getAcademicYears();
+  const allTerms = getTerms().map((t) => ({ ...t, yearName: years.find((y) => y.id === t.yearId)?.name || "" }));
+  const allMonths = getAcademicMonths().map((m) => {
+    const term = allTerms.find((t) => t.id === m.termId);
+    return { ...m, termName: term?.name || "", yearName: term?.yearName || "" };
+  });
+
+  const filteredPayments = payments.filter((p) => {
+    if (selectedMonthId && p.monthId !== selectedMonthId) return false;
+    if (selectedTermId && p.termId !== selectedTermId) return false;
+    return true;
+  });
+  const filteredWalletTxns = walletTxns; // wallet txns don't have termId
+
+  const months = {};
+  filteredPayments.forEach((p) => {
+    const month = (p.sessionDate || p.date || "").slice(0, 7);
+    if (!month) return;
+    if (!months[month]) months[month] = { collected: 0, walletUsed: 0, count: 0 };
+    months[month].collected += Number(p.amount || 0);
+    months[month].walletUsed += Number(p.walletUsed || 0);
+    months[month].count++;
+  });
+
+  filteredWalletTxns.forEach((t) => {
+    const month = (t.date || "").slice(0, 7);
+    if (!month) return;
+    if (!months[month]) months[month] = { collected: 0, walletUsed: 0, count: 0, deposits: 0 };
+    if (!months[month].deposits) months[month].deposits = 0;
+    months[month].deposits += Number(t.amount || 0);
+  });
+
+  const sorted = Object.entries(months)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 6);
+
+  const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+
+  function getMonthLabel(ym) {
+    const [y, m] = ym.split("-");
+    return `${monthNames[Number(m) - 1]} ${y}`;
+  }
+
+  const grandTotal = sorted.reduce((sum, [, m]) => sum + m.collected + m.walletUsed, 0);
+
+  box.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:14px;">
+      <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
+        <div style="font-weight:800; font-size:14px;">فلترة حسب الفترة الأكاديمية</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <select class="select" id="termFilterSelect" style="max-width:200px;">
+            <option value="">كل الأترام</option>
+            ${allTerms.map((t) => `<option value="${t.id}" ${selectedTermId === t.id ? "selected" : ""}>${escapeHTML(t.name)} (${escapeHTML(t.yearName)})</option>`).join("")}
+          </select>
+          <select class="select" id="monthFilterSelect" style="max-width:200px;">
+            <option value="">كل الشهور</option>
+            ${allMonths
+              .filter((m) => !selectedTermId || m.termId === selectedTermId)
+              .map((m) => `<option value="${m.id}" ${selectedMonthId === m.id ? "selected" : ""}>${escapeHTML(m.name)}</option>`)
+              .join("")}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="finance-total-card" style="margin-bottom:20px;">
+      <div class="finance-total-card__title">${icons.chart} إجمالى الإيرادات (${sorted.length} آخر شهر)</div>
+      <div class="finance-total-card__grid">
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${formatMoney(grandTotal)}</span>
+          <span class="finance-total-card__label">إجمالى الإيراد</span>
+        </div>
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${sorted.reduce((s, [, m]) => s + m.count, 0)}</span>
+          <span class="finance-total-card__label">عدد المعاملات</span>
+        </div>
+      </div>
+    </div>
+
+    ${sorted.length ? sorted.map(([ym, m]) => {
+      const total = m.collected + m.walletUsed;
+      const collectedPct = total ? Math.round((m.collected / total) * 100) : 0;
+      return `
+        <div class="card card-pad" style="margin-bottom:12px;">
+          <div class="flex-between" style="margin-bottom:10px;">
+            <div style="font-weight:800; font-size:14px;">${getMonthLabel(ym)}</div>
+            <span class="badge badge-primary">${m.count} معاملة</span>
+          </div>
+
+          <div class="finance-group-card__stats" style="margin-bottom:12px;">
+            <div class="finance-group-card__stat">
+              <span class="finance-group-card__value" style="color:var(--success);">${formatMoney(m.collected)}</span>
+              <span class="finance-group-card__label">تحصيل مباشر</span>
+            </div>
+            <div class="finance-group-card__stat">
+              <span class="finance-group-card__value" style="color:var(--info);">${formatMoney(m.walletUsed)}</span>
+              <span class="finance-group-card__label">من المحفظة</span>
+            </div>
+            <div class="finance-group-card__stat">
+              <span class="finance-group-card__value">${formatMoney(total)}</span>
+              <span class="finance-group-card__label">الإجمالي</span>
+            </div>
+          </div>
+
+          <div style="height:8px; background:var(--bg-2); border-radius:4px; overflow:hidden; display:flex;">
+            <div style="width:${collectedPct}%; background:var(--success);"></div>
+            <div style="width:${100 - collectedPct}%; background:var(--info);"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:4px;">
+            <span>تحصيل ${collectedPct}%</span>
+            <span>محفظة ${100 - collectedPct}%</span>
+          </div>
+        </div>
+      `;
+    }).join("") : emptyStateHTML({ icon: icons.chart, title: "لا توجد مدفوعات بعد", text: "ابدأ بتسجيل الحضور والمدفوعات لتظهر التقارير هنا." })}
+  `;
+
+  document.getElementById("termFilterSelect").addEventListener("change", (e) => {
+    selectedTermId = e.target.value;
+    selectedMonthId = "";
+    renderMonthlyTab(box);
+  });
+  document.getElementById("monthFilterSelect").addEventListener("change", (e) => {
+    selectedMonthId = e.target.value;
+    renderMonthlyTab(box);
+  });
 }

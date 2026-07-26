@@ -11,6 +11,7 @@ import { toast, confirmDialog } from "./ui.js";
 import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
 import { recordAttendanceStatus, recordActionStatus } from "./attendance-service.js";
 import { computeFinanceBreakdown, renderFinancePanelHTML } from "./finance-panel.js";
+import { sendRewardNotification } from "./whatsapp-notifications.js";
 
 const content = await initPage("reception");
 let selectedStudentId = null;
@@ -295,7 +296,14 @@ async function onActionClick(studentId, statusId) {
   });
   if (!ok) return;
 
-  recordActionStatus(studentId, statusId);
+  const result = recordActionStatus(studentId, statusId);
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
+
+  // إشعار مكافأة
+  if (result?.rewardResult && status.rewardAmount > 0) {
+    sendRewardNotification(studentId, status.rewardAmount, status.name);
+    toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة المحفظة`, "success");
+  }
+
   renderStudentZone();
 }

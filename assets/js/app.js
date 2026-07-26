@@ -2,14 +2,19 @@
 // App — نقطة الإقلاع المشتركة لكل الصفحات الداخلية
 // =========================================================
 
-import { seedIfNeeded, isLoggedIn, getSession } from "./storage.js";
+import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift } from "./storage.js";
 import { renderShell } from "./ui.js";
 import { canAccessPage, firstAccessiblePage } from "./permissions.js";
 
-/**
- * يجهز الصفحة: تحميل البيانات، التحقق من تسجيل الدخول، التحقق من الصلاحية، بناء الهيكل العام
- * يرجع عنصر #pageContent لكى تضيف عليه كل صفحة محتواها الخاص
- */
+/** الصفحات التى تتطلب صندوق مفتوح (وردية نشطة) */
+const SHIFT_REQUIRED_PAGES = [
+  "session",
+  "reception",
+  "parent-reception",
+  "finance",
+  "quick-attendance",
+];
+
 export async function initPage(activePage) {
   await seedIfNeeded();
 
@@ -21,6 +26,12 @@ export async function initPage(activePage) {
   const session = getSession();
   if (!canAccessPage(session, activePage)) {
     window.location.href = firstAccessiblePage(session);
+    return null;
+  }
+
+  // لو الصفحة تتطلب صندوق مفتوح ومفيش وردية → توجيه لصفحة الصندوق
+  if (SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift()) {
+    window.location.href = "shift.html";
     return null;
   }
 

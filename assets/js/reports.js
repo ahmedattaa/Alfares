@@ -55,7 +55,7 @@ export function buildMonthlyFollowupMessage({ student, attendance, exams, extraC
 
   if (monthExams.length) {
     lines.push(`- نتائج امتحانات الشهر:`);
-    monthExams.forEach((e) => lines.push(`  • ${e.title}: ${e.score} من ${e.maxScore}`));
+    monthExams.forEach((e) => lines.push(`  • ${e.title}: ${e.absent ? "غائب" : `${e.score} من ${e.maxScore}`}`));
   }
 
   if (student.lateBalance > 0) lines.push(`- متأخرات مالية مستحقة: ${formatMoney(student.lateBalance)}`);

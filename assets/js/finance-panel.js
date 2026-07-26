@@ -18,16 +18,17 @@ export function computeFinanceBreakdown(student, group, extraCharges) {
   const discount = Math.min(sessionPrice, Number(student.discount || 0));
   const sessionDue = dueAmount(student, group);
   const priorBalance = Number(student.lateBalance || 0);
+  const walletBalance = Number(student.walletBalance || 0);
   const charges = unpaidExtraCharges(extraCharges, student.id);
   const extraTotal = charges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
   const grandTotal = sessionDue + priorBalance + extraTotal;
 
-  return { sessionPrice, discount, sessionDue, priorBalance, charges, extraTotal, grandTotal };
+  return { sessionPrice, discount, sessionDue, priorBalance, walletBalance, charges, extraTotal, grandTotal };
 }
 
 /** يبنى الـ HTML الكامل للوحة المالية (نفس الشكل بالظبط فى الاستقبال وإدارة الحصة) */
 export function renderFinancePanelHTML(breakdown) {
-  const { sessionPrice, discount, sessionDue, priorBalance, charges, grandTotal } = breakdown;
+  const { sessionPrice, discount, sessionDue, priorBalance, walletBalance, charges, grandTotal } = breakdown;
 
   return `
     <div class="finance-panel">
@@ -45,6 +46,15 @@ export function renderFinancePanelHTML(breakdown) {
         <div class="finance-panel__row" style="font-weight:800;">
           <span>المطلوب لهذه الحصة (بعد الخصم)</span>
           <span>${formatMoney(sessionDue)}</span>
+        </div>`
+          : ""
+      }
+      ${
+        walletBalance > 0
+          ? `
+        <div class="finance-panel__row is-wallet">
+          <span>رصيد المحفظة المتاح</span>
+          <span style="color:var(--success); font-weight:800;">${formatMoney(walletBalance)}</span>
         </div>`
           : ""
       }

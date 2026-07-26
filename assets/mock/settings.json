@@ -5,7 +5,26 @@
   "phone": "01000000000",
   "currency": "ج.م",
   "users": [
-    { "username": "admin", "password": "1234", "name": "مدير النظام", "role": "admin", "permissions": [], "theme": "default" },
-    { "username": "assist1", "password": "1234", "name": "أ. محمد سامي", "role": "assistant", "permissions": ["session", "reception", "students", "followup"], "theme": "default" }
+    {
+      "username": "admin",
+      "password": "1234",
+      "name": "مدير النظام",
+      "role": "admin",
+      "permissions": [],
+      "theme": "default"
+    },
+    {
+      "username": "assist1",
+      "password": "1234",
+      "name": "أ. محمد سامي",
+      "role": "assistant",
+      "permissions": [
+        "session",
+        "reception",
+        "students",
+        "followup"
+      ],
+      "theme": "default"
+    }
   ]
 }

@@ -4,12 +4,13 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges } from "./storage.js";
+import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions } from "./storage.js";
 import { escapeHTML, initials, formatMoney, formatDateAr } from "./helpers.js";
-import { emptyStateHTML, whatsappPreviewDialog } from "./ui.js";
-import { gradeName, groupName, findGroup } from "./lookups.js";
+import { emptyStateHTML, toast, whatsappPreviewDialog } from "./ui.js";
+import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
+import { recordActionStatus } from "./attendance-service.js";
 
 const content = await initPage("student");
 if (content) render();
@@ -76,6 +77,7 @@ function render() {
         <div class="flex-gap" style="flex-wrap:wrap;">
           <button class="btn btn-outline btn-sm" id="contactParentBtn">${icons.whatsapp} مراسلة ولى الأمر</button>
           <button class="btn btn-success btn-sm" id="monthlyReportBtn">${icons.whatsapp} المتابعة الشهرية</button>
+          <button class="btn btn-danger btn-sm" id="actionBtn">${icons.alert} اتخاذ إجراء استثنائى</button>
           <span class="badge ${student.status === "active" ? "badge-success" : "badge-neutral"}">${student.status === "active" ? "نشط" : "متوقف"}</span>
         </div>
       </div>
@@ -95,6 +97,7 @@ function render() {
       ${statCard("tone-danger", icons.x, absentCount, "مرات الغياب")}
       ${statCard("tone-warning", icons.alert, countByStatus("ST-CALL"), "استدعاءات ولى الأمر")}
       ${statCard("tone-primary", icons.money, formatMoney(student.lateBalance || 0), "متأخرات مالية")}
+      ${(student.walletBalance || 0) > 0 ? statCard("tone-success", icons.wallet, formatMoney(student.walletBalance), "رصيد المحفظة") : ""}
     </div>
 
     <div class="grid-2">
@@ -102,10 +105,19 @@ function render() {
         <div class="card__head"><div class="card__title">السجل الزمنى الكامل (حضور / غياب / إجراءات)</div></div>
         ${
           attendance.length
-            ? simpleTable(
-                ["التاريخ", "الحالة", "الوقت"],
-                attendance.slice(0, 12).map((a) => [formatDateAr(a.date), badgeFor(a, statuses), a.time])
-              )
+            ? `<div class="table-wrap"><table class="table">
+                <thead><tr><th>التاريخ</th><th>الحالة</th><th>الوقت</th><th>ملاحظة</th></tr></thead>
+                <tbody>${attendance.slice(0, 12).map((a) => {
+                  const st = statuses.find((s) => s.id === a.statusId);
+                  const isAction = a.category === "action";
+                  return `<tr>
+                    <td>${formatDateAr(a.date)}</td>
+                    <td><span class="badge badge-${st?.tone || "neutral"}"><span class="badge-dot"></span>${escapeHTML(st?.name || "-")}</span></td>
+                    <td>${a.time}</td>
+                    <td>${isAction && a.note ? `<span style="font-size:12px; color:var(--muted);">${escapeHTML(a.note)}</span>` : ""}</td>
+                  </tr>`;
+                }).join("")}</tbody>
+              </table></div>`
             : emptyStateHTML({ title: "لا يوجد سجل حضور" })
         }
       </div>
@@ -132,7 +144,7 @@ function render() {
         exams.length
           ? simpleTable(
               ["الامتحان", "التاريخ", "الدرجة"],
-              exams.map((e) => [escapeHTML(e.title), formatDateAr(e.date), `${e.score} / ${e.maxScore}`])
+              exams.map((e) => [escapeHTML(e.title), formatDateAr(e.date), e.absent ? `<span class="badge badge-neutral">غائب</span>` : `${e.score} / ${e.maxScore}`])
             )
           : emptyStateHTML({ icon: icons.chart, title: "لا توجد نتائج امتحانات بعد" })
       }
@@ -154,10 +166,13 @@ function render() {
           : emptyStateHTML({ title: "لا توجد استحقاقات مالية إضافية" })
       }
     </div>
+
+    ${renderStudentLedger(student)}
   `;
 
   document.getElementById("monthlyReportBtn").addEventListener("click", () => sendMonthlyReport(student, attendance, exams, extraCharges));
   document.getElementById("contactParentBtn").addEventListener("click", () => contactParent(student));
+  document.getElementById("actionBtn").addEventListener("click", () => openActionModal(student));
 }
 
 function statCard(tone, icon, value, label) {
@@ -168,11 +183,6 @@ function statCard(tone, icon, value, label) {
       <div class="stat-card__label">${label}</div>
     </div>
   `;
-}
-
-function badgeFor(record, statuses) {
-  const st = statuses.find((s) => s.id === record.statusId);
-  return `<span class="badge badge-${st?.tone || "neutral"}"><span class="badge-dot"></span>${escapeHTML(st?.name || "-")}</span>`;
 }
 
 function simpleTable(headers, rows) {
@@ -210,4 +220,181 @@ async function contactParent(student) {
   if (!message) return;
 
   openWhatsApp(student.parentPhone, message);
+}
+
+/* ── نافذة الإجراء الاستثنائى ── */
+function openActionModal(student) {
+  const statuses = getStudentStatuses();
+  const actionStatuses = statusesByCategory(statuses, "action");
+  if (!actionStatuses.length) { toast("لا توجد إجراءات استثنائية معرّفة", "warning"); return; }
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px;">
+      <div class="modal__head">
+        <div class="modal__title" style="color:var(--warning);">${icons.alert} إجراء استثنائى — ${escapeHTML(student.name)}</div>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label class="field__label">نوع الإجراء</label>
+          <select class="select" id="actionTypeSelect">
+            <option value="">— اختر نوع الإجراء —</option>
+            ${actionStatuses.map((s) => `<option value="${s.id}">${escapeHTML(s.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label">سبب / ملاحظة <span style="color:var(--danger);">*</span></label>
+          <textarea class="input" id="actionNoteInput" rows="3" placeholder="اكتب سبب الإجراء..." required style="resize:vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-outline" id="actionCancel">إلغاء</button>
+        <button type="button" class="btn btn-danger" id="actionConfirm">${icons.alert} تأكيد وتسجيل</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.querySelector("#actionCancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  overlay.querySelector("#actionConfirm").addEventListener("click", () => {
+    const statusId = overlay.querySelector("#actionTypeSelect").value;
+    const note = overlay.querySelector("#actionNoteInput").value.trim();
+
+    if (!statusId) { toast("اختر نوع الإجراء أولاً", "warning"); return; }
+    if (!note) { toast("اكتب سبب الإجراء", "warning"); return; }
+
+    const result = recordActionStatus(student.id, statusId, undefined, note);
+    if (!result) { toast("فشلت العملية", "error"); return; }
+    if (result.locked) { toast(`الطالب مقفول: ${result.reason}`, "warning"); close(); return; }
+
+    toast(`تم تسجيل: ${result.status.name} — ${student.name}`, result.status.tone === "danger" ? "danger" : "success");
+    close();
+    render();
+  });
+}
+
+/* ── دفتر الأستاذ (General Ledger) ── */
+function renderStudentLedger(student) {
+  const entries = getLedgerEntries(student.id).sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
+  const walletTxns = getWalletTransactions().filter((t) => t.studentId === student.id);
+
+  if (!entries.length && !walletTxns.length) return "";
+
+  const debitTotal = entries.reduce((sum, e) => sum + Number(e.debit || 0), 0);
+  const creditTotal = entries.reduce((sum, e) => sum + Number(e.credit || 0), 0);
+
+  return `
+    <div class="card card-pad" style="margin-top:18px;">
+      <div class="card__head">
+        <div class="card__title">${icons.clipboard} دفتر الأستاذ — كشف حساب مالي شامل</div>
+      </div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:12px;">
+        كل حركة مالية مسجلة هنا — مفيش حاجة اسمها "مسح دفعة". أي تعديل بيعمل قيد عكسي (Compensating Transaction).
+      </p>
+
+      ${entries.length ? `
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>النوع</th>
+                <th>البيان</th>
+                <th>مدين</th>
+                <th>دائن</th>
+                <th>الرصيد</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries.map((e) => `
+                <tr>
+                  <td style="font-size:12px;">${formatDateAr(e.date)} <span class="text-muted">${e.time || ""}</span></td>
+                  <td><span class="badge badge-${typeTone(e.type)}" style="font-size:10px;">${typeLabel(e.type)}</span></td>
+                  <td style="font-size:12px;">${escapeHTML(e.description)}</td>
+                  <td style="font-weight:700; ${e.debit > 0 ? "color:var(--danger);" : ""}">${e.debit > 0 ? formatMoney(e.debit) : "—"}</td>
+                  <td style="font-weight:700; ${e.credit > 0 ? "color:var(--success);" : ""}">${e.credit > 0 ? formatMoney(e.credit) : "—"}</td>
+                  <td style="font-weight:800;">${formatMoney(e.balance)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+            <tfoot>
+              <tr style="font-weight:800; background:var(--bg);">
+                <td colspan="3" style="text-align:left;">الإجمالي</td>
+                <td style="color:var(--danger);">${formatMoney(debitTotal)}</td>
+                <td style="color:var(--success);">${formatMoney(creditTotal)}</td>
+                <td>${formatMoney(debitTotal - creditTotal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : emptyStateHTML({ title: "لا توجد قيود في دفتر الأستاذ" })}
+
+      ${walletTxns.length ? `
+        <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+          <div style="font-weight:700; font-size:13px; margin-bottom:8px;">${icons.wallet} حركات المحفظة</div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>التاريخ</th>
+                  <th>النوع</th>
+                  <th>المبلغ</th>
+                  <th>ملاحظة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${walletTxns.slice().reverse().map((t) => `
+                  <tr>
+                    <td style="font-size:12px;">${t.date}</td>
+                    <td>
+                      ${t.type === "deduction"
+                        ? `<span class="badge badge-danger" style="font-size:10px;">خصم</span>`
+                        : `<span class="badge badge-success" style="font-size:10px;">إيداع</span>`
+                      }
+                    </td>
+                    <td style="font-weight:700; ${t.type === "deduction" ? "color:var(--danger);" : "color:var(--success);"}">
+                      ${t.type === "deduction" ? "-" : "+"}${formatMoney(t.amount)}
+                      ${t.debtCovered > 0 ? `<span class="text-muted" style="font-size:10px;"> (غطى ${formatMoney(t.debtCovered)} متأخرات)</span>` : ""}
+                    </td>
+                    <td style="font-size:12px; color:var(--muted);">${escapeHTML(t.note || "")}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function typeLabel(type) {
+  const labels = {
+    opening_balance: "رصيد افتتاحي",
+    session_fee: "مستحق حصة",
+    material_fee: "مستحق ملزمة",
+    cash_payment: "سداد كاش",
+    wallet_payment: "سداد محفظة",
+    wallet_deposit: "إيداع محفظة",
+    adjustment: "تعديل يدوي",
+  };
+  return labels[type] || type;
+}
+
+function typeTone(type) {
+  const tones = {
+    opening_balance: "warning",
+    session_fee: "danger",
+    material_fee: "danger",
+    cash_payment: "success",
+    wallet_payment: "info",
+    wallet_deposit: "success",
+    adjustment: "neutral",
+  };
+  return tones[type] || "neutral";
 }

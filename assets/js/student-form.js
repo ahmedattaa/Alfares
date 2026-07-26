@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, saveStudents, getGrades, getGroups, flushPendingWrites } from "./storage.js";
+import { getStudents, saveStudents, getGrades, getGroups, flushPendingWrites, applyPendingCharges } from "./storage.js";
 import { escapeHTML, generateId } from "./helpers.js";
 import { toast } from "./ui.js";
 import { groupsForGrade, suggestStudentCode, findGroup } from "./lookups.js";
@@ -79,7 +79,7 @@ function render() {
         <div class="form-grid">
           <div class="field">
             <label class="field__label">هاتف الطالب</label>
-            <input class="input" name="phone" required value="${editing ? escapeHTML(editing.phone) : ""}" style="direction:ltr;">
+            <input class="input" name="phone" value="${editing ? escapeHTML(editing.phone) : ""}" style="direction:ltr;" placeholder="(اختياري)">
           </div>
           <div class="field">
             <label class="field__label">هاتف ولى الأمر</label>
@@ -155,8 +155,10 @@ function render() {
       saveStudents(students);
       toast("تم تحديث بيانات الطالب بنجاح", "success");
     } else {
-      students.push({ id: generateId("STU"), ...data });
+      const newStudent = { id: generateId("STU"), ...data };
+      students.push(newStudent);
       saveStudents(students);
+      if (data.groupId) applyPendingCharges(newStudent.id, data.groupId);
       toast("تم إضافة الطالب بنجاح", "success");
     }
 

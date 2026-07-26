@@ -23,9 +23,21 @@ export function todayWeekdayAr(date = new Date()) {
   return WEEKDAYS_AR[date.getDay()];
 }
 
+/** اسم يوم الأسبوع لتاريخ ISO معين (وليس بالضرورة اليوم الحالى) */
+export function weekdayArForDate(dateStr) {
+  // نبنى Date من أجزاء التاريخ مباشرة لتفادى مشاكل المنطقة الزمنية
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return WEEKDAYS_AR[new Date(y, m - 1, d).getDay()];
+}
+
 /** هل هذه المجموعة من المفروض أن تُعقد النهاردة؟ */
 export function isScheduledToday(group, date = new Date()) {
   return (group.days || []).includes(todayWeekdayAr(date));
+}
+
+/** هل هذه المجموعة من المفروض أن تُعقد فى تاريخ معين (أى تاريخ، مش بس النهاردة)؟ */
+export function isScheduledOnDate(group, dateStr) {
+  return (group.days || []).includes(weekdayArForDate(dateStr));
 }
 
 /** تحويل وقت 24 ساعة "17:00" لصيغة عربية 12 ساعة "05:00 م" */
@@ -44,8 +56,10 @@ export function formatDaysAr(days = []) {
 
 /**
  * حالة الحصة الآن بالنسبة لتاريخ محدد:
- * - لتواريخ غير اليوم الحالى: الماضى يُعتبر "ended" دائمًا (يسمح بالمراجعة)، والمستقبل "upcoming" دائمًا
- * - لتاريخ اليوم: تُحسب فعليًا حسب وقت المجموعة ومدتها مقارنة بالوقت الحالى
+ * - لتواريخ غير اليوم الحالى: الماضى يُعتبر "ended" دائمًا (يسمح بالمراجعة وتصحيح المدفوعات)،
+ *   والمستقبل "upcoming" دائمًا (ممنوع تسجيل حضور فيه قبل ما ييجي يومه أصلاً)
+ * - لتاريخ اليوم: التسجيل بيبقى متاح من الساعة قبل معاد الحصة بساعة كاملة، لحد نهاية مدتها،
+ *   وبعد كده تُعتبر "ended" لكن برضه قابلة للفتح لأي تصحيح مالى لاحق
  * ترجع: 'upcoming' | 'ongoing' | 'ended'
  */
 export function sessionTimeStatus(group, dateStr, now = new Date()) {
@@ -56,9 +70,10 @@ export function sessionTimeStatus(group, dateStr, now = new Date()) {
   const [h, m] = (group.time || "00:00").split(":").map(Number);
   const start = new Date(now);
   start.setHours(h, m, 0, 0);
+  const earlyWindowStart = new Date(start.getTime() - 60 * 60000); // متاح قبل المعاد بساعة
   const end = new Date(start.getTime() + (Number(group.duration) || 90) * 60000);
 
-  if (now < start) return "upcoming";
+  if (now < earlyWindowStart) return "upcoming";
   if (now <= end) return "ongoing";
   return "ended";
 }

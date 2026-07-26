@@ -4,10 +4,13 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, saveStudents, getGrades, getGroups } from "./storage.js";
+import { getStudents, saveStudents, getGrades, getGroups, getStudentStatuses } from "./storage.js";
 import { escapeHTML, initials, formatMoney, formatDateAr, debounce } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, skeletonRows } from "./ui.js";
-import { gradeName, groupName, groupsForGrade } from "./lookups.js";
+import { gradeName, groupName, groupsForGrade, statusesByCategory } from "./lookups.js";
+import { getSession } from "./storage.js";
+import { canPerformSensitiveAction } from "./permissions.js";
+import { recordActionStatus } from "./attendance-service.js";
 
 const content = await initPage("students");
 let searchTerm = "";
@@ -89,7 +92,7 @@ function renderTable() {
   const box = document.getElementById("studentsTable");
   const grades = getGrades();
   const groups = getGroups();
-  let students = getStudents();
+  let students = getStudents().filter((s) => s.status !== "expelled");
 
   if (searchTerm) {
     const term = searchTerm.toLowerCase();
@@ -118,6 +121,7 @@ function renderTable() {
             <th>السنة الدراسية</th>
             <th>المجموعة</th>
             <th>المتأخرات</th>
+            <th>المحفظة</th>
             <th>الخصم</th>
             <th>الحالة</th>
             <th></th>
@@ -138,12 +142,14 @@ function renderTable() {
               <td class="text-muted">${escapeHTML(gradeName(grades, s.gradeId))}</td>
               <td class="text-muted">${escapeHTML(groupName(groups, s.groupId))}</td>
               <td>${s.lateBalance > 0 ? `<span class="badge badge-warning">${formatMoney(s.lateBalance)}</span>` : `<span class="badge badge-neutral">لا يوجد</span>`}</td>
+              <td>${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : `<span class="text-muted">-</span>`}</td>
               <td>${s.discount > 0 ? `<span class="badge badge-info">${formatMoney(s.discount)}</span>` : `<span class="text-muted">-</span>`}</td>
               <td><span class="badge ${s.status === "active" ? "badge-success" : "badge-neutral"}">${s.status === "active" ? "نشط" : "متوقف"}</span></td>
               <td>
                 <div class="row-actions">
                   <a class="btn btn-outline btn-icon" href="student-form.html?id=${s.id}" title="تعديل">${icons.edit}</a>
-                  <button class="btn btn-outline btn-icon deleteStudentBtn" data-id="${s.id}" title="حذف">${icons.trash}</button>
+                  ${canPerformSensitiveAction(getSession()) ? `<button class="btn btn-outline btn-icon actionStudentBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" title="إجراء استثنائي" style="border-color:var(--warning);color:var(--warning);">${icons.alert}</button>` : ""}
+                  ${canPerformSensitiveAction(getSession()) ? `<button class="btn btn-outline btn-icon deleteStudentBtn" data-id="${s.id}" title="حذف">${icons.trash}</button>` : ""}
                 </div>
               </td>
             </tr>`
@@ -174,6 +180,7 @@ function renderTable() {
   });
 
   box.querySelectorAll(".deleteStudentBtn").forEach((btn) => btn.addEventListener("click", () => deleteStudent(btn.dataset.id)));
+  box.querySelectorAll(".actionStudentBtn").forEach((btn) => btn.addEventListener("click", () => openActionModal(btn.dataset.id, btn.dataset.name)));
 }
 
 async function deleteStudent(id) {
@@ -191,4 +198,60 @@ async function deleteStudent(id) {
   saveStudents(students.filter((x) => x.id !== id));
   toast("تم حذف الطالب", "success");
   renderTable();
+}
+
+/* ── نافذة الإجراء الاستثنائى ── */
+function openActionModal(studentId, studentName) {
+  const statuses = getStudentStatuses();
+  const actionStatuses = statusesByCategory(statuses, "action");
+  if (!actionStatuses.length) { toast("لا توجد إجراءات استثنائية معرّفة", "warning"); return; }
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px;">
+      <div class="modal__head">
+        <div class="modal__title" style="color:var(--warning);">${icons.alert} إجراء استثنائى — ${escapeHTML(studentName)}</div>
+      </div>
+      <div class="modal__body">
+        <div class="field">
+          <label class="field__label">نوع الإجراء</label>
+          <select class="select" id="actionTypeSelect">
+            <option value="">— اختر نوع الإجراء —</option>
+            ${actionStatuses.map((s) => `<option value="${s.id}">${escapeHTML(s.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label">سبب / ملاحظة <span style="color:var(--danger);">*</span></label>
+          <textarea class="input" id="actionNoteInput" rows="3" placeholder="اكتب سبب الإجراء..." required style="resize:vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-outline" id="actionCancel">إلغاء</button>
+        <button type="button" class="btn btn-danger" id="actionConfirm">${icons.alert} تأكيد وتسجيل</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.querySelector("#actionCancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  overlay.querySelector("#actionConfirm").addEventListener("click", () => {
+    const statusId = overlay.querySelector("#actionTypeSelect").value;
+    const note = overlay.querySelector("#actionNoteInput").value.trim();
+
+    if (!statusId) { toast("اختر نوع الإجراء أولاً", "warning"); return; }
+    if (!note) { toast("اكتب سبب الإجراء", "warning"); return; }
+
+    const result = recordActionStatus(studentId, statusId, undefined, note);
+    if (!result) { toast("فشلت العملية", "error"); return; }
+    if (result.locked) { toast(`الطالب مقفول: ${result.reason}`, "warning"); close(); return; }
+
+    toast(`تم تسجيل: ${result.status.name} — ${studentName}`, result.status.tone === "danger" ? "danger" : "success");
+    close();
+    renderTable();
+  });
 }

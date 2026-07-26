@@ -17,15 +17,23 @@ import {
   getStudentStatuses,
   saveStudentStatuses,
   getStudents,
+  getAcademicYears,
+  saveAcademicYears,
+  getTerms,
+  saveTerms,
+  getAcademicMonths,
+  saveAcademicMonths,
+  backfillLedger,
 } from "./storage.js";
 import { escapeHTML, generateId } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
 import { suggestGroupCode, gradeName } from "./lookups.js";
-import { PERMISSION_PAGES } from "./permissions.js";
+import { PERMISSION_PAGES, canPerformSensitiveAction } from "./permissions.js";
 import { WEEKDAY_OPTIONS, formatDaysAr, formatTimeAr } from "./schedule.js";
 
 const TABS = [
   { id: "center", label: "بيانات السنتر", icon: icons.settings },
+  { id: "academic", label: "العام الدراسي", icon: icons.calendar },
   { id: "grades", label: "السنوات الدراسية", icon: icons.clipboard },
   { id: "groups", label: "المجموعات", icon: icons.users },
   { id: "statuses", label: "حالات الطالب", icon: icons.check },
@@ -73,6 +81,7 @@ function renderTabContent() {
   if (activeTab === "grades") return renderGradesTab(box);
   if (activeTab === "groups") return renderGroupsTab(box);
   if (activeTab === "statuses") return renderStatusesTab(box);
+  if (activeTab === "academic") return renderAcademicPeriodsTab(box);
   if (activeTab === "team") return renderTeamTab(box);
   if (activeTab === "danger") return renderDangerTab(box);
 }
@@ -109,21 +118,44 @@ function renderCenterTab(box) {
         </form>
       </div>
 
-      <div class="card card-pad">
-        <div class="card__head"><div class="card__title">الحساب الحالى</div></div>
-        <div class="field">
-          <label class="field__label">الاسم</label>
-          <input class="input" value="${escapeHTML(session?.name || "")}" disabled>
+      <div>
+        <div class="card card-pad" style="margin-bottom:16px;">
+          <div class="card__head"><div class="card__title">الحساب الحالى</div></div>
+          <div class="field">
+            <label class="field__label">الاسم</label>
+            <input class="input" value="${escapeHTML(session?.name || "")}" disabled>
+          </div>
+          <div class="field">
+            <label class="field__label">اسم المستخدم</label>
+            <input class="input" value="${escapeHTML(session?.username || "")}" disabled>
+          </div>
+          <div class="field">
+            <label class="field__label">الصلاحية</label>
+            <input class="input" value="${session?.role === "admin" ? "مدير" : "مدرس مساعد"}" disabled>
+          </div>
+          <div class="field__hint">لتغيير كلمة المرور تواصل مع مدير النظام (سيتم دعم ذلك لاحقًا).</div>
         </div>
-        <div class="field">
-          <label class="field__label">اسم المستخدم</label>
-          <input class="input" value="${escapeHTML(session?.username || "")}" disabled>
+
+        <div class="card card-pad">
+          <div class="card__head"><div class="card__title">${icons.wallet} إعدادات المحفظة (Center Coin)</div></div>
+          <form id="walletForm">
+            <div class="field">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" name="autoDeductWallet" ${settings.autoDeductWallet !== false ? "checked" : ""} style="width:16px;height:16px;">
+                خصم تلقائي من المحفظة عند تسجيل الحضور
+              </label>
+              <div class="field__hint">لو مفعّل، النظام بيخصم ثمن الحصة من محفظة الطالب تلقائيًا لما بيتسجل عليه حضور مدفوع.</div>
+            </div>
+            <div class="field">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" name="autoDeductMaterials" ${settings.autoDeductMaterials ? "checked" : ""} style="width:16px;height:16px;">
+                خصم تلقائي من المحفظة للملازم والاستحقاقات
+              </label>
+              <div class="field__hint">لو مفعّل، أي ملزمة أو استحقاق إضافي هيتخصم من المحفظة لو فيه رصيد كافي.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات المحفظة</button>
+          </form>
         </div>
-        <div class="field">
-          <label class="field__label">الصلاحية</label>
-          <input class="input" value="${session?.role === "admin" ? "مدير" : "مدرس مساعد"}" disabled>
-        </div>
-        <div class="field__hint">لتغيير كلمة المرور تواصل مع مدير النظام (سيتم دعم ذلك لاحقًا).</div>
       </div>
     </div>
   `;
@@ -133,6 +165,13 @@ function renderCenterTab(box) {
     const data = Object.fromEntries(new FormData(e.target).entries());
     saveSettings({ ...settings, ...data });
     toast("تم حفظ بيانات السنتر بنجاح", "success");
+  });
+
+  document.getElementById("walletForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    saveSettings({ ...settings, autoDeductWallet: data.autoDeductWallet === "on", autoDeductMaterials: data.autoDeductMaterials === "on" });
+    toast("تم حفظ إعدادات المحفظة بنجاح", "success");
   });
 }
 
@@ -528,15 +567,22 @@ async function openStatusForm(editId = null) {
         <select class="select" name="payment">
           <option value="paid" ${editing?.payment === "paid" ? "selected" : ""}>يسجل دفع فورى</option>
           <option value="unpaid" ${editing?.payment === "unpaid" ? "selected" : ""}>يسجل مستحق (لم يدفع بعد)</option>
-          <option value="none" ${editing?.payment === "none" ? "selected" : ""}>لا ينطبق</option>
+          <option value="none" ${editing?.payment == null || editing?.payment === "none" ? "selected" : ""}>لا ينطبق</option>
         </select>
       </div>
+    </div>
+    <div class="field">
+      <label class="field__label">مكافأة (اختياري)</label>
+      <input class="input" name="rewardAmount" type="number" min="0" step="1" value="${editing?.rewardAmount || ""}" placeholder="مبلغ مكافأة يُضاف للمحفظة عند التسجيل (0 أو اتركه فارغ = بدون مكافأة)">
+      <div class="field__hint">إذا أدخلت مبلغًا، يُضاف تلقائيًا لمحفظة الطالب عند تسجيل هذه الحالة</div>
+    </div>
     </div>
   `;
 
   const data = await formModal({ title: editing ? "تعديل الحالة" : "إضافة حالة جديدة", bodyHTML, submitText: editing ? "حفظ التعديلات" : "إضافة", wide: true });
   if (!data) return;
   data.presence = data.presence === "null" ? null : data.presence;
+  data.rewardAmount = data.rewardAmount ? Number(data.rewardAmount) : 0;
 
   if (editing) {
     Object.assign(editing, data);
@@ -565,6 +611,281 @@ async function deleteStatus(id) {
   saveStudentStatuses(statuses.filter((x) => x.id !== id));
   toast("تم حذف الحالة", "success");
   renderStatusesTable();
+}
+
+/* ================= العام الدراسي (Normalized Schema) ================= */
+function renderAcademicPeriodsTab(box) {
+  box.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:18px;">
+      <div class="card__head">
+        <div class="card__title">العام الدراسي</div>
+        <button class="btn btn-primary btn-sm" id="addYearBtn">${icons.plus} إضافة سنة أكاديمية</button>
+      </div>
+      <p class="field__hint" style="margin-bottom:0;">
+        حدد السنة الأكاديمية الحالية ثم الأترام والشهور. كل شهر لازم يكون له تاريخ بداية ونهاية، وده اللى بيساعد النظام يحدد الترم والشهر النشط تلقائيًا.
+      </p>
+    </div>
+    <div id="academicTree"></div>
+  `;
+  document.getElementById("addYearBtn").addEventListener("click", () => openYearForm());
+  renderAcademicTree();
+}
+
+function renderAcademicTree() {
+  const box = document.getElementById("academicTree");
+  const years = getAcademicYears();
+  const allTerms = getTerms();
+  const allMonths = getAcademicMonths();
+
+  if (!years.length) {
+    box.innerHTML = emptyStateHTML({ icon: icons.calendar, title: "لا توجد سنوات أكاديمية بعد", text: "أضف أول سنة أكاديمية لتتمكن من تحديد الأترام والشهور." });
+    return;
+  }
+
+  box.innerHTML = years.map((year) => {
+    const yearTerms = allTerms.filter((t) => t.yearId === year.id).sort((a, b) => a.order - b.order);
+    return `
+      <div class="ap-year">
+        <div class="ap-year__header">
+          <div class="ap-year__title">
+            ${icons.clipboard}
+            <strong>${escapeHTML(year.name)}</strong>
+            ${year.isCurrent ? `<span class="badge badge-success" style="font-size:10px;">السنة الحالية</span>` : ""}
+          </div>
+          <div class="row-actions">
+            <button class="btn btn-outline btn-icon addTermBtn" data-year-id="${year.id}" title="إضافة ترم">${icons.plus}</button>
+            <button class="btn btn-outline btn-icon editYearBtn" data-year-id="${year.id}" title="تعديل">${icons.edit}</button>
+            <button class="btn btn-outline btn-icon deleteYearBtn" data-year-id="${year.id}" title="حذف">${icons.trash}</button>
+          </div>
+        </div>
+        ${yearTerms.length ? yearTerms.map((term) => {
+          const termMonths = allMonths.filter((m) => m.termId === term.id);
+          return `
+            <div class="ap-term">
+              <div class="ap-term__header">
+                <div class="ap-term__title">
+                  ${icons.clipboard}
+                  <span>${escapeHTML(term.name)}</span>
+                  <span class="text-muted" style="font-size:11px; margin-right:auto; margin-left:10px;">${term.startDate} → ${term.endDate}</span>
+                </div>
+                <div class="row-actions">
+                  <button class="btn btn-outline btn-icon btn-xs addMonthBtn" data-term-id="${term.id}" title="إضافة شهر">${icons.plus}</button>
+                  <button class="btn btn-outline btn-icon btn-xs editTermBtn" data-term-id="${term.id}" title="تعديل">${icons.edit}</button>
+                  <button class="btn btn-outline btn-icon btn-xs deleteTermBtn" data-term-id="${term.id}" title="حذف">${icons.trash}</button>
+                </div>
+              </div>
+              ${termMonths.length ? `
+                <div class="ap-months">
+                  ${termMonths.map((m) => `
+                    <div class="ap-month">
+                      <div class="ap-month__info">
+                        <strong>${escapeHTML(m.name)}</strong>
+                        <span class="text-muted">${m.startDate} → ${m.endDate}</span>
+                      </div>
+                      <div class="row-actions">
+                        <button class="btn btn-outline btn-icon btn-xs editMonthBtn" data-month-id="${m.id}" title="تعديل">${icons.edit}</button>
+                        <button class="btn btn-outline btn-icon btn-xs deleteMonthBtn" data-month-id="${m.id}" title="حذف">${icons.trash}</button>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              ` : `<div class="ap-empty">لا توجد شهور بعد</div>`}
+            </div>`;
+        }).join("") : `<div class="ap-empty" style="margin-left:32px;">لا توجد أترام بعد</div>`}
+      </div>`;
+  }).join("");
+
+  box.querySelectorAll(".addTermBtn").forEach((btn) => btn.addEventListener("click", () => openTermForm(btn.dataset.yearId)));
+  box.querySelectorAll(".editYearBtn").forEach((btn) => btn.addEventListener("click", () => openYearForm(btn.dataset.yearId)));
+  box.querySelectorAll(".deleteYearBtn").forEach((btn) => btn.addEventListener("click", () => deleteYear(btn.dataset.yearId)));
+  box.querySelectorAll(".addMonthBtn").forEach((btn) => btn.addEventListener("click", () => openMonthForm(btn.dataset.termId)));
+  box.querySelectorAll(".editTermBtn").forEach((btn) => btn.addEventListener("click", () => openTermForm(null, btn.dataset.termId)));
+  box.querySelectorAll(".deleteTermBtn").forEach((btn) => btn.addEventListener("click", () => deleteTerm(btn.dataset.termId)));
+  box.querySelectorAll(".editMonthBtn").forEach((btn) => btn.addEventListener("click", () => openMonthForm(null, btn.dataset.monthId)));
+  box.querySelectorAll(".deleteMonthBtn").forEach((btn) => btn.addEventListener("click", () => deleteMonth(btn.dataset.monthId)));
+}
+
+/* ── السنة الأكاديمية ── */
+async function openYearForm(editId = null) {
+  const years = getAcademicYears();
+  const editing = editId ? years.find((y) => y.id === editId) : null;
+
+  const bodyHTML = `
+    <div class="field">
+      <label class="field__label">اسم السنة الأكاديمية</label>
+      <input class="input" name="name" required value="${editing ? escapeHTML(editing.name) : ""}" placeholder="مثال: 2026 — 2027">
+    </div>
+    <div class="field">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+        <input type="checkbox" name="isCurrent" ${editing?.isCurrent ? "checked" : ""} style="width:16px;height:16px;">
+        جعلها السنة الحالية (نشطة)
+      </label>
+      <div class="field__hint">سنة واحدة بس ممكن تكون "السنة الحالية" — لو حددت سنة جديدة هتتلغى القديمة تلقائيًا.</div>
+    </div>
+  `;
+
+  const data = await formModal({ title: editing ? "تعديل السنة الأكاديمية" : "إضافة سنة أكاديمية", bodyHTML, submitText: editing ? "حفظ التعديلات" : "إضافة" });
+  if (!data) return;
+
+  const isCurrent = data.isCurrent === "on";
+
+  if (editing) {
+    editing.name = data.name;
+    editing.isCurrent = isCurrent;
+  } else {
+    years.push({ id: generateId("AY"), name: data.name, isCurrent });
+  }
+
+  if (isCurrent) {
+    years.forEach((y) => { if (y.id !== (editing?.id || years[years.length - 1]?.id)) y.isCurrent = false; });
+  }
+
+  saveAcademicYears(years);
+  toast(editing ? "تم تحديث السنة الأكاديمية" : "تم إضافة السنة الأكاديمية بنجاح", "success");
+  renderAcademicTree();
+}
+
+async function deleteYear(yearId) {
+  const years = getAcademicYears();
+  const year = years.find((y) => y.id === yearId);
+  const termsCount = getTerms().filter((t) => t.yearId === yearId).length;
+
+  const ok = await confirmDialog({
+    title: "حذف السنة الأكاديمية",
+    body: `هل أنت متأكد من حذف <strong>${escapeHTML(year?.name || "")}</strong>؟${termsCount ? `<br><br><small>ستحذف ${termsCount} ترم(ات) تابعة لها وجميع شهورها.</small>` : ""}`,
+    confirmText: "حذف نهائى",
+    tone: "danger",
+  });
+  if (!ok) return;
+
+  const yearTerms = getTerms().filter((t) => t.yearId === yearId);
+  const termIds = yearTerms.map((t) => t.id);
+
+  saveAcademicMonths(getAcademicMonths().filter((m) => !termIds.includes(m.termId)));
+  saveTerms(getTerms().filter((t) => t.yearId !== yearId));
+  saveAcademicYears(years.filter((y) => y.id !== yearId));
+  toast("تم حذف السنة الأكاديمية", "success");
+  renderAcademicTree();
+}
+
+/* ── الترم ── */
+async function openTermForm(yearId, editId = null) {
+  const years = getAcademicYears();
+  const terms = getTerms();
+  const editing = editId ? terms.find((t) => t.id === editId) : null;
+  const targetYearId = yearId || editing?.yearId;
+
+  const bodyHTML = `
+    <div class="field">
+      <label class="field__label">اسم الترم</label>
+      <input class="input" name="name" required value="${editing ? escapeHTML(editing.name) : ""}" placeholder="مثال: الترم الأول">
+    </div>
+    <div class="field">
+      <label class="field__label">الترتيب</label>
+      <input class="input" name="order" type="number" min="1" required value="${editing ? editing.order : (terms.filter((t) => t.yearId === targetYearId).length + 1)}">
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label class="field__label">تاريخ البداية</label>
+        <input class="input" name="startDate" type="date" required value="${editing?.startDate || ""}">
+      </div>
+      <div class="field">
+        <label class="field__label">تاريخ النهاية</label>
+        <input class="input" name="endDate" type="date" required value="${editing?.endDate || ""}">
+      </div>
+    </div>
+  `;
+
+  const data = await formModal({ title: editing ? "تعديل الترم" : "إضافة ترم جديد", bodyHTML, submitText: editing ? "حفظ التعديلات" : "إضافة" });
+  if (!data) return;
+
+  if (editing) {
+    editing.name = data.name;
+    editing.order = Number(data.order) || editing.order;
+    editing.startDate = data.startDate;
+    editing.endDate = data.endDate;
+  } else {
+    terms.push({ id: generateId("TR"), yearId: targetYearId, name: data.name, order: Number(data.order) || 1, startDate: data.startDate, endDate: data.endDate });
+  }
+
+  saveTerms(terms);
+  toast(editing ? "تم تحديث الترم" : "تم إضافة الترم بنجاح", "success");
+  renderAcademicTree();
+}
+
+async function deleteTerm(termId) {
+  const terms = getTerms();
+  const term = terms.find((t) => t.id === termId);
+  const monthsCount = getAcademicMonths().filter((m) => m.termId === termId).length;
+
+  const ok = await confirmDialog({
+    title: "حذف الترم",
+    body: `هل أنت متأكد من حذف <strong>${escapeHTML(term?.name || "")}</strong>؟${monthsCount ? `<br><br><small>ستحذف ${monthsCount} شهر(ات) تابعة له.</small>` : ""}`,
+    confirmText: "حذف نهائى",
+    tone: "danger",
+  });
+  if (!ok) return;
+
+  saveAcademicMonths(getAcademicMonths().filter((m) => m.termId !== termId));
+  saveTerms(terms.filter((t) => t.id !== termId));
+  toast("تم حذف الترم", "success");
+  renderAcademicTree();
+}
+
+/* ── الشهر ── */
+async function openMonthForm(termId, editId = null) {
+  const months = getAcademicMonths();
+  const editing = editId ? months.find((m) => m.id === editId) : null;
+  const targetTermId = termId || editing?.termId;
+
+  const bodyHTML = `
+    <div class="field">
+      <label class="field__label">اسم الشهر</label>
+      <input class="input" name="name" required value="${editing ? escapeHTML(editing.name) : ""}" placeholder="مثال: أكتوبر">
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label class="field__label">تاريخ البداية</label>
+        <input class="input" name="startDate" type="date" required value="${editing?.startDate || ""}">
+      </div>
+      <div class="field">
+        <label class="field__label">تاريخ النهاية</label>
+        <input class="input" name="endDate" type="date" required value="${editing?.endDate || ""}">
+      </div>
+    </div>
+  `;
+
+  const data = await formModal({ title: editing ? "تعديل الشهر" : "إضافة شهر جديد", bodyHTML, submitText: editing ? "حفظ التعديلات" : "إضافة" });
+  if (!data) return;
+
+  if (editing) {
+    editing.name = data.name;
+    editing.startDate = data.startDate;
+    editing.endDate = data.endDate;
+  } else {
+    months.push({ id: generateId("AM"), termId: targetTermId, name: data.name, startDate: data.startDate, endDate: data.endDate });
+  }
+
+  saveAcademicMonths(months);
+  toast(editing ? "تم تحديث الشهر" : "تم إضافة الشهر بنجاح", "success");
+  renderAcademicTree();
+}
+
+async function deleteMonth(monthId) {
+  const months = getAcademicMonths();
+  const month = months.find((m) => m.id === monthId);
+
+  const ok = await confirmDialog({
+    title: "حذف الشهر",
+    body: `هل أنت متأكد من حذف شهر <strong>${escapeHTML(month?.name || "")}</strong>؟`,
+    confirmText: "حذف نهائى",
+    tone: "danger",
+  });
+  if (!ok) return;
+
+  saveAcademicMonths(months.filter((m) => m.id !== monthId));
+  toast("تم حذف الشهر", "success");
+  renderAcademicTree();
 }
 
 /* ================= إدارة (المدرسون المساعدون والصلاحيات) ================= */
@@ -721,6 +1042,14 @@ async function deleteAssistant(username) {
 /* ================= منطقة خطرة ================= */
 function renderDangerTab(box) {
   box.innerHTML = `
+    <div class="card card-pad" style="border-color: var(--warning); margin-bottom:16px;">
+      <div class="card__head"><div class="card__title" style="color:var(--warning);">تهيئة دفتر الأستاذ</div></div>
+      <p class="text-muted" style="margin-bottom:14px; font-size:13.5px;">
+        لو السيرفر محدّث من نسخة قديمة، ده زر بينشأ قيود افتتاحية لكل الطلاب اللي عليهم متأخرات أو رصيد محفظة.
+        <strong>اضغطه مرة واحدة بس.</strong>
+      </p>
+      <button class="btn btn-warning" id="backfillLedgerBtn">${icons.clipboard} تهيئة دفتر الأستاذ</button>
+    </div>
     <div class="card card-pad" style="border-color: var(--danger-light);">
       <div class="card__head"><div class="card__title text-danger">منطقة خطرة</div></div>
       <p class="text-muted" style="margin-bottom:14px; font-size:13.5px;">
@@ -729,6 +1058,18 @@ function renderDangerTab(box) {
       <button class="btn btn-danger" id="resetBtn">${icons.trash} إعادة ضبط النظام بالكامل</button>
     </div>
   `;
+
+  document.getElementById("backfillLedgerBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "تهيئة دفتر الأستاذ",
+      body: "هيتم إنشاء قيود افتتاحية لكل الطلاب اللي عليهم متأخرات أو رصيد محفظة. هل أنت متأكد؟",
+      confirmText: "تهيئة",
+      tone: "warning",
+    });
+    if (!ok) return;
+    const count = backfillLedger();
+    toast(`تم تهيئة ${count} قيد في دفتر الأستاذ ✓`, "success");
+  });
 
   document.getElementById("resetBtn").addEventListener("click", async () => {
     const ok = await confirmDialog({
@@ -743,3 +1084,5 @@ function renderDangerTab(box) {
     setTimeout(() => (window.location.href = "login.html"), 1000);
   });
 }
+
+/* ── btn-xs معرّف في style.css ── */

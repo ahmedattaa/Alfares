@@ -5,14 +5,46 @@
 // نظام المتأخرات: كل دفعة بتخزن "lateBalanceDelta" (مقدار التغيير اللى
 // أحدثته فى رصيد متأخرات الطالب). ده بيخلّى التراجع عن حالة سابقة (لو
 // المستخدم غيّر رأيه أو صحّح غلط) دقيق 100% مهما تكررت التصحيحات.
+//
+// نظام القفل: الطالب اللى يُسجل عليه غياب بدون إذن أو استدعاء ولى أمر
+// بيتقفل تلقائيًا ومبيحضرش الحصة الجاية غير لما المستير يفتح القفل.
 // =========================================================
 
-import { getAttendance, saveAttendance, getPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses } from "./storage.js";
+import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, initStudentLedger, getSettings } from "./storage.js";
 import { generateId, todayISO, formatMoney } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
 
 function nowTime() {
   return new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** هل الطالب مقفول (محظور من الحضور للحصة الجاية)؟ */
+export function isStudentLocked(student) {
+  return student?.locked === true;
+}
+
+/** فتح القفل على الطالب (السماح بالحضور مرة تانية) */
+export function unlockStudent(studentId) {
+  const students = getStudents();
+  const student = students.find((s) => s.id === studentId);
+  if (!student) return null;
+  student.locked = false;
+  student.lockReason = null;
+  student.lockDate = null;
+  saveStudents(students);
+  return student;
+}
+
+/** قفل الطالب (منع الحضور للحصة الجاية) */
+export function lockStudent(studentId, reason) {
+  const students = getStudents();
+  const student = students.find((s) => s.id === studentId);
+  if (!student) return null;
+  student.locked = true;
+  student.lockReason = reason;
+  student.lockDate = todayISO();
+  saveStudents(students);
+  return student;
 }
 
 /**
@@ -31,8 +63,18 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
   const students = getStudents();
   const student = students.find((s) => s.id === studentId);
   const attendance = getAttendance();
-  const payments = getPayments();
+  const payments = getAllPayments();
   const now = nowTime();
+
+  // فحص القفل: لو الطالب مقفول ومفيش option يسمح بالتجاوز
+  if (student && isStudentLocked(student) && !options.forceUnlock) {
+    return { locked: true, student, reason: student.lockReason };
+  }
+
+  // تحديد الفترة الأكاديمية تلقائيًا
+  const monthInfo = findAcademicMonthById(date);
+  const termId = monthInfo?.termId || null;
+  const monthId = monthInfo?.id || null;
 
   let record = attendance.find((a) => a.studentId === studentId && a.date === date && a.category === "attendance");
 
@@ -41,12 +83,21 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
     const oldPayment = payments.find((p) => p.attendanceId === record.id);
     if (oldPayment && student) {
       student.lateBalance = Math.max(0, (student.lateBalance || 0) - Number(oldPayment.lateBalanceDelta || 0));
+      // إعادة رصيد المحفظة لو كان اتحسب من المحفظة
+      if (oldPayment.walletUsed > 0) {
+        student.walletBalance = (student.walletBalance || 0) + Number(oldPayment.walletUsed);
+      }
     }
-    if (oldPayment) payments.splice(payments.indexOf(oldPayment), 1);
+    if (oldPayment) {
+      oldPayment.isVoided = true;
+      oldPayment.voidedAt = todayISO();
+    }
     record.statusId = status.id;
     record.time = now;
+    record.termId = termId;
+    record.monthId = monthId;
   } else {
-    record = { id: generateId("ATT"), studentId, date, time: now, statusId: status.id, category: "attendance" };
+    record = { id: generateId("ATT"), studentId, date, time: now, statusId: status.id, category: "attendance", termId, monthId };
     attendance.push(record);
   }
 
@@ -57,7 +108,7 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
     const sessionDue = dueAmount(student, group);
     const priorBalance = Number(student?.lateBalance || 0); // الرصيد الحقيقى بعد التراجع فوق
 
-    let collected, delta, note;
+    let collected, delta, note, walletUsed = 0;
 
     if (status.payment === "unpaid") {
       collected = 0;
@@ -65,30 +116,82 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
       note = "قيمة حصة (غير مدفوعة)";
     } else {
       const totalDue = sessionDue + priorBalance;
-      // بدون تحديد صريح للمبلغ (زى التسجيل الجماعى السريع فى إدارة الحصة)، نحصّل سعر
-      // هذه الحصة بس ولا نلمس أى متأخرات قديمة، حفاظًا على الأمان لأنه مفيش حوار مالى
-      // حقيقى بيحصل وقتها. خانة الاستقبال هى اللى بتحدد المبلغ الكامل صراحةً لو فيه تحصيل فعلى.
-      collected = options.collectedAmount != null ? Math.max(0, Number(options.collectedAmount)) : sessionDue;
-      const newBalance = Math.max(0, totalDue - collected);
+
+      // لو المستخدم محددش مبلغ (التسجيل السريع من إدارة الحصة)، نستخدم المحفظة أولًا لو الإعداد مفعّل
+      const settings = getSettings();
+      let walletUsed = 0;
+      if (settings.autoDeductWallet !== false && options.collectedAmount == null && (student.walletBalance || 0) > 0) {
+        walletUsed = Math.min(student.walletBalance, sessionDue);
+        student.walletBalance = Math.max(0, (student.walletBalance || 0) - walletUsed);
+        if (walletUsed > 0) {
+          const wtxns = getWalletTransactions();
+          wtxns.push({
+            id: generateId("WLT"),
+            studentId,
+            groupId: student.groupId,
+            amount: walletUsed,
+            type: "deduction",
+            note: "خصم تلقائى — تسجيل حضور",
+            date: todayISO(),
+          });
+          saveWalletTransactions(wtxns);
+        }
+      }
+
+      // بدون تحديد صريح للمبلغ (زى التسجيل الجماعى السريع)، نحصّل سعر هذه الحصة
+      // بس ولا نلمس أى متأخرات قديمة، حفاظًا على الأمان لأنه مفيش حوار مالى حقيقى
+      const explicitAmount = options.collectedAmount != null ? Math.max(0, Number(options.collectedAmount)) : 0;
+      collected = explicitAmount > 0 ? explicitAmount : sessionDue;
+      const effectiveCollected = collected + walletUsed;
+      const newBalance = Math.max(0, totalDue - effectiveCollected);
       delta = newBalance - priorBalance;
-      note = collected > sessionDue && priorBalance > 0 ? `حصة (${formatMoney(sessionDue)}) + مستحقات سابقة` : "قيمة حصة";
+      note = effectiveCollected > sessionDue && priorBalance > 0 ? `حصة (${formatMoney(sessionDue)}) + مستحقات سابقة` : "قيمة حصة";
+      if (walletUsed > 0) note += ` (محفظة: ${formatMoney(walletUsed)})`;
     }
 
     payments.push({
       id: generateId("PAY"),
       studentId,
-      groupId: student?.groupId,
+      groupId: options.sessionGroupId || student?.groupId,
       attendanceId: record.id,
-      date,
+      date: todayISO(), // تاريخ الدفعة دايمًا النهاردة الحقيقى (وقت استلام الفلوس فعليًا)، مش تاريخ الحصة اللى بيتصحح
+      sessionDate: date, // نحتفظ بتاريخ الحصة نفسها للمرجعية لو احتجناها
       amount: collected,
+      walletUsed: walletUsed || 0,
       status: status.payment,
       lateBalanceDelta: delta,
       note,
+      termId,
+      monthId,
     });
+
+    // تسجيل التحصيل النقدي في الوردية + دفتر الأستاذ
+    if (collected > 0) {
+      recordCashCollection(studentId, collected, "session", `حصة ${date}`, { referenceId: payments[payments.length - 1].id, referenceType: "payment" });
+    }
+    if (delta > 0) {
+      recordLedgerOnly(studentId, "session_fee", `مستحق حصة ${date} (غير مدفوع)`, delta, 0, { referenceId: payments[payments.length - 1].id, referenceType: "payment" });
+    } else if (delta < 0 && collected === 0 && walletUsed > 0) {
+      recordLedgerOnly(studentId, "wallet_payment", `سداد من المحفظة — حصة ${date}`, 0, walletUsed, { referenceType: "wallet" });
+    }
 
     if (student) student.lateBalance = Math.max(0, priorBalance + delta);
 
     financeInfo = { sessionDue, priorBalance, collected, remaining: student ? student.lateBalance : 0 };
+  }
+
+  // تطبيق القفل التلقائى: غياب بدون إذن أو استدعاء ولى أمر
+  if (student && (statusId === "ST-ABSENT" || statusId === "ST-CALL")) {
+    student.locked = true;
+    student.lockReason = statusId === "ST-ABSENT" ? "غياب بدون إذن" : "استدعاء ولى أمر";
+    student.lockDate = date;
+  }
+
+  // فتح القفل تلقائى: لو الحضور (مدفوع أو غير مدفوع)
+  if (student && (statusId === "ST-PAID" || statusId === "ST-UNPAID")) {
+    student.locked = false;
+    student.lockReason = null;
+    student.lockDate = null;
   }
 
   saveAttendance(attendance);
@@ -98,21 +201,173 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
   return { record, status, student, financeInfo };
 }
 
-/** تسجيل إجراء استثنائى (استدعاء ولى أمر / طرد) — يُضاف كسجل جديد دائمًا ولا يستبدل حضور اليوم */
-export function recordActionStatus(studentId, statusId, date = todayISO()) {
+/**
+ * تسجيل إجراء استثنائى — يُضاف كسجل جديد دائمًا ولا يستبدل حضور اليوم.
+ * @param {string} note - ملاحظة نصية إجبارية توضح سبب الإجراء.
+ */
+export function recordActionStatus(studentId, statusId, date = todayISO(), note = "") {
   const statuses = getStudentStatuses();
   const status = statuses.find((s) => s.id === statusId);
   if (!status) return null;
 
+  const students = getStudents();
+  const student = students.find((s) => s.id === studentId);
+
+  // فحص القفل
+  if (student && isStudentLocked(student)) {
+    return { locked: true, student, reason: student.lockReason };
+  }
+
+  // تحديد الفترة الأكاديمية تلقائيًا
+  const monthInfo = findAcademicMonthById(date);
+  const termId = monthInfo?.termId || null;
+  const monthId = monthInfo?.id || null;
+
   const attendance = getAttendance();
-  const record = { id: generateId("ATT"), studentId, date, time: nowTime(), statusId: status.id, category: "action" };
+  const record = { id: generateId("ATT"), studentId, date, time: nowTime(), statusId: status.id, category: "action", note: note || "", termId, monthId };
   attendance.push(record);
   saveAttendance(attendance);
 
-  return { record, status };
+  // === أتمتة القفل والطرد ===
+
+  // استدعاء ولى أمر = قفل
+  if (student && statusId === "ST-CALL") {
+    student.locked = true;
+    student.lockReason = "استدعاء ولى أمر";
+    student.lockDate = date;
+  }
+
+  // إيقاف مؤقت (autoLock) = قفل الحساب
+  if (student && status.autoLock) {
+    student.locked = true;
+    student.lockReason = status.name;
+    student.lockDate = date;
+  }
+
+  // طرد أو فصل نهائى (ST-EXPEL أو autoExpel) = تغيير الحالة إلى expelled
+  if (student && (statusId === "ST-EXPEL" || status.autoExpel)) {
+    student.status = "expelled";
+  }
+
+  // حفظ تغييرات الطالب لو اتغير
+  if (student && (statusId === "ST-CALL" || status.autoLock || statusId === "ST-EXPEL" || status.autoExpel)) {
+    saveStudents(students);
+  }
+
+  // مكافأة: إذا الحالة فيها rewardAmount > 0، نضيف للمحفظة
+  let rewardResult = null;
+  if (student && status.rewardAmount > 0) {
+    rewardResult = addWalletDeposit(studentId, status.rewardAmount, `مكافأة: ${status.name}`);
+    const updatedStudents = getStudents();
+    const updatedStudent = updatedStudents.find((s) => s.id === studentId);
+    if (updatedStudent) {
+      student.walletBalance = updatedStudent.walletBalance;
+      student.lateBalance = updatedStudent.lateBalance;
+    }
+  }
+
+  return { record, status, rewardResult };
+}
+
+/** تسوية كل المتأخرات القديمة على الطالب دفعة واحدة (مستقلة عن حصة اليوم) — تُستخدم فى "مستحقات أخرى" */
+export function settleLateBalance(studentId) {
+  const students = getStudents();
+  const student = students.find((s) => s.id === studentId);
+  if (!student || !(student.lateBalance > 0)) return null;
+
+  const amount = student.lateBalance;
+  const payments = getAllPayments();
+
+  // تحديد الفترة الأكاديمية تلقائيًا
+  const monthInfo = findAcademicMonthById(todayISO());
+
+  payments.push({
+    id: generateId("PAY"),
+    studentId,
+    groupId: student.groupId,
+    attendanceId: null,
+    date: todayISO(),
+    amount,
+    status: "paid",
+    lateBalanceDelta: -amount,
+    note: "تحصيل متأخرات سابقة",
+    termId: monthInfo?.termId || null,
+    monthId: monthInfo?.id || null,
+  });
+  student.lateBalance = 0;
+
+  savePayments(payments);
+  saveStudents(students);
+
+  // تسجيل التحصيل النقدي في الوردية + دفتر الأستاذ
+  recordCashCollection(studentId, amount, "late", "تحصيل متأخرات سابقة", { referenceId: payments[payments.length - 1].id, referenceType: "payment" });
+  return { student, amount };
+}
+
+/** تسوية استحقاق مالى مسمّى واحد بعينه (زى "ملزمة امتحان الشهر") */
+export function settleExtraCharge(chargeId) {
+  const charges = getExtraCharges();
+  const charge = charges.find((c) => c.id === chargeId);
+  if (!charge || charge.status === "paid") return null;
+  charge.status = "paid";
+  saveExtraCharges(charges);
+  return charge;
 }
 
 /** سجل حضور اليوم العادى لطالب معين (بدون الإجراءات الاستثنائية) */
 export function todayAttendanceRecord(studentId, date = todayISO()) {
   return getAttendance().find((a) => a.studentId === studentId && a.date === date && a.category === "attendance");
+}
+
+/** جلب كل الطلاب الغائبين لتاريخ معين (مع أو بدون إذن) */
+export function getAbsentStudents(date = todayISO()) {
+  const attendance = getAttendance();
+  const students = getStudents();
+  const statuses = getStudentStatuses();
+
+  const absentRecords = attendance.filter((a) => a.date === date && a.category === "attendance");
+
+  return absentRecords
+    .map((record) => {
+      const status = statuses.find((s) => s.id === record.statusId);
+      if (!status || status.presence !== "absent") return null;
+      const student = students.find((s) => s.id === record.studentId);
+      if (!student) return null;
+      return { student, record, status };
+    })
+    .filter(Boolean);
+}
+
+/** تغيير حالة الغياب (من بدون إذن إلى بإذن أو العكس) */
+export function changeAbsenceStatus(studentId, newStatusId, date = todayISO()) {
+  const attendance = getAttendance();
+  const students = getStudents();
+  const statuses = getStudentStatuses();
+  const student = students.find((s) => s.id === studentId);
+  const newStatus = statuses.find((s) => s.id === newStatusId);
+
+  if (!student || !newStatus) return null;
+
+  const record = attendance.find((a) => a.studentId === studentId && a.date === date && a.category === "attendance");
+  if (!record) return null;
+
+  record.statusId = newStatusId;
+
+  // تحديث القفل حسب الحالة الجديدة
+  if (newStatusId === "ST-EXCUSED") {
+    // غياب بإذن = فتح القفل
+    student.locked = false;
+    student.lockReason = null;
+    student.lockDate = null;
+  } else if (newStatusId === "ST-ABSENT") {
+    // غياب بدون إذن = قفل
+    student.locked = true;
+    student.lockReason = "غياب بدون إذن";
+    student.lockDate = date;
+  }
+
+  saveAttendance(attendance);
+  saveStudents(students);
+
+  return { record, student, status: newStatus };
 }

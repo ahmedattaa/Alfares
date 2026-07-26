@@ -10,6 +10,7 @@
 // =========================================================
 
 import { idbGet, idbGetAll, idbSet, idbDelete, idbClear } from "./idb.js";
+import { generateId, todayISO } from "./helpers.js";
 
 const KEYS = {
   students: "center_students",
@@ -23,7 +24,15 @@ const KEYS = {
   session: "center_session",
   sessionLogs: "center_session_logs",
   extraCharges: "center_extra_charges",
-  seeded: "center_seeded_v6",
+  walletTransactions: "center_wallet_transactions",
+  followupLogs: "center_followup_logs",
+  academicPeriods: "center_academic_periods",
+  academicYears: "center_academic_years",
+  terms: "center_terms",
+  academicMonths: "center_academic_months",
+  shifts: "center_shifts",
+  ledger: "center_ledger",
+  seeded: "center_seeded_v12",
 };
 
 const MOCK_BASE = "assets/mock/";
@@ -32,6 +41,12 @@ let cache = {};
 let cacheLoaded = false;
 let loadingPromise = null;
 const pendingWrites = new Set();
+
+// تزامن النوافذ: لما أى نافذة بتحفظ، النوافذ التانية بترجع تقرأ من IndexedDB
+const _syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("center_storage_sync") : null;
+if (_syncChannel) {
+  _syncChannel.onmessage = () => { cache = {}; cacheLoaded = false; loadingPromise = null; };
+}
 
 /** يتتبّع أى كتابة لسه شغالة فى الخلفية، عشان نقدر نستناها قبل أى تنقّل بين الصفحات */
 function trackWrite(promise) {
@@ -89,6 +104,7 @@ function readJSON(key, fallback) {
 function writeJSON(key, value) {
   cache[key] = value;
   trackWrite(idbSet(key, value).catch((e) => console.error("IndexedDB write error:", key, e)));
+  if (_syncChannel) _syncChannel.postMessage({ key, ts: Date.now() });
   return true;
 }
 
@@ -117,7 +133,7 @@ export async function seedIfNeeded() {
   if (readJSON(KEYS.seeded, false) === true) return;
 
   try {
-    const [students, grades, groups, studentStatuses, attendance, payments, exams, settings] = await Promise.all([
+    const [students, grades, groups, studentStatuses, attendance, payments, exams, settings, academicPeriods, academicYears, terms, academicMonths] = await Promise.all([
       fetchMock("students.json"),
       fetchMock("grades.json"),
       fetchMock("groups.json"),
@@ -126,6 +142,10 @@ export async function seedIfNeeded() {
       fetchMock("payments.json"),
       fetchMock("exams.json"),
       fetchMock("settings.json"),
+      fetchMock("academicPeriods.json"),
+      fetchMock("academicYears.json"),
+      fetchMock("terms.json"),
+      fetchMock("academicMonths.json"),
     ]);
 
     writeJSON(KEYS.students, students);
@@ -136,6 +156,10 @@ export async function seedIfNeeded() {
     writeJSON(KEYS.payments, resolvePlaceholders(payments));
     writeJSON(KEYS.exams, resolvePlaceholders(exams));
     writeJSON(KEYS.settings, settings);
+    writeJSON(KEYS.academicPeriods, academicPeriods);
+    writeJSON(KEYS.academicYears, academicYears);
+    writeJSON(KEYS.terms, terms);
+    writeJSON(KEYS.academicMonths, academicMonths);
     writeJSON(KEYS.seeded, true);
   } catch (e) {
     console.error("فشل تحميل بيانات Mock — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
@@ -166,14 +190,153 @@ export const saveSessionLogs = (list) => writeJSON(KEYS.sessionLogs, list);
 export const getExtraCharges = () => readJSON(KEYS.extraCharges, []);
 export const saveExtraCharges = (list) => writeJSON(KEYS.extraCharges, list);
 
+/**
+ * تطبيق الاستحقاقات المالية المعلقة على طالب جديد (أو طالب انتقل لمجموعة جديدة).
+ * بتجيب كل الـ batches اللى ليها طلاب فى نفس المجموعة وبنفس الاسم والمبلغ،
+ * وبتشوف لو الطالب ده ناقصه سجل ليها — لو ناقص بتسجله تلقائيًا.
+ */
+export function applyPendingCharges(studentId, groupId) {
+  const charges = getExtraCharges();
+  const students = getStudents();
+  const groupStudents = students.filter((s) => s.groupId === groupId && s.id !== studentId);
+  if (!groupStudents.length) return;
+
+  // بناء خريطة: batchId → { name, amount, date } من طلاب المجموعة
+  const batchMap = {};
+  charges.forEach((c) => {
+    if (groupStudents.some((s) => s.id === c.studentId) && c.batchId) {
+      if (!batchMap[c.batchId]) batchMap[c.batchId] = { name: c.name, amount: c.amount, date: c.date };
+    }
+  });
+
+  // بناء قائمة الـ batchIds اللى الطالب عنده فيها سجل
+  const studentBatchIds = new Set(
+    charges.filter((c) => c.studentId === studentId).map((c) => c.batchId)
+  );
+
+  let added = 0;
+  Object.entries(batchMap).forEach(([batchId, info]) => {
+    if (studentBatchIds.has(batchId)) return;
+    charges.push({
+      id: generateId("CHG"),
+      batchId,
+      studentId,
+      name: info.name,
+      amount: info.amount,
+      date: info.date,
+      status: "unpaid",
+    });
+    added++;
+  });
+
+  if (added > 0) saveExtraCharges(charges);
+  return added;
+}
+
+/* ---------------- Wallet Transactions (سجل إيداعات المحفظة) ---------------- */
+export const getWalletTransactions = () => readJSON(KEYS.walletTransactions, []);
+export const saveWalletTransactions = (list) => writeJSON(KEYS.walletTransactions, list);
+
+/**
+ * خصم مبلغ من محفظة الطالب مع تسجيل الحركة في walletTransactions.
+ * يُرجع المبلغ الفعلي المُخصَّم (قد يكون أقل لو الرصيد مش كفاية).
+ */
+export function deductFromWallet(studentId, amount, note = "خصم من المحفظة") {
+  if (amount <= 0) return 0;
+  const students = getStudents();
+  const s = students.find((x) => x.id === studentId);
+  if (!s) return 0;
+  const actual = Math.min(amount, Number(s.walletBalance || 0));
+  if (actual <= 0) return 0;
+  s.walletBalance = Math.max(0, Number(s.walletBalance || 0) - actual);
+  saveStudents(students);
+  const txns = getWalletTransactions();
+  const txnId = generateId("WLT");
+  txns.push({
+    id: txnId,
+    studentId,
+    groupId: s.groupId,
+    amount: actual,
+    type: "deduction",
+    note,
+    date: todayISO(),
+  });
+  saveWalletTransactions(txns);
+
+  // تسجيل الخصم في دفتر الأستاذ (مش تحصيل نقدي — خصم من المحفظة)
+  recordLedgerOnly(studentId, "wallet_payment", note, 0, actual, { referenceId: txnId, referenceType: "wallet" });
+
+  return actual;
+}
+
+/**
+ * إيداع مبلغ في محفظة الطالب.
+ * يُغطّى المتأخرات (lateBalance) أولاً، والباقي يُضاف إلى walletBalance.
+ * يُرجع ملخص العملية: { walletDeposit, debtCovered, newWalletBalance, newLateBalance }.
+ */
+export function addWalletDeposit(studentId, amount, note = "إيداع ولي أمر") {
+  const students = getStudents();
+  const student = students.find((s) => s.id === studentId);
+  if (!student || amount <= 0) return null;
+
+  const lateBalance = Number(student.lateBalance || 0);
+  const walletBalance = Number(student.walletBalance || 0);
+
+  // أول حاجة نغطّى المتأخرات
+  const debtCovered = Math.min(lateBalance, amount);
+  const remaining = amount - debtCovered;
+
+  student.lateBalance = Math.max(0, lateBalance - debtCovered);
+  student.walletBalance = walletBalance + remaining;
+
+  // تسجيل المعاملة
+  const txns = getWalletTransactions();
+  const txnId = generateId("WLT");
+  txns.push({
+    id: txnId,
+    studentId,
+    groupId: student.groupId,
+    amount,
+    debtCovered,
+    walletAdded: remaining,
+    note,
+    date: todayISO(),
+  });
+  saveWalletTransactions(txns);
+  saveStudents(students);
+
+  // تسجيل الإيداع النقدي في الوردية + دفتر الأستاذ
+  recordCashCollection(studentId, amount, "wallet_deposit", note, { referenceId: txnId, referenceType: "wallet" });
+
+  return {
+    walletDeposit: remaining,
+    debtCovered,
+    newWalletBalance: student.walletBalance,
+    newLateBalance: student.lateBalance,
+  };
+}
+
 /** يسجل فتح حصة جديدة (مجموعة + تاريخ) إن لم تكن مسجلة بالفعل لنفس اليوم */
 export function logSessionOpen(groupId, date, openedBy) {
   const logs = getSessionLogs();
   const exists = logs.find((l) => l.groupId === groupId && l.date === date);
   if (exists) return exists;
-  const entry = { id: `SES-${Date.now()}`, groupId, date, openedBy, openedAt: Date.now() };
+  const entry = { id: `SES-${Date.now()}`, groupId, date, openedBy, openedAt: Date.now(), closed: false };
   logs.push(entry);
   saveSessionLogs(logs);
+  return entry;
+}
+
+/** يقفل حصة مفتوحة يدويًا (بعد ما المدرس يخلّص تسجيلها) */
+export function closeSession(groupId, date, closedBy) {
+  const logs = getSessionLogs();
+  const entry = logs.find((l) => l.groupId === groupId && l.date === date);
+  if (entry) {
+    entry.closed = true;
+    entry.closedBy = closedBy;
+    entry.closedAt = Date.now();
+    saveSessionLogs(logs);
+  }
   return entry;
 }
 
@@ -182,7 +345,8 @@ export const getAttendance = () => readJSON(KEYS.attendance, []);
 export const saveAttendance = (list) => writeJSON(KEYS.attendance, list);
 
 /* ---------------- Payments ---------------- */
-export const getPayments = () => readJSON(KEYS.payments, []);
+export const getPayments = () => readJSON(KEYS.payments, []).filter((p) => !p.isVoided);
+export const getAllPayments = () => readJSON(KEYS.payments, []);
 export const savePayments = (list) => writeJSON(KEYS.payments, list);
 
 /* ---------------- Exams ---------------- */
@@ -224,6 +388,237 @@ export function isLoggedIn() {
   return !!getSession();
 }
 
+/* ---------------- Followup Logs (سجل ملاحظات المتابعة) ---------------- */
+export const getFollowupLogs = () => readJSON(KEYS.followupLogs, []);
+export const saveFollowupLogs = (list) => writeJSON(KEYS.followupLogs, list);
+
+/**
+ * إضافة ملاحظة متابعة لطالب.
+ * @returns السجل الجديد
+ */
+export function addFollowupLog(studentId, text, options = {}) {
+  const logs = getFollowupLogs();
+  const entry = {
+    id: generateId("FUL"),
+    studentId,
+    text,
+    date: options.date || todayISO(),
+    time: options.time || new Date().toTimeString().slice(0, 5),
+    writtenBy: options.writtenBy || "السكرتارية",
+  };
+  logs.push(entry);
+  saveFollowupLogs(logs);
+  return entry;
+}
+
+/**
+ * آخر ملاحظة متابعة لطالب معين.
+ * @returns السجل الأحدث أو null
+ */
+export function getLastFollowupLog(studentId) {
+  const logs = getFollowupLogs().filter((l) => l.studentId === studentId);
+  return logs.length ? logs[logs.length - 1] : null;
+}
+
+/* ---------------- Academic Periods (الأترام والشهور الأكاديمية) ---------------- */
+export const getAcademicPeriods = () => readJSON(KEYS.academicPeriods, []);
+export const saveAcademicPeriods = (list) => writeJSON(KEYS.academicPeriods, list);
+
+/**
+ * يبحث عن الشهر الأكاديمى الذى يقع فيه تاريخ معين.
+ * يُرجع كائن الشهر ( مع termId و yearId و termName و yearName) أو null.
+ * الشهر يُعتبر "مطابق" لو التاريخ >= startDate && التاريخ <= endDate.
+ */
+export function findAcademicMonth(dateStr) {
+  if (!dateStr) return null;
+  const periods = getAcademicPeriods();
+  for (const year of periods) {
+    for (const term of (year.terms || [])) {
+      for (const month of (term.months || [])) {
+        if (dateStr >= month.startDate && dateStr <= month.endDate) {
+          return { ...month, termId: term.id, termName: term.name, yearId: year.id, yearName: year.name };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * يبحث عن الترم الذى يقع فيه تاريخ معين.
+ * يُرجع كائن الترم (مع yearId و yearName) أو null.
+ */
+export function findAcademicTerm(dateStr) {
+  if (!dateStr) return null;
+  const periods = getAcademicPeriods();
+  for (const year of periods) {
+    for (const term of (year.terms || [])) {
+      if (dateStr >= term.startDate && dateStr <= term.endDate) {
+        return { ...term, yearId: year.id, yearName: year.name };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * يُرجع الترم النشط حالياً (اللى تاريخ اليوم مقعده فيه) أو null.
+ */
+export function getActiveTerm() {
+  return findAcademicTerm(todayISO());
+}
+
+/**
+ * يُرجع الشهر الأكاديمى النشط حالياً (اللى تاريخ اليوم مقعده فيه) أو null.
+ */
+export function getActiveMonth() {
+  return findAcademicMonth(todayISO());
+}
+
+/**
+ * يُرجع كل الأترام كمصفوفة مسطحة (مع yearName) لسهولة العرض فى القوائم المنسدلة.
+ */
+export function getAllTermsFlat() {
+  const result = [];
+  for (const year of getAcademicPeriods()) {
+    for (const term of (year.terms || [])) {
+      result.push({ ...term, yearId: year.id, yearName: year.name });
+    }
+  }
+  return result;
+}
+
+/**
+ * يُرجع كل الشهور كمصفوفة مسطحة (مع termName و yearName) لسهولة العرض.
+ */
+export function getAllMonthsFlat(termId) {
+  const result = [];
+  for (const year of getAcademicPeriods()) {
+    for (const term of (year.terms || [])) {
+      if (termId && term.id !== termId) continue;
+      for (const month of (term.months || [])) {
+        result.push({ ...month, termId: term.id, termName: term.name, yearId: year.id, yearName: year.name });
+      }
+    }
+  }
+  return result;
+}
+
+/* =================== الكيانات الجديدة (Normalized Schema) =================== */
+
+/* ---- Academic Years (السنوات الأكاديمية) ---- */
+export const getAcademicYears = () => readJSON(KEYS.academicYears, []);
+export const saveAcademicYears = (list) => writeJSON(KEYS.academicYears, list);
+
+/* ---- Terms (الأترام) ---- */
+export const getTerms = () => readJSON(KEYS.terms, []);
+export const saveTerms = (list) => writeJSON(KEYS.terms, list);
+
+/* ---- Academic Months (الشهور الأكاديمية) ---- */
+export const getAcademicMonths = () => readJSON(KEYS.academicMonths, []);
+export const saveAcademicMonths = (list) => writeJSON(KEYS.academicMonths, list);
+
+/* ---- Helper Functions ---- */
+
+/** يُرجع السنة الأكاديمية النشطة (isCurrent === true) أو null */
+export function getActiveAcademicYear() {
+  return getAcademicYears().find((y) => y.isCurrent) || null;
+}
+
+/** يُرجع الترم النشط حالياً (تاريخ اليوم مقعده بين startDate و endDate) أو null */
+export function getActiveAcademicTerm() {
+  const today = todayISO();
+  const years = getAcademicYears();
+  const terms = getTerms();
+  for (const term of terms) {
+    if (today >= term.startDate && today <= term.endDate) {
+      const year = years.find((y) => y.id === term.yearId);
+      return { ...term, yearName: year?.name || "" };
+    }
+  }
+  return null;
+}
+
+/** يُرجع الشهر الأكاديمى النشط حالياً (تاريخ اليوم مقعده بين startDate و endDate) أو null */
+export function getActiveAcademicMonth() {
+  const today = todayISO();
+  const months = getAcademicMonths();
+  const terms = getTerms();
+  const years = getAcademicYears();
+  for (const m of months) {
+    if (today >= m.startDate && today <= m.endDate) {
+      const term = terms.find((t) => t.id === m.termId);
+      const year = years.find((y) => y.id === term?.yearId);
+      return { ...m, termId: term?.id, termName: term?.name, yearId: year?.id, yearName: year?.name };
+    }
+  }
+  return null;
+}
+
+/** يبحث عن الشهر الأكاديمى الذى يقع فيه تاريخ معين */
+export function findAcademicMonthById(dateStr) {
+  if (!dateStr) return null;
+  const months = getAcademicMonths();
+  const terms = getTerms();
+  const years = getAcademicYears();
+  for (const m of months) {
+    if (dateStr >= m.startDate && dateStr <= m.endDate) {
+      const term = terms.find((t) => t.id === m.termId);
+      const year = years.find((y) => y.id === term?.yearId);
+      return { ...m, termId: term?.id, termName: term?.name, yearId: year?.id, yearName: year?.name };
+    }
+  }
+  return null;
+}
+
+/** يبحث عن الترم الذى يقع فيه تاريخ معين */
+export function findAcademicTermById(dateStr) {
+  if (!dateStr) return null;
+  const terms = getTerms();
+  const years = getAcademicYears();
+  for (const term of terms) {
+    if (dateStr >= term.startDate && dateStr <= term.endDate) {
+      const year = years.find((y) => y.id === term.yearId);
+      return { ...term, yearName: year?.name || "" };
+    }
+  }
+  return null;
+}
+
+/** يُرجع كل الأترام لسنة أكاديمية معينة مرتبة حسب order */
+export function getTermsForYear(yearId) {
+  return getTerms()
+    .filter((t) => t.yearId === yearId)
+    .sort((a, b) => a.order - b.order);
+}
+
+/** يُرجع كل الشهور لترم معين */
+export function getMonthsForTerm(termId) {
+  return getAcademicMonths().filter((m) => m.termId === termId);
+}
+
+/** يُرجع كل الأترام كمصفوفة مسطحة (مع yearName) لسهولة العرض فى القوائم المنسدلة */
+export function getAllTermsFlatNew() {
+  const years = getAcademicYears();
+  return getTerms().map((t) => {
+    const year = years.find((y) => y.id === t.yearId);
+    return { ...t, yearName: year?.name || "" };
+  });
+}
+
+/** يُرجع كل الشهور كمصفوفة مسطحة (مع termName و yearName) لسهولة العرض */
+export function getAllMonthsFlatNew(termId) {
+  const years = getAcademicYears();
+  const terms = getTerms();
+  return getAcademicMonths()
+    .filter((m) => !termId || m.termId === termId)
+    .map((m) => {
+      const term = terms.find((t) => t.id === m.termId);
+      const year = years.find((y) => y.id === term?.yearId);
+      return { ...m, termId: term?.id, termName: term?.name, yearId: year?.id, yearName: year?.name };
+    });
+}
+
 /** إعادة ضبط كامل النظام لحالته الأولى (يستخدم فى الإعدادات) */
 export async function resetAllData() {
   await idbClear();
@@ -234,4 +629,215 @@ export async function resetAllData() {
   } catch (e) {
     // تجاهل — مش حرج
   }
+}
+
+/* =========================================================
+   SHIFT RECONCILIATION — تقفيل الوردية الأعمى
+   ========================================================= */
+export const getShifts = () => readJSON(KEYS.shifts, []);
+export const saveShifts = (list) => writeJSON(KEYS.shifts, list);
+
+/** يفتح وردية جديدة (يُرجع كائن الوردية) */
+export function openShift(openingCash, openedBy) {
+  const shifts = getShifts();
+  const existing = shifts.find((s) => s.status === "open");
+  if (existing) return existing;
+  const shift = {
+    id: generateId("SHF"),
+    openedBy,
+    openedAt: Date.now(),
+    openedDate: todayISO(),
+    openingCash: Number(openingCash) || 0,
+    status: "open",
+    collections: [],
+  };
+  shifts.push(shift);
+  saveShifts(shifts);
+  return shift;
+}
+
+/** يُرجع الوردية المفتوحة حالياً أو null */
+export function getCurrentShift() {
+  return getShifts().find((s) => s.status === "open") || null;
+}
+
+/** تسجيل تحصيل داخل الوردية المفتوحة */
+export function recordShiftCollection(studentId, amount, type, note = "") {
+  const shift = getCurrentShift();
+  if (!shift || amount <= 0) return;
+  shift.collections.push({
+    id: generateId("COL"),
+    studentId,
+    amount: Number(amount),
+    type, // "session" | "late" | "wallet_deposit" | "extra_charge"
+    note,
+    recordedAt: Date.now(),
+    date: todayISO(),
+  });
+  saveShifts(getShifts());
+}
+
+/** حساب إجمالي التحصيلات المتوقعة من سجلات الوردية */
+function computeExpectedCash(shift) {
+  return (shift.collections || []).reduce((sum, c) => sum + Number(c.amount || 0), 0);
+}
+
+/** تقفيل الوردية (Blind Reconciliation) */
+export function closeShift(closingCash, closedBy) {
+  const shifts = getShifts();
+  const shift = shifts.find((s) => s.status === "open");
+  if (!shift) return null;
+  const expected = computeExpectedCash(shift);
+  const actual = Number(closingCash) || 0;
+  shift.closedBy = closedBy;
+  shift.closedAt = Date.now();
+  shift.closedDate = todayISO();
+  shift.closingCash = actual;
+  shift.expectedCash = expected;
+  shift.variance = actual - expected;
+  shift.status = "closed";
+  saveShifts(shifts);
+  return shift;
+}
+
+/** إحصائيات يوم محدد */
+export function getShiftStatsForDate(dateStr) {
+  const shifts = getShifts().filter((s) => s.openedDate === dateStr || s.closedDate === dateStr);
+  return shifts.map((s) => ({
+    id: s.id,
+    openedBy: s.openedBy,
+    closedBy: s.closedBy || "—",
+    openingCash: s.openingCash,
+    expectedCash: s.expectedCash ?? computeExpectedCash(s),
+    closingCash: s.closingCash,
+    variance: s.variance,
+    status: s.status,
+    collectionCount: (s.collections || []).length,
+    totalCollected: (s.collections || []).reduce((sum, c) => sum + Number(c.amount || 0), 0),
+  }));
+}
+
+/* =========================================================
+   STUDENT GENERAL LEDGER — دفتر الأستاذ
+   ========================================================= */
+export const getLedgerAll = () => readJSON(KEYS.ledger, []);
+export const saveLedgerAll = (list) => writeJSON(KEYS.ledger, list);
+
+/** يُرجع قيود دفتر أستاذ طالب معين */
+export function getLedgerEntries(studentId) {
+  return getLedgerAll().filter((e) => e.studentId === studentId);
+}
+
+/** إضافة قيد جديد في دفتر الأستاذ */
+export function addLedgerEntry({ studentId, type, description, debit = 0, credit = 0, referenceId = "", referenceType = "", createdBy = "النظام" }) {
+  const entries = getLedgerAll();
+  const prevEntries = entries.filter((e) => e.studentId === studentId);
+  const prevBalance = prevEntries.reduce((sum, e) => sum + Number(e.debit || 0) - Number(e.credit || 0), 0);
+  const newBalance = prevBalance + Number(debit) - Number(credit);
+  const entry = {
+    id: generateId("LED"),
+    studentId,
+    date: todayISO(),
+    time: new Date().toTimeString().slice(0, 5),
+    type,
+    description,
+    debit: Number(debit) || 0,
+    credit: Number(credit) || 0,
+    balance: newBalance,
+    referenceId,
+    referenceType,
+    createdBy,
+  };
+  entries.push(entry);
+  saveLedgerAll(entries);
+  return entry;
+}
+
+/** إنشاء قيد افتتاحي لطالب جديد */
+export function initStudentLedger(studentId, openingBalance = 0) {
+  if (openingBalance <= 0) return;
+  addLedgerEntry({
+    studentId,
+    type: "opening_balance",
+    description: "رصيد افتتاحي",
+    debit: openingBalance,
+    referenceType: "system",
+  });
+}
+
+/**
+ * تهيئة دفتر الأستاذ لكل الطلاب现有的 (Backfill).
+ * يقرأ المدفوعات والمحفظةexisting وينشأ قيود افتتاحية لكل طالب عليه رصيد.
+ */
+export function backfillLedger() {
+  const students = getStudents();
+  const existing = getLedgerAll();
+  const existingStudentIds = new Set(existing.map((e) => e.studentId));
+  let added = 0;
+
+  students.forEach((s) => {
+    if (existingStudentIds.has(s.id)) return;
+    const lateBalance = Number(s.lateBalance || 0);
+    const walletBalance = Number(s.walletBalance || 0);
+    if (lateBalance > 0) {
+      addLedgerEntry({
+        studentId: s.id,
+        type: "session_fee",
+        description: "رصيد متأخرات (تهيئة)",
+        debit: lateBalance,
+        referenceType: "system",
+      });
+      added++;
+    }
+    if (walletBalance > 0) {
+      addLedgerEntry({
+        studentId: s.id,
+        type: "wallet_deposit",
+        description: "رصيد محفظة (تهيئة)",
+        credit: walletBalance,
+        referenceType: "system",
+      });
+      added++;
+    }
+  });
+  return added;
+}
+
+/* =========================================================
+   COLLECTION TRACKING — تتبع التحصيلات للصندوق
+   ========================================================= */
+
+/**
+ * تسجيل أي تحصيل نقدي في الوردية الحالية + دفتر الأستاذ.
+ * يُستدعى من كل نقطة تحصيل في النظام.
+ */
+export function recordCashCollection(studentId, amount, type, description, options = {}) {
+  if (!amount || amount <= 0) return;
+  recordShiftCollection(studentId, amount, type, description);
+  addLedgerEntry({
+    studentId,
+    type,
+    description,
+    credit: amount,
+    referenceId: options.referenceId || "",
+    referenceType: options.referenceType || "",
+    createdBy: options.createdBy || "النظام",
+  });
+}
+
+/**
+ * تسجيل قيد مالي في دفتر الأستاذ فقط (بدون صندوق).
+ * يُستخدم للمتأخرات المستحقة (debts) والخصومات من المحفظة.
+ */
+export function recordLedgerOnly(studentId, type, description, debit = 0, credit = 0, options = {}) {
+  addLedgerEntry({
+    studentId,
+    type,
+    description,
+    debit,
+    credit,
+    referenceId: options.referenceId || "",
+    referenceType: options.referenceType || "",
+    createdBy: options.createdBy || "النظام",
+  });
 }

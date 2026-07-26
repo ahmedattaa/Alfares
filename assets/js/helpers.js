@@ -82,6 +82,16 @@ export function fakeDelay(ms = 350) {
 }
 
 /** حماية النصوص من الحقن عند إدراجها فى HTML */
+/** لوحة ألوان متنوعة لبطاقات المجموعات (تُستخدم فى الحضور السريع واليومية المالية) */
+export const GROUP_CARD_PALETTE = [
+  { bg: "#EEF2FF", border: "#6366F1", text: "#4338CA" },
+  { bg: "#ECFDF5", border: "#10B981", text: "#047857" },
+  { bg: "#FFF7ED", border: "#F97316", text: "#C2410C" },
+  { bg: "#FDF2F8", border: "#EC4899", text: "#BE185D" },
+  { bg: "#F0F9FF", border: "#0EA5E9", text: "#0369A1" },
+  { bg: "#FEFCE8", border: "#EAB308", text: "#A16207" },
+];
+
 export function escapeHTML(str = "") {
   return String(str)
     .replace(/&/g, "&amp;")

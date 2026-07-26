@@ -6,19 +6,25 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, getExtraCharges, saveExtraCharges } from "./storage.js";
+import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, debounce } from "./helpers.js";
-import { toast, confirmDialog, emptyStateHTML } from "./ui.js";
+import { toast, confirmDialog, emptyStateHTML, formModal } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup } from "./lookups.js";
 import { recordAttendanceStatus, recordActionStatus } from "./attendance-service.js";
-import { sessionTimeStatus, formatTimeAr } from "./schedule.js";
+import { formatTimeAr, sessionTimeStatus } from "./schedule.js";
 import { computeFinanceBreakdown, renderFinancePanelHTML } from "./finance-panel.js";
+import { sendRewardNotification } from "./whatsapp-notifications.js";
+import { getSessionsForDate, nextReadySession } from "./session-overview.js";
+import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk } from "./whatsapp-notifications.js";
+import { openWhatsApp } from "./whatsapp.js";
+import { canPerformSensitiveAction } from "./permissions.js";
 
 const content = await initPage("session");
 
 let selectedGroupId = null;
 let selectedDate = todayISO();
 let currentIndex = 0; // موضع الطالب الحالى داخل قائمة طلاب المجموعة المرتبة
+let tempMakeupStudents = []; // طلاب التعويض المؤقتين للحصة الحالية
 
 if (content) init();
 
@@ -30,14 +36,11 @@ function init() {
 
   if (urlGroupId) {
     const group = getGroups().find((g) => g.id === urlGroupId);
-    const timeStatus = group ? sessionTimeStatus(group, urlDate) : null;
 
-    if (group && timeStatus !== "upcoming") {
+    if (group) {
       selectedGroupId = urlGroupId;
       selectedDate = urlDate;
       logSessionOpen(selectedGroupId, selectedDate, getSession()?.username || "unknown");
-    } else if (group && timeStatus === "upcoming") {
-      toast(`لسه معاد الحصة (${formatTimeAr(group.time)}) ما جاش`, "warning");
     }
   }
 
@@ -49,86 +52,214 @@ function render() {
   return renderWorkspace();
 }
 
-/* ================= شاشة اختيار الحصة ================= */
+/* ================= شاشة تصفح حصص تاريخ معين ================= */
 function renderSelector() {
-  const grades = getGrades().slice().sort((a, b) => a.order - b.order);
-
   content.innerHTML = `
     <div class="page__header">
       <div>
         <div class="page__title">إدارة الحصة</div>
-        <div class="page__subtitle">افتح حصة لتسجيل حضور كل طلاب المجموعة بسرعة فى مكان واحد</div>
+        <div class="page__subtitle">اختر تاريخًا لعرض حصصه، وافتح أى حصة لتسجيل حضورها ومتابعة موقفها المالى</div>
       </div>
     </div>
 
-    <div class="card card-pad" style="max-width:560px;">
-      <div class="card__head"><div class="card__title">فتح حصة جديدة</div></div>
-      ${
-        !grades.length
-          ? emptyStateHTML({ title: "لا توجد سنوات دراسية أو مجموعات بعد", text: "أضفها من الإعدادات أولًا." })
-          : `
-        <div class="field">
-          <label class="field__label">السنة الدراسية</label>
-          <select class="select" id="selGrade">
-            ${grades.map((g) => `<option value="${g.id}">${escapeHTML(g.name)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label class="field__label">المجموعة</label>
-          <select class="select" id="selGroup"></select>
-        </div>
-        <div class="field">
-          <label class="field__label">التاريخ</label>
-          <input class="input" type="date" id="selDate" value="${selectedDate}">
-        </div>
-        <button class="btn btn-primary" id="openSessionBtn" style="width:100%; justify-content:center;">${icons.grid} فتح الحصة</button>
-      `
-      }
+    <div class="card card-pad" style="margin-bottom:20px; max-width:320px;">
+      <div class="field" style="margin-bottom:0;">
+        <label class="field__label">التاريخ</label>
+        <input class="input" type="date" id="browseDateInput" value="${selectedDate}">
+      </div>
     </div>
+
+    <div id="sessionsListZone"></div>
   `;
 
-  if (!grades.length) return;
+  document.getElementById("browseDateInput").addEventListener("change", (e) => {
+    selectedDate = e.target.value || todayISO();
+    renderSessionsList();
+  });
 
-  const gradeSelect = document.getElementById("selGrade");
-  const groupSelect = document.getElementById("selGroup");
+  renderSessionsList();
+}
 
-  function fillGroups(gradeId) {
-    const groups = groupsForGrade(getGroups(), gradeId);
-    groupSelect.innerHTML = groups.length
-      ? groups.map((g) => `<option value="${g.id}">${escapeHTML(g.name)} (${g.code}) — ${formatTimeAr(g.time)} — ${getStudents().filter((s) => s.groupId === g.id).length} طالب</option>`).join("")
-      : `<option value="">لا توجد مجموعات لهذه السنة</option>`;
+function renderSessionsList() {
+  const box = document.getElementById("sessionsListZone");
+  const sessions = getSessionsForDate(selectedDate);
+
+  if (!sessions.length) {
+    box.innerHTML = emptyStateHTML({ icon: icons.grid, title: "لا توجد حصص مجدولة فى هذا التاريخ" });
+    return;
   }
 
-  fillGroups(gradeSelect.value);
-  gradeSelect.addEventListener("change", (e) => fillGroups(e.target.value));
+  const statusMeta = {
+    upcoming: { label: "قادمة", tone: "info" },
+    ongoing: { label: "جارية الآن", tone: "success" },
+    ended: { label: "منتهية", tone: "primary" },
+  };
 
-  document.getElementById("openSessionBtn").addEventListener("click", () => {
-    if (!groupSelect.value) {
-      toast("اختر مجموعة أولًا", "warning");
+  box.innerHTML = sessions
+    .map((s) => {
+      const meta = statusMeta[s.timeStatus];
+      const highlight = s.timeStatus === "ongoing" ? "border:2px solid var(--success); background: var(--success-light);" : "border:1px solid var(--border);";
+
+      return `
+        <div class="card card-pad" style="margin-bottom:12px; ${highlight}">
+          <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
+            <div>
+              <div style="font-weight:800; font-size:15px;">${escapeHTML(s.group.name)} <span class="code-pill" style="margin-right:6px;">${escapeHTML(s.group.code)}</span></div>
+              <div class="text-muted" style="font-size:12.5px; margin-top:3px;">${escapeHTML(s.gradeLabel)} — ${formatTimeAr(s.group.time)}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              ${s.closed ? `<span class="badge badge-neutral">مقفولة</span>` : s.opened ? `<span class="badge badge-primary">مفتوحة</span>` : ""}
+              <span class="badge badge-${meta.tone}"><span class="badge-dot"></span>${meta.label}</span>
+            </div>
+          </div>
+
+          ${
+            true
+              ? `
+            <div class="divider"></div>
+            <div class="quick-stats-bar" style="margin-bottom:12px;">
+              <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${s.presentCount}</span><span class="quick-stats-bar__label">حضور</span></div>
+              <div class="quick-stats-bar__item"><span class="quick-stats-bar__value" style="color:${s.absentCount ? "var(--danger)" : "inherit"};">${s.absentCount}</span><span class="quick-stats-bar__label">غياب</span></div>
+              <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${s.registeredCount}/${s.enrolledCount}</span><span class="quick-stats-bar__label">تم تسجيلهم</span></div>
+              <div class="quick-stats-bar__item"><span class="quick-stats-bar__value" style="color:${s.dues < 0 ? "var(--danger)" : "var(--success)"};">${formatMoney(s.dues)}</span><span class="quick-stats-bar__label">الاستحقاقات</span></div>
+            </div>
+            <button type="button" class="btn ${s.timeStatus === "ongoing" ? "btn-success" : "btn-outline"} btn-sm openSessionCardBtn" data-group-id="${s.group.id}" style="width:100%; justify-content:center;">
+              ${icons.grid} ${s.opened ? "متابعة الحصة" : "فتح الحصة"}
+            </button>`
+              : ``
+          }
+        </div>
+      `;
+    })
+    .join("");
+
+  box.querySelectorAll(".openSessionCardBtn").forEach((btn) =>
+    btn.addEventListener("click", () => openSessionFromCard(btn.dataset.groupId))
+  );
+}
+
+function openSessionFromCard(groupId) {
+  const group = getGroups().find((g) => g.id === groupId);
+
+  selectedGroupId = groupId;
+  currentIndex = 0;
+  tempMakeupStudents = [];
+  logSessionOpen(selectedGroupId, selectedDate, getSession()?.username || "unknown");
+  render();
+}
+
+/* ================= تسجيل طالب تعويض ================= */
+function openMakeupModal(group) {
+  const allStudents = getStudents().filter((s) => s.status === "active");
+  const existingIds = new Set(
+    getStudents().filter((s) => s.groupId === selectedGroupId).map((s) => s.id).concat(tempMakeupStudents.map((s) => s.id))
+  );
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal__head">
+        <div class="modal__title">${icons.users} تسجيل طالب تعويض — ${escapeHTML(group.name)}</div>
+      </div>
+      <div class="modal__body">
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">اختر طالبًا من مجموعة أخرى لتسجيل حضوره ك تعويض فى هذه الحصة</p>
+        <div class="search-hero" style="position:relative;">
+          <input class="input" id="makeupSearchInput" placeholder="اكتب كود الطالب أو اسمه..." autocomplete="off" autofocus>
+          <span class="input-icon">${icons.search}</span>
+          <div class="search-results" id="makeupSearchResults" style="position:absolute; top:100%; left:0; right:0; z-index:10;"></div>
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-outline" id="makeupCancel">إغلاق</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.querySelector("#makeupCancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  const input = overlay.querySelector("#makeupSearchInput");
+  const results = overlay.querySelector("#makeupSearchResults");
+
+  function renderMakeupResults(term) {
+    if (!term) { results.classList.remove("is-open"); results.innerHTML = ""; return; }
+    const lower = term.toLowerCase();
+    const matches = allStudents
+      .filter((s) => !existingIds.has(s.id))
+      .filter((s) => (s.code || "").toLowerCase().startsWith(lower) || s.name.toLowerCase().includes(lower))
+      .slice(0, 10);
+
+    if (!matches.length) {
+      results.innerHTML = `<div class="search-result-item"><div class="search-result-item__meta">لا يوجد طالب مطابق</div></div>`;
+      results.classList.add("is-open");
       return;
     }
-    const group = getGroups().find((g) => g.id === groupSelect.value);
-    const date = document.getElementById("selDate").value || todayISO();
-    const timeStatus = sessionTimeStatus(group, date);
 
-    if (timeStatus === "upcoming") {
-      toast(`لسه معاد الحصة (${formatTimeAr(group.time)}) ما جاش، هتقدر تفتحها فى معادها`, "warning");
-      return;
+    const grades = getGrades();
+    const groups = getGroups();
+    results.innerHTML = matches.map((s) => {
+      const gName = findGroup(groups, s.groupId)?.name || "—";
+      const grName = gradeName(grades, s.gradeId) || "—";
+      return `
+        <div class="search-result-item" data-id="${s.id}" style="cursor:pointer;">
+          <div class="search-result-item__name">${escapeHTML(s.name)}</div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <span class="code-pill">${escapeHTML(s.code || "-")}</span>
+            <span style="font-size:11px; color:var(--muted);">${escapeHTML(grName)} — ${escapeHTML(gName)}</span>
+          </div>
+        </div>`;
+    }).join("");
+    results.classList.add("is-open");
+
+    results.querySelectorAll(".search-result-item[data-id]").forEach((el) =>
+      el.addEventListener("click", () => {
+        const studentId = el.dataset.id;
+        const student = allStudents.find((s) => s.id === studentId);
+        if (!student) return;
+
+        const statuses = getStudentStatuses();
+        const paidStatus = statuses.find((s) => s.id === "ST-PAID") || statuses.find((s) => s.payment === "paid");
+        if (!paidStatus) { toast("لم يتم العثور على حالة الدفع", "error"); return; }
+
+        recordAttendanceStatus(student.id, paidStatus.id, selectedDate, { sessionGroupId: selectedGroupId });
+
+        if (!tempMakeupStudents.some((s) => s.id === student.id)) {
+          tempMakeupStudents.push(student);
+        }
+
+        toast(`تم تسجيل ${student.name} كطالب تعويض`, "success");
+        close();
+        renderStats(getRoster());
+        renderPager(getRoster());
+        renderStudentZone(getRoster());
+      })
+    );
+  }
+
+  input.addEventListener("input", debounce((e) => renderMakeupResults(e.target.value.trim()), 150));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const term = input.value.trim();
+      if (term) renderMakeupResults(term);
     }
-
-    selectedGroupId = groupSelect.value;
-    selectedDate = date;
-    currentIndex = 0;
-    logSessionOpen(selectedGroupId, selectedDate, getSession()?.username || "unknown");
-    render();
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".search-hero")) results.classList.remove("is-open");
   });
 }
 
 /* ================= شاشة إدارة الحصة (بعد الفتح) ================= */
 function getRoster() {
-  return getStudents()
+  const regular = getStudents()
     .filter((s) => s.groupId === selectedGroupId)
     .sort((a, b) => (a.code || "").localeCompare(b.code || "", "en", { numeric: true }));
+  const makeupIds = new Set(tempMakeupStudents.map((s) => s.id));
+  const makeup = tempMakeupStudents.filter((s) => !regular.some((r) => r.id === s.id));
+  return [...regular, ...makeup];
 }
 
 function renderWorkspace() {
@@ -144,16 +275,32 @@ function renderWorkspace() {
   const roster = getRoster();
   if (currentIndex >= roster.length) currentIndex = Math.max(0, roster.length - 1);
 
+  const timeStatus = sessionTimeStatus(group, selectedDate);
+
   content.innerHTML = `
     <div class="page__header">
       <div>
         <div class="page__title">إدارة الحصة</div>
         <div class="page__subtitle">${escapeHTML(group.name)} (${escapeHTML(group.code)}) · ${escapeHTML(gradeName(grades, group.gradeId))} · ${selectedDate}</div>
       </div>
-      <button class="btn btn-outline btn-sm" id="changeSessionBtn">${icons.arrowLeft} تغيير الحصة</button>
+      <div class="flex-gap" style="flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" id="makeupBtn">${icons.users} تسجيل طالب تعويض</button>
+        <a class="btn btn-outline btn-sm" href="quick-attendance.html?groupId=${group.id}&date=${selectedDate}">${icons.grid} حضور الطلاب</a>
+        <a class="btn btn-outline btn-sm" href="attendance-tracker.html?groupId=${group.id}&mode=filter">${icons.clipboard} متابعة الغياب</a>
+        <button class="btn btn-outline btn-sm" id="closeSessionBtn">${icons.check} قفل الحصة</button>
+        <button class="btn btn-outline btn-sm" id="changeSessionBtn">${icons.arrowLeft} قائمة الحصص</button>
+      </div>
     </div>
 
     <div class="quick-stats-bar" id="statsBar" style="margin-bottom:18px;"></div>
+
+    <div class="card card-pad" style="margin-bottom:12px;">
+      <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
+        <div style="font-weight:700; font-size:14px;">${icons.whatsapp} إرسال إشعارات واتساب</div>
+        <button class="btn btn-success btn-sm" id="bulkNotifyBtn">${icons.whatsapp} إرسال للولياء</button>
+      </div>
+      <div class="field__hint" style="margin-top:8px;">إرسال إشعار حضور لولياء طلاب هذه المجموعة دفعة واحدة</div>
+    </div>
 
     <div class="card card-pad" style="margin-bottom:22px;">
       <div class="search-hero">
@@ -170,8 +317,14 @@ function renderWorkspace() {
 
   document.getElementById("changeSessionBtn").addEventListener("click", () => {
     selectedGroupId = null;
+    tempMakeupStudents = [];
     render();
   });
+
+  document.getElementById("makeupBtn").addEventListener("click", () => openMakeupModal(group));
+
+  document.getElementById("closeSessionBtn").addEventListener("click", () => onCloseSession(group));
+  document.getElementById("bulkNotifyBtn").addEventListener("click", () => onBulkNotify(group));
 
   const input = document.getElementById("searchInput");
   const results = document.getElementById("searchResults");
@@ -195,6 +348,63 @@ function renderWorkspace() {
   renderStats(roster);
   renderPager(roster);
   renderStudentZone(roster);
+}
+
+/** يرسل إشعارات واتساب جماعية لولياء طلاب المجموعة */
+async function onBulkNotify(group) {
+  const ok = await confirmDialog({
+    title: "إرسال إشعارات جماعية",
+    body: `هل تريد إرسال إشعار حضور لولياء طلاب "<strong>${escapeHTML(group.name)}</strong>"؟<br><br><small>سيتم إرسال رسالة لكل ولي أمر باسم طالبه وبياناته.</small>`,
+    confirmText: "إرسال الإشعارات",
+    tone: "success",
+  });
+  if (!ok) return;
+
+  const notifications = sendBulkAttendanceNotifications(selectedGroupId, selectedDate);
+  if (notifications.length === 0) {
+    toast("لا توجد إشعارات مرسلة (تأكد من تسجيل الحضور أولاً)", "warning");
+    return;
+  }
+
+  // فتح أول رسالة
+  const result = openWhatsAppBulk(notifications);
+  if (result) {
+    toast(`تم فتح واتساب لإرسال ${result.total} إشعار (أول إشعار: ${result.first})`, "success");
+  }
+}
+async function onCloseSession(group) {
+  const ok = await confirmDialog({
+    title: "قفل الحصة",
+    body: `هل أنت متأكد من قفل حصة "<strong>${escapeHTML(group.name)}</strong>"؟`,
+    confirmText: "قفل الحصة",
+    tone: "success",
+  });
+  if (!ok) return;
+
+  closeSession(selectedGroupId, selectedDate, getSession()?.username || "unknown");
+  toast("تم قفل الحصة بنجاح", "success");
+
+  tempMakeupStudents = [];
+
+  const next = nextReadySession(selectedDate, selectedGroupId);
+  if (next) {
+    const openNext = await confirmDialog({
+      title: "حصة تانية جاهزة دلوقتى",
+      body: `حصة "<strong>${escapeHTML(next.group.name)}</strong>" (${formatTimeAr(next.group.time)}) جاهزة تُفتح دلوقتى. تحب تفتحها على طول؟`,
+      confirmText: "فتح الحصة التالية",
+      tone: "success",
+    });
+    if (openNext) {
+      selectedGroupId = next.group.id;
+      currentIndex = 0;
+      logSessionOpen(selectedGroupId, selectedDate, getSession()?.username || "unknown");
+      render();
+      return;
+    }
+  }
+
+  selectedGroupId = null;
+  render();
 }
 
 function handleSearch(term, roster, input, results) {
@@ -250,7 +460,7 @@ function renderPager(roster) {
   }
   box.innerHTML = `
     <button type="button" class="btn btn-outline btn-icon" id="pagerPrev" ${currentIndex <= 0 ? "disabled" : ""} title="السابق">${icons.arrowLeft}</button>
-    <span class="pager__label">${currentIndex + 1} من ${roster.length}</span>
+    <span class="pager__label">${currentIndex + 1} من ${roster.length}${tempMakeupStudents.length ? ` (${tempMakeupStudents.length} تعويض)` : ""}</span>
     <button type="button" class="btn btn-outline btn-icon" id="pagerNext" ${currentIndex >= roster.length - 1 ? "disabled" : ""} title="التالى" style="transform:scaleX(-1);">${icons.arrowLeft}</button>
   `;
   document.getElementById("pagerPrev")?.addEventListener("click", () => {
@@ -267,7 +477,8 @@ function renderPager(roster) {
 
 function renderStats(roster) {
   const box = document.getElementById("statsBar");
-  const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance" && roster.some((s) => s.id === a.studentId));
+  const rosterIds = new Set(roster.map((s) => s.id));
+  const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance" && rosterIds.has(a.studentId));
   const payments = getPayments().filter((p) => p.date === selectedDate && p.groupId === selectedGroupId);
 
   const countStatus = (id) => attendance.filter((a) => a.statusId === id).length;
@@ -300,6 +511,7 @@ function renderStudentZone(roster) {
   const attendanceStatuses = statusesByCategory(statuses, "attendance");
   const actionStatuses = statusesByCategory(statuses, "action");
   const group = findGroup(groups, student.groupId);
+  const isMakeup = tempMakeupStudents.some((s) => s.id === student.id);
 
   const today = selectedDate;
   const todayRecord = getAttendance().find((a) => a.studentId === student.id && a.date === today && a.category === "attendance");
@@ -315,6 +527,7 @@ function renderStudentZone(roster) {
           <div class="text-muted" style="font-size:13.5px; margin-top:4px;">
             ${escapeHTML(gradeName(grades, student.gradeId))} · ${escapeHTML(groupName(groups, student.groupId))} ·
             <span class="code-pill">${escapeHTML(student.code || "-")}</span>
+            ${isMakeup ? `<span class="badge badge-primary" style="margin-right:8px;">${icons.users} تعويض</span>` : ""}
           </div>
         </div>
         ${
@@ -355,6 +568,13 @@ function renderStudentZone(roster) {
         </div>`
           : ""
       }
+
+      ${canPerformSensitiveAction(getSession()) ? `
+        <div class="divider"></div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-success btn-sm" id="depositBtn">${icons.wallet} إيداع في المحفظة</button>
+        </div>
+      ` : ""}
     </div>
   `;
 
@@ -364,6 +584,11 @@ function renderStudentZone(roster) {
   zone.querySelectorAll(".actionBtn").forEach((btn) =>
     btn.addEventListener("click", () => onActionClick(student.id, btn.dataset.status, roster))
   );
+
+  if (canPerformSensitiveAction(getSession())) {
+    const depositBtnEl = document.getElementById("depositBtn");
+    if (depositBtnEl) depositBtnEl.addEventListener("click", () => openDepositDialog(student.id));
+  }
 }
 
 /** تسجيل حالة حضور/غياب — ثم الانتقال التلقائى للطالب التالى فى القائمة لتسريع المسح الجماعى */
@@ -378,6 +603,10 @@ function onStatusClick(studentId, statusId, roster) {
     const input = document.getElementById("collectAmountInput");
     collectedForCharges = input ? Number(input.value) || 0 : 0;
     options.collectedAmount = collectedForCharges;
+  }
+
+  if (tempMakeupStudents.some((s) => s.id === studentId)) {
+    options.sessionGroupId = selectedGroupId;
   }
 
   const result = recordAttendanceStatus(studentId, statusId, selectedDate, options);
@@ -402,12 +631,62 @@ function onStatusClick(studentId, statusId, roster) {
   }
   toast(message, result.status.tone === "danger" ? "danger" : "success");
 
+  // إرسال إشعار واتساب تلقائي لولي الأمر (للحضور فقط)
+  if (status.presence === "present" && status.payment) {
+    const notification = sendAttendanceNotification(studentId, statusId, selectedDate, result.financeInfo);
+    if (notification) {
+      openWhatsApp(notification.phone, notification.message);
+      toast(`تم إرسال إشعار لولي أمر ${notification.studentName}`, "success");
+    }
+  }
+
   // الانتقال التلقائى للطالب التالى (لو موجود) لتسريع تسجيل باقى الفصل
   if (currentIndex < roster.length - 1) currentIndex++;
 
   renderStats(roster);
   renderPager(roster);
   renderStudentZone(roster);
+}
+
+async function openDepositDialog(studentId) {
+  const student = getStudents().find((s) => s.id === studentId);
+  if (!student) return;
+
+  const group = findGroup(getGroups(), student.groupId);
+  const currentWallet = Number(student.walletBalance || 0);
+  const currentDebt = Number(student.lateBalance || 0);
+
+  const amount = await formModal({
+    title: `إيداع — ${student.name}`,
+    fields: [
+      {
+        name: "amount",
+        label: "المبلغ (ج.م)",
+        type: "number",
+        placeholder: "0",
+        min: 1,
+        required: true,
+        hint: currentDebt > 0
+          ? `المتأخرات: ${formatMoney(currentDebt)} — أول حاجة هتتغطى من المتأخرات، والباقي يروح للمحفظة`
+          : `الرصيد الحالي: ${formatMoney(currentWallet)}`,
+      },
+      { name: "note", label: "ملاحظة (اختياري)", placeholder: "إيداع ولي أمر" },
+    ],
+    submitText: "إيداع",
+  });
+
+  if (!amount) return;
+
+  const result = addWalletDeposit(studentId, amount.amount, amount.note || "إيداع ولي أمر");
+  if (!result) { toast("فشلت عملية الإيداع", "error"); return; }
+
+  let msg = `تم إيداع ${formatMoney(amount.amount)}`;
+  if (result.debtCovered > 0) msg += ` — تغطية متأخرات: ${formatMoney(result.debtCovered)}`;
+  if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
+  toast(msg, "success");
+
+  renderStats(getRoster());
+  renderStudentZone(getRoster());
 }
 
 async function onActionClick(studentId, statusId, roster) {
@@ -426,6 +705,13 @@ async function onActionClick(studentId, statusId, roster) {
 
   recordActionStatus(studentId, statusId, selectedDate);
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
+
+  // إشعار مكافأة
+  if (status.rewardAmount > 0) {
+    sendRewardNotification(studentId, status.rewardAmount, status.name);
+    toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة المحفظة`, "success");
+  }
+
   renderStats(roster);
   renderStudentZone(roster);
 }
