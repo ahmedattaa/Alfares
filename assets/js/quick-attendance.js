@@ -1609,6 +1609,13 @@ style.textContent = `
   }
 
   /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .roster-controls { flex-wrap: wrap; gap: 8px; }
+    .roster-controls__filter { flex: 1 1 100%; }
+    .input--roster { font-size: 16px; }
+    .sa-summary__progress-section { min-width: 0; }
+    .sa-summary__finance-section { min-width: 0; }
+  }
   @media (max-width: 560px) {
     .sa-topbar { flex-direction: column; align-items: stretch; padding: 12px; gap: 10px; }
     .sa-topbar__left { justify-content: stretch; }

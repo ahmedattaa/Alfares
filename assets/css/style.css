@@ -1185,3 +1185,138 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .pr-info-grid{ grid-template-columns:1fr; }
   .pr-finance-summary{ grid-template-columns:1fr; }
 }
+
+/* =========================================================
+   COMPREHENSIVE MOBILE RESPONSIVENESS
+   ========================================================= */
+
+/* --- Topbar two-row on mobile (≤768px) --- */
+@media (max-width: 768px){
+  .topbar{
+    height:auto; min-height:var(--header-h);
+    flex-wrap:wrap; padding:10px 14px; gap:8px;
+  }
+  .topbar__left{
+    width:100%; justify-content:flex-start;
+  }
+  .topbar__right{
+    width:100%; justify-content:flex-start;
+    flex-wrap:wrap; gap:6px;
+  }
+}
+
+/* --- Topbar compact actions (≤560px) --- */
+@media (max-width: 560px){
+  .topbar{ padding:8px 12px; gap:6px; }
+  .topbar__title{ font-size:15px; }
+
+  /* Hide date */
+  .topbar__date{ display:none; }
+
+  /* Hide user chip completely */
+  .user-chip{ display:none; }
+
+  /* Shift indicator → icon only */
+  .shift-indicator{ padding:4px 6px; font-size:0; gap:0; }
+  .shift-indicator svg{ margin:0; }
+  .shift-indicator--open{ width:32px; height:32px; border-radius:50%; }
+  .shift-indicator--closed{ width:32px; height:32px; border-radius:50%; }
+
+  /* Theme switcher → icon only (swatch dot) */
+  .theme-switcher__btn{ padding:6px; gap:0; }
+  .theme-switcher__label{ display:none; }
+  .theme-switcher__btn svg{ display:none; }
+  .theme-switcher__swatch{ width:20px; height:20px; }
+
+  /* Logout → icon only */
+  .topbar-logout{ padding:6px; gap:0; }
+  .topbar-logout span{ display:none; }
+  .topbar-logout svg{ margin:0; }
+
+  /* Menu toggle */
+  .menu-toggle{ width:34px; height:34px; }
+  .menu-toggle svg{ width:18px; height:18px; }
+}
+
+/* --- Topbar very small (≤380px) --- */
+@media (max-width: 380px){
+  .topbar{ padding:6px 10px; gap:4px; }
+  .topbar__title{ font-size:14px; }
+  .denomination-grid{ grid-template-columns:1fr !important; }
+}
+
+/* --- Tables mobile (≤560px) --- */
+@media (max-width: 560px){
+  table.table{ min-width:480px; font-size:13px; }
+  table.table thead th{ padding:10px 12px; font-size:11px; }
+  table.table tbody td{ padding:10px 12px; font-size:13px; }
+  .table-toolbar{ flex-direction:column; align-items:stretch; }
+  .table-toolbar__filters{ gap:6px; }
+}
+
+/* --- Stat grid small mobile (≤380px) --- */
+@media (max-width: 380px){
+  .stat-grid{ grid-template-columns:1fr; }
+}
+
+/* --- Roster controls wrapping (≤480px) --- */
+@media (max-width: 480px){
+  .roster-controls{ flex-wrap:wrap; }
+  .roster-controls__filter{ flex:1 1 100%; }
+}
+
+/* --- Modal full width on very small (≤400px) --- */
+@media (max-width: 400px){
+  .modal-overlay{ padding:10px; }
+  .modal{ max-width:100%; border-radius:var(--r-md); }
+}
+
+/* --- Quick attendance group cards (≤768px) --- */
+@media (max-width: 768px){
+  .qa-row{ gap:8px; padding:8px 6px; }
+  .qa-row__name{ font-size:13px; min-width:80px; }
+  .qa-row .btn{ padding:6px 8px; font-size:12px; }
+  .absent-row{ flex-wrap:wrap; gap:6px; padding:6px 8px; }
+}
+
+/* --- Shift denomination inputs (≤560px) --- */
+@media (max-width: 560px){
+  .denomination-grid{ grid-template-columns:1fr 1fr !important; gap:8px; }
+  .denomination-row .input{ min-width:0; width:100%; text-align:center; padding:12px 4px; font-size:16px !important; }
+  .denomination-row .label{ font-size:12px; flex:1; }
+  .denom-field{ padding:8px; background:var(--bg); border-radius:var(--r-sm); border:1px solid var(--border); }
+}
+
+/* --- Reception search (≤560px) --- */
+@media (max-width: 560px){
+  .search-hero .input{ padding:14px 50px 14px 14px; font-size:16px; }
+  .search-results{ max-height:280px; }
+  .search-result-item{ padding:10px 14px; }
+}
+
+/* --- Settings tabs (≤560px) --- */
+@media (max-width: 560px){
+  .tabs{ gap:1px; padding:3px; }
+  .tab-btn{ padding:8px 10px; font-size:12px; gap:4px; }
+  .tab-btn svg{ width:12px; height:12px; }
+}
+
+/* --- Finance group cards (≤768px) --- */
+@media (max-width: 768px){
+  .finance-group-card{ padding:12px; }
+  .finance-group-card__name{ font-size:13px; }
+  .finance-group-card__time{ font-size:11px; }
+  .finance-group-card__stats{ gap:6px; }
+  .finance-group-card__value{ font-size:14px; }
+}
+
+/* --- Page padding mobile (≤560px) --- */
+@media (max-width: 560px){
+  .page{ padding:16px 12px; }
+  .page__header{ flex-direction:column; align-items:flex-start; gap:8px; }
+  .page__subtitle{ font-size:12px; }
+}
+
+/* --- Avoid horizontal overflow --- */
+html{ overflow-x:hidden; }
+body{ overflow-x:hidden; }

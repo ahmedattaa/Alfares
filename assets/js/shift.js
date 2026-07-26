@@ -144,14 +144,14 @@ function renderOpenShift(shift) {
 
 function renderDenominationInputs() {
   return `
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
+    <div class="denomination-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
       ${DENOMINATIONS.map((d) => `
         <div class="denom-field">
           <label class="field__label" style="margin-bottom:4px; font-size:12px;">فئة ${formatMoney(d)}</label>
-          <div style="display:flex; align-items:center; gap:6px;">
+          <div class="denomination-row" style="display:flex; align-items:center; gap:6px;">
             <input class="input denom-input" type="number" min="0" step="1" value="0"
-              data-denom="${d}" placeholder="0"
-              style="font-size:15px; font-weight:700; text-align:center; padding:8px 4px;">
+              data-denom="${d}" placeholder="0" inputmode="numeric"
+              style="font-size:16px; font-weight:700; text-align:center; padding:10px 4px;">
             <span style="font-size:12px; color:var(--muted); white-space:nowrap;">×</span>
             <span class="denom-subtotal text-muted" data-denom-subtotal="${d}" style="font-size:12px; min-width:50px; text-align:left;">٠</span>
           </div>
