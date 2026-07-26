@@ -1317,6 +1317,7 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .page__subtitle{ font-size:12px; }
 }
 
-/* --- Avoid horizontal overflow --- */
-html{ overflow-x:hidden; }
-body{ overflow-x:hidden; }
+/* --- Mobile: scroll when content overflows, clip stray shadows --- */
+html{ overflow-x:auto; }
+body{ overflow-x:auto; min-width:0; width:100%; }
+.page{ overflow:visible; }

@@ -251,92 +251,98 @@ function renderClosedView() {
   const lastShift = shifts.length ? shifts[shifts.length - 1] : null;
 
   return `
-    <div class="card card-pad" style="margin-bottom:20px; text-align:center; padding:40px 20px;">
-      <div style="font-size:48px; margin-bottom:12px;">📭</div>
-      <div style="font-size:18px; font-weight:800; margin-bottom:8px;">لا توجد وردية مفتوحة</div>
-      <p style="font-size:13px; color:var(--muted); margin-bottom:20px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.7;">
-        قبل ما تبدأ تحصيل أي أموال، لازم تفتح وردية جديدة وتكتب العهدة الافتتاحية (الفلس اللي في الدرج).
-      </p>
-      ${lastShift ? `
-        <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">
-          آخر تقفيل: ${lastShift.closedDate} — الحالة: ${lastShift.variance === 0 ? "✅ متطابق" : `⚠️ ${lastShift.variance > 0 ? "زيادة" : "عجز"} ${formatMoney(Math.abs(lastShift.variance))}`}
-        </div>
-      ` : ""}
-      <button class="btn btn-primary btn-lg" id="openShiftBtn">${icons.plus} فتح وردية جديدة</button>
+    <div id="openingForm" style="display:none;"></div>
+    <div id="closedInfo">
+      <div class="card card-pad" style="margin-bottom:20px; text-align:center; padding:40px 20px;">
+        <div style="font-size:48px; margin-bottom:12px;">📭</div>
+        <div style="font-size:18px; font-weight:800; margin-bottom:8px;">لا توجد وردية مفتوحة</div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:20px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.7;">
+          قبل ما تبدأ تحصيل أي أموال، لازم تفتح وردية جديدة وتكتب العهدة الافتتاحية (الفلس اللي في الدرج).
+        </p>
+        ${lastShift ? `
+          <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+            آخر تقفيل: ${lastShift.closedDate} — الحالة: ${lastShift.variance === 0 ? "✅ متطابق" : `⚠️ ${lastShift.variance > 0 ? "زيادة" : "عجز"} ${formatMoney(Math.abs(lastShift.variance))}`}
+          </div>
+        ` : ""}
+        <button class="btn btn-primary btn-lg" id="openShiftBtn">${icons.plus} فتح وردية جديدة</button>
+      </div>
     </div>
   `;
 }
 
 function bindClosedViewEvents() {
-  document.getElementById("openShiftBtn")?.addEventListener("click", openShiftModal);
+  document.getElementById("openShiftBtn")?.addEventListener("click", showOpeningForm);
 }
 
-/* ================= فتح وردية — بالفئات ================= */
-async function openShiftModal() {
-  const session = getSession();
-  const overlay = document.createElement("div");
-  overlay.className = "modal-overlay is-open";
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:520px;">
-      <div class="modal__head">
-        <div class="modal__title">فتح وردية جديدة</div>
+/* ================= فتح وردية — صفحه داخليه ================= */
+function showOpeningForm() {
+  const formBox = document.getElementById("openingForm");
+  const infoBox = document.getElementById("closedInfo");
+  if (!formBox || !infoBox) return;
+
+  infoBox.style.display = "none";
+  formBox.style.display = "block";
+
+  formBox.innerHTML = `
+    <div class="card card-pad" style="border:2px solid var(--primary); margin-bottom:20px;">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--primary);">${icons.wallet} فتح وردية جديدة</div>
       </div>
-      <div class="modal__body">
-        <p style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
-          عدّ الفلوس اللي في الدرج دلوقتي (العهدة الافتتاحية / الفكة) بالفئات.
-        </p>
-        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
-          ${DENOMINATIONS.map((d) => `
-            <div>
-              <label class="field__label" style="margin-bottom:4px; font-size:12px;">فئة ${formatMoney(d)}</label>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <input class="input opening-denom-input" type="number" min="0" step="1" value="0"
-                  data-denom="${d}" placeholder="0"
-                  style="font-size:15px; font-weight:700; text-align:center; padding:8px 4px;">
-                <span style="font-size:12px; color:var(--muted); white-space:nowrap;">×</span>
-                <span class="text-muted" style="font-size:12px; min-width:50px; text-align:left;" data-opening-subtotal="${d}">—</span>
-              </div>
+      <p style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
+        عدّ الفلوس اللي في الدرج دلوقتي (العهدة الافتتاحية / الفكة) بالفئات.
+      </p>
+      <div class="denomination-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
+        ${DENOMINATIONS.map((d) => `
+          <div class="denom-field" style="padding:8px; background:var(--bg); border-radius:var(--r-sm); border:1px solid var(--border);">
+            <label class="field__label" style="margin-bottom:4px; font-size:12px;">فئة ${formatMoney(d)}</label>
+            <div class="denomination-row" style="display:flex; align-items:center; gap:6px;">
+              <input class="input opening-denom-input" type="number" min="0" step="1" value="0"
+                data-denom="${d}" placeholder="0" inputmode="numeric"
+                style="font-size:16px; font-weight:700; text-align:center; padding:10px 4px; width:100%;">
+              <span style="font-size:12px; color:var(--muted); white-space:nowrap;">×</span>
+              <span class="text-muted" style="font-size:12px; min-width:50px; text-align:left;" data-opening-subtotal="${d}">—</span>
             </div>
-          `).join("")}
-        </div>
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding-top:12px; border-top:1px solid var(--border);">
-          <span style="font-size:13px; color:var(--muted);">إجمالي العهدة:</span>
-          <span id="openingTotalDisplay" style="font-size:20px; font-weight:800; color:var(--primary);">٠ ج.م</span>
-        </div>
+          </div>
+        `).join("")}
       </div>
-      <div class="modal__actions">
-        <button class="btn btn-outline" id="openingCancelBtn">إلغاء</button>
-        <button class="btn btn-primary" id="openingConfirmBtn">${icons.check} فتح الوردية</button>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding-top:12px; border-top:1px solid var(--border);">
+        <span style="font-size:13px; color:var(--muted);">إجمالي العهدة:</span>
+        <span id="openingTotalDisplay" style="font-size:22px; font-weight:800; color:var(--primary);">٠ ج.م</span>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button class="btn btn-outline" id="openingCancelBtn" style="flex:1;">إلغاء</button>
+        <button class="btn btn-primary btn-lg" id="openingConfirmBtn" style="flex:2;">${icons.check} فتح الوردية</button>
       </div>
     </div>
   `;
-  document.body.appendChild(overlay);
 
-  // حساب الإجمالي
   const updateOpeningTotal = () => {
     let total = 0;
-    overlay.querySelectorAll(".opening-denom-input").forEach((input) => {
+    formBox.querySelectorAll(".opening-denom-input").forEach((input) => {
       const count = parseInt(input.value) || 0;
       const denom = Number(input.dataset.denom);
       const subtotal = count * denom;
       total += subtotal;
-      const subEl = overlay.querySelector(`[data-opening-subtotal="${denom}"]`);
+      const subEl = formBox.querySelector(`[data-opening-subtotal="${denom}"]`);
       if (subEl) subEl.textContent = subtotal > 0 ? `${count} × ${formatMoney(denom)} = ${formatMoney(subtotal)}` : "—";
     });
-    const display = overlay.querySelector("#openingTotalDisplay");
+    const display = formBox.querySelector("#openingTotalDisplay");
     if (display) display.textContent = total > 0 ? `${formatMoney(total)} ج.م` : "٠ ج.م";
   };
 
-  overlay.querySelectorAll(".opening-denom-input").forEach((input) => {
+  formBox.querySelectorAll(".opening-denom-input").forEach((input) => {
     input.addEventListener("input", updateOpeningTotal);
   });
 
-  overlay.querySelector("#openingCancelBtn").addEventListener("click", () => overlay.remove());
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  formBox.querySelector("#openingCancelBtn").addEventListener("click", () => {
+    formBox.style.display = "none";
+    infoBox.style.display = "";
+  });
 
-  overlay.querySelector("#openingConfirmBtn").addEventListener("click", () => {
+  formBox.querySelector("#openingConfirmBtn").addEventListener("click", () => {
+    const session = getSession();
     let total = 0;
-    overlay.querySelectorAll(".opening-denom-input").forEach((input) => {
+    formBox.querySelectorAll(".opening-denom-input").forEach((input) => {
       const count = parseInt(input.value) || 0;
       const denom = Number(input.dataset.denom);
       total += count * denom;
@@ -344,7 +350,6 @@ async function openShiftModal() {
 
     const shift = openShift(total, session?.username || "النظام");
     if (shift) {
-      overlay.remove();
       toast(`تم فتح الوردية — العهدة: ${formatMoney(total)} ✓`, "success");
       render();
     }
