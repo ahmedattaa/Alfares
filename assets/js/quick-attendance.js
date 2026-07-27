@@ -738,7 +738,6 @@ function renderRoster() {
         <button type="button" class="numpad__toggle" id="numpadToggle" title="البحث بالاسم">أب</button>
       </div>
       <div class="roster-controls__filter" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-        <button type="button" class="btn btn-info btn-sm" id="guestBtn" style="white-space:nowrap;">${icons.users} زائر</button>
         <select class="select select--roster" id="filterSelect">
           <option value="all" ${currentFilter === "all" ? "selected" : ""}>جميع الطلاب (${totalStudents})</option>
           <option value="paid" ${currentFilter === "paid" ? "selected" : ""}>✓ تم الدفع (${paidCount})</option>

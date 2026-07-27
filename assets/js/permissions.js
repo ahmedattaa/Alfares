@@ -5,8 +5,7 @@
 /** الصفحات القابلة للتحكم فى صلاحياتها (الرئيسية متاحة دائمًا، والإعدادات للمدير فقط) */
 export const PERMISSION_PAGES = [
   { id: "session", label: "إدارة الحصة" },
-  { id: "reception", label: "استقبال الطلاب" },
-  { id: "parent-reception", label: "استقبال ولي الأمر" },
+  { id: "visit", label: "لوحة ولي الأمر" },
   { id: "attendance-tracker", label: "متابعة الحضور والغياب" },
   { id: "students", label: "الطلاب" },
   { id: "followup", label: "المتابعة" },

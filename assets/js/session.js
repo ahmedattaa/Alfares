@@ -771,6 +771,13 @@ function renderStudentZone(roster) {
           <button class="btn btn-success btn-sm" id="depositBtn">${icons.wallet} إيداع في المحفظة</button>
         </div>
       ` : ""}
+
+      ${isGuest ? `
+        <div class="divider"></div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-success btn-lg" id="guestPayBtn" style="flex:1;">${icons.money} دفع — ${formatMoney(group?.sessionPrice || 0)}</button>
+        </div>
+      ` : ""}
     </div>
   `;
 
@@ -784,6 +791,15 @@ function renderStudentZone(roster) {
   if (canPerformSensitiveAction(getSession())) {
     const depositBtnEl = document.getElementById("depositBtn");
     if (depositBtnEl) depositBtnEl.addEventListener("click", () => openDepositDialog(student.id));
+  }
+
+  const guestPayBtnEl = document.getElementById("guestPayBtn");
+  if (guestPayBtnEl) {
+    guestPayBtnEl.addEventListener("click", () => {
+      const paidStatus = getStudentStatuses().find((s) => s.payment === "paid");
+      if (!paidStatus) { toast("لا توجد حالة دفع مدفوعة", "warning"); return; }
+      onStatusClick(student.id, paidStatus.id, roster);
+    });
   }
 }
 

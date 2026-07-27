@@ -1,5 +1,5 @@
 // =========================================================
-// Rollover — معالج ترحيل الطلاب (ترحيل لعام جديد / ترحيل للترم الثاني)
+// Rollover — معالج ترحيل الطلاب (ترحيل لعام جديد / ترحيل للترم الثاني / تسوية مالية)
 // =========================================================
 
 import { initPage } from "./app.js";
@@ -18,13 +18,19 @@ import {
   getAttendance,
   saveAttendance,
   getStudentStatuses,
+  addRolloverLog,
+  getRolloverLogs,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML } from "./ui.js";
 import { gradeName, groupName, findGroup, dueAmount } from "./lookups.js";
+import { createSnapshot, renderSnapshotSummaryHTML } from "./term-snapshot.js";
+import { renderWalletReconciliationHTML, executeWalletReconciliation } from "./wallet-reconciliation.js";
+import { computePnL, renderPnLHTML } from "./pnl-report.js";
 
 const content = await initPage("rollover");
-let rolloverMode = "year"; // "year" or "term"
+let rolloverMode = "year"; // "year" | "term" | "financial"
+let financialStep = 1; // 1=snapshot, 2=wallet, 3=pnl, 4=execute
 let previewData = [];
 
 if (content) render();
@@ -34,7 +40,7 @@ function render() {
     <div class="page__header">
       <div>
         <div class="page__title">${icons.calendar} ترحيل الطلاب</div>
-        <div class="page__subtitle">نقل الطلاب لمجموعات جديدة مع ترحيل المديونيات</div>
+        <div class="page__subtitle">نقل الطلاب + تسوية المحافظ + التقارير المالية الختامية</div>
       </div>
     </div>
 
@@ -57,6 +63,15 @@ function render() {
         </div>
         <div class="rollover-mode-card__check">${rolloverMode === "term" ? icons.check : ""}</div>
       </label>
+      <label class="rollover-mode-card ${rolloverMode === "financial" ? "is-active" : ""}">
+        <input type="radio" name="rolloverMode" value="financial" ${rolloverMode === "financial" ? "checked" : ""}>
+        <div class="rollover-mode-card__icon" style="background:#f59e0b;">💰</div>
+        <div class="rollover-mode-card__content">
+          <div class="rollover-mode-card__title">تسوية مالية + تقرير ختامي</div>
+          <div class="rollover-mode-card__desc">لقطة أرصدة + تسوية المحافظ + التقرير المالي الختامي</div>
+        </div>
+        <div class="rollover-mode-card__check">${rolloverMode === "financial" ? icons.check : ""}</div>
+      </label>
     </div>
 
     <div id="rolloverContent"></div>
@@ -65,6 +80,7 @@ function render() {
   content.querySelectorAll('input[name="rolloverMode"]').forEach((radio) => {
     radio.addEventListener("change", (e) => {
       rolloverMode = e.target.value;
+      financialStep = 1;
       previewData = [];
       render();
     });
@@ -79,9 +95,207 @@ function renderRolloverContent() {
 
   if (rolloverMode === "year") {
     renderYearRollover(box);
-  } else {
+  } else if (rolloverMode === "term") {
     renderTermRollover(box);
+  } else if (rolloverMode === "financial") {
+    renderFinancialReconciliation(box);
   }
+}
+
+/* ================= تسوية مالية + تقرير ختامي ================= */
+function renderFinancialReconciliation(box) {
+  const steps = [
+    { num: 1, label: "📸 لقطة الأرصدة" },
+    { num: 2, label: "🏦 تسوية المحافظ" },
+    { num: 3, label: "📊 التقرير الختامي" },
+    { num: 4, label: "✅ التنفيذ" },
+  ];
+
+  box.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head">
+        <div class="card__title">💰 معالج التسوية المالية</div>
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+        ${steps.map((s) => `
+          <button class="btn btn-sm ${financialStep === s.num ? "btn-primary" : financialStep > s.num ? "btn-success" : "btn-outline"}" 
+                  data-step="${s.num}" ${financialStep > s.num ? "disabled" : ""}>
+            ${financialStep > s.num ? "✓ " : ""}${s.label}
+          </button>
+        `).join("")}
+      </div>
+      <div id="financialStepContent"></div>
+    </div>
+  `;
+
+  box.querySelectorAll("button[data-step]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const step = Number(e.target.dataset.step);
+      if (step <= financialStep) financialStep = step;
+      renderFinancialReconciliation(box);
+    });
+  });
+
+  const stepBox = document.getElementById("financialStepContent");
+  if (financialStep === 1) renderSnapshotStep(stepBox);
+  else if (financialStep === 2) renderWalletStep(stepBox);
+  else if (financialStep === 3) renderPnLStep(stepBox);
+  else if (financialStep === 4) renderExecuteStep(box);
+}
+
+function renderSnapshotStep(box) {
+  const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const currentTerm = terms.find((t) => {
+    const today = todayISO();
+    return today >= t.startDate && today <= t.endDate;
+  });
+
+  box.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <div style="font-weight:700; margin-bottom:8px;">📸 إنشاء لقطة أرصدة</div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">
+        اللقطة بتحفظ أرصدة المحافظ والمتأخرات لكل الطلاب النشطين كنقطة مرجعية.
+      </div>
+      <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+        <div>
+          <label class="label" style="font-size:12px;">الترم</label>
+          <select class="select" id="snapshotTermSelect" style="min-width:200px;">
+            ${terms.map((t) => `<option value="${t.id}" ${t.id === currentTerm?.id ? "selected" : ""}>${escapeHTML(t.name)} (${t.startDate} → ${t.endDate})</option>`).join("")}
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" id="createSnapshotBtn">${icons.check} إنشاء اللقطة</button>
+      </div>
+    </div>
+    <div id="snapshotSummary"></div>
+  `;
+
+  document.getElementById("createSnapshotBtn").addEventListener("click", () => {
+    const termId = document.getElementById("snapshotTermSelect").value;
+    createSnapshot(termId);
+    toast("تم إنشاء لقطة الأرصدة بنجاح ✓", "success");
+    document.getElementById("snapshotSummary").innerHTML = renderSnapshotSummaryHTML(termId) || "";
+  });
+
+  const selectedTerm = terms[0]?.id;
+  if (selectedTerm) {
+    const existing = renderSnapshotSummaryHTML(selectedTerm);
+    if (existing) document.getElementById("snapshotSummary").innerHTML = existing;
+  }
+}
+
+function renderWalletStep(box) {
+  box.innerHTML = renderWalletReconciliationHTML();
+}
+
+function renderPnLStep(box) {
+  const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const months = getAcademicMonths().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const years = getAcademicYears();
+
+  box.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <div style="font-weight:700; margin-bottom:8px;">📊 التقرير الختامي</div>
+      <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:16px;">
+        <div>
+          <label class="label" style="font-size:12px;">نوع الفترة</label>
+          <select class="select" id="pnlPeriodType" style="min-width:120px;">
+            <option value="month">شهر</option>
+            <option value="term" selected>ترم</option>
+            <option value="year">سنة</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" style="font-size:12px;">الفترة</label>
+          <select class="select" id="pnlPeriodId" style="min-width:220px;"></select>
+        </div>
+        <button class="btn btn-primary btn-sm" id="generatePnLBtn">${icons.chart || "📊"} عرض التقرير</button>
+      </div>
+    </div>
+    <div id="pnlReportContent"></div>
+  `;
+
+  function updatePeriodOptions() {
+    const type = document.getElementById("pnlPeriodType").value;
+    const sel = document.getElementById("pnlPeriodId");
+    if (type === "month") sel.innerHTML = months.map((m) => `<option value="${m.id}">${escapeHTML(m.name)} (${m.startDate})</option>`).join("");
+    else if (type === "term") sel.innerHTML = terms.map((t) => `<option value="${t.id}">${escapeHTML(t.name)} (${t.startDate})</option>`).join("");
+    else sel.innerHTML = years.map((y) => `<option value="${y.id}">${escapeHTML(y.name)} (${y.startDate})</option>`).join("");
+  }
+
+  document.getElementById("pnlPeriodType").addEventListener("change", updatePeriodOptions);
+  updatePeriodOptions();
+
+  document.getElementById("generatePnLBtn").addEventListener("click", () => {
+    const type = document.getElementById("pnlPeriodType").value;
+    const id = document.getElementById("pnlPeriodId").value;
+    const data = computePnL(type, id);
+    document.getElementById("pnlReportContent").innerHTML = renderPnLHTML(data);
+  });
+}
+
+function renderExecuteStep(box) {
+  const logs = getRolloverLogs();
+  const lastLog = logs.length ? logs[logs.length - 1] : null;
+
+  box.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <div style="font-weight:700; margin-bottom:8px;">✅ تنفيذ التسوية المالية</div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+        هيتم تنفيذ التغييرات المالية التالية:
+      </div>
+      <ul style="font-size:13px; line-height:2; margin-bottom:16px; padding-right:20px;">
+        <li>📸 إنشاء/تحديث لقطة الأرصدة للترم الحالي</li>
+        <li>🏦 ترحيل أرصدة المحافظ كقيود افتتاحية في دفتر الأستاذ</li>
+        <li>📋 ترحيل المديونيات كقيود افتتاحية</li>
+        <li>📝 تسجيل العملية في سجل الترحيل</li>
+      </ul>
+      <button class="btn btn-success" id="executeFinancialBtn">${icons.check} تنفيذ التسوية المالية</button>
+    </div>
+    ${lastLog ? `
+      <div class="card card-pad" style="margin-top:16px;">
+        <div class="card__head"><div class="card__title">📝 آخر عملية ترحيل</div></div>
+        <div style="font-size:13px;">
+          <div>التاريخ: ${lastLog.date} ${lastLog.time}</div>
+          <div>النوع: ${escapeHTML(lastLog.type || "—")}</div>
+          ${lastLog.walletCarried != null ? `<div>ترحيل المحافظ: ${formatMoney(lastLog.walletCarried)}</div>` : ""}
+          ${lastLog.lateCarried != null ? `<div>ترحيل المديونيات: ${formatMoney(lastLog.lateCarried)}</div>` : ""}
+          ${lastLog.studentsProcessed != null ? `<div>عدد الطلاب: ${lastLog.studentsProcessed}</div>` : ""}
+        </div>
+      </div>
+    ` : ""}
+  `;
+
+  document.getElementById("executeFinancialBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "تأكيد التسوية المالية",
+      body: `هيتم تنفيذ التسوية المالية:<br>• ترحيل أرصدة المحافظ والمديونيات<br>• تسجيل قيود افتتاحية في دفتر الأستاذ<br><br>هل أنت متأكد؟`,
+      confirmText: "تنفيذ التسوية",
+      tone: "warning",
+    });
+    if (!ok) return;
+
+    const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
+    const currentTerm = terms.find((t) => {
+      const today = todayISO();
+      return today >= t.startDate && today <= t.endDate;
+    });
+    if (currentTerm) createSnapshot(currentTerm.id);
+
+    const result = executeWalletReconciliation({ termId: currentTerm?.id, executedBy: "النظام" });
+
+    addRolloverLog({
+      type: "financial_reconciliation",
+      termId: currentTerm?.id,
+      termName: currentTerm?.name || "—",
+      studentsProcessed: result.processedCount,
+      walletCarried: result.totalWalletCarried,
+      lateCarried: result.totalLateCarried,
+    });
+
+    toast(`تم التسوية المالية ✓ — ${result.processedCount} طالب | محافظ: ${formatMoney(result.totalWalletCarried)} | ديون: ${formatMoney(result.totalLateCarried)}`, "success");
+    financialStep = 1;
+    render();
+  });
 }
 
 /* ================= ترحيل لعام جديد ================= */
@@ -250,6 +464,7 @@ async function executeYearRollover() {
   });
 
   saveStudents(students);
+  addRolloverLog({ type: "year_rollover", studentsProcessed: updatedCount, lateCarried: totalLate });
   toast(`تم ترحيل ${updatedCount} طالب بنجاح ✓`, "success");
   render();
 }
@@ -455,8 +670,7 @@ async function executeTermRollover() {
   });
 
   saveStudents(students);
-
-  // رسالة النجاح
+  addRolloverLog({ type: "term_rollover", studentsProcessed: movedCount, studentsPaused: pausedCount });
   let successMsg = "";
   if (movedCount) successMsg += `تم ترحيل ${movedCount} طالب للترم الثاني`;
   if (pausedCount) successMsg += `${successMsg ? " • " : ""}تم إيقاف ${pausedCount} طالب (تصفية حسابات)`;

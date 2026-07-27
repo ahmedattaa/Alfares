@@ -35,6 +35,8 @@ const KEYS = {
   achievements: "center_achievements",
   escalationLogs: "center_escalation_logs",
   advancePermissions: "center_advance_permissions",
+  termSnapshots: "center_term_snapshots",
+  rolloverLogs: "center_rollover_logs",
   seeded: "center_seeded_v12",
 };
 
@@ -924,4 +926,62 @@ export function markAdvancePermissionUsed(id) {
     item.used = true;
     saveAdvancePermissions(list);
   }
+}
+
+/* =========================================================
+   TERM SNAPSHOTS — لقطة أرصدة الطلاب عند بداية كل ترم
+   ========================================================= */
+export const getTermSnapshots = () => readJSON(KEYS.termSnapshots, []);
+export const saveTermSnapshots = (list) => writeJSON(KEYS.termSnapshots, list);
+
+/** يُنشئ لقطة أرصدة لكل الطلاب النشطين لترم معين */
+export function createTermSnapshot(termId) {
+  const students = getStudents().filter((s) => s.status === "active");
+  const snapshot = {
+    id: generateId("SNP"),
+    termId,
+    date: todayISO(),
+    students: students.map((s) => ({
+      studentId: s.id,
+      name: s.name,
+      groupId: s.groupId,
+      gradeId: s.gradeId,
+      walletBalance: Number(s.walletBalance || 0),
+      lateBalance: Number(s.lateBalance || 0),
+    })),
+  };
+  const snapshots = getTermSnapshots();
+  const existing = snapshots.findIndex((sn) => sn.termId === termId);
+  if (existing >= 0) snapshots[existing] = snapshot;
+  else snapshots.push(snapshot);
+  saveTermSnapshots(snapshots);
+  return snapshot;
+}
+
+/** يُرجع لقطة أرصدة لترم معين أو null */
+export function getTermSnapshotForTerm(termId) {
+  return getTermSnapshots().find((sn) => sn.termId === termId) || null;
+}
+
+/** هل يوجد لقطة أرصدة لترم معين؟ */
+export function hasTermSnapshot(termId) {
+  return getTermSnapshots().some((sn) => sn.termId === termId);
+}
+
+/* =========================================================
+   ROLLOVER LOGS — سجل عمليات الترحيل
+   ========================================================= */
+export const getRolloverLogs = () => readJSON(KEYS.rolloverLogs, []);
+export const saveRolloverLogs = (list) => writeJSON(KEYS.rolloverLogs, list);
+
+export function addRolloverLog(entry) {
+  const logs = getRolloverLogs();
+  logs.push({ id: generateId("ROL"), date: todayISO(), time: new Date().toTimeString().slice(0, 5), ...entry });
+  saveRolloverLogs(logs);
+}
+
+/** يُرجع آخر سجل ترحيل */
+export function getLastRolloverLog() {
+  const logs = getRolloverLogs();
+  return logs.length ? logs[logs.length - 1] : null;
 }

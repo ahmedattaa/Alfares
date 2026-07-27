@@ -1172,12 +1172,6 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .finance-total-card__value{ font-size:20px; }
   .finance-total-card__grid{ grid-template-columns:1fr 1fr; gap:10px; }
 
-  .pr-profile-card__header{ flex-wrap:wrap; gap:10px; }
-  .pr-profile-card__name{ font-size:16px; }
-  .pr-info-grid{ grid-template-columns:1fr 1fr; }
-  .pr-finance-summary{ grid-template-columns:1fr 1fr; }
-  .pr-detail-row{ font-size:12px; flex-direction:column; gap:2px; }
-
   .auth-card{ padding:24px 20px; }
   .auth-card__title{ font-size:18px; }
 }
@@ -1188,8 +1182,6 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .page__title{ font-size:16px; }
   .status-btn-grid{ grid-template-columns:1fr; }
   .finance-total-card__grid{ grid-template-columns:1fr; }
-  .pr-info-grid{ grid-template-columns:1fr; }
-  .pr-finance-summary{ grid-template-columns:1fr; }
 }
 
 /* =========================================================

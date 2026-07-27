@@ -11,6 +11,7 @@ import { groupName, gradeName, groupsForGrade, findGroup, dueAmount } from "./lo
 import { formatTimeAr, weekdayArForDate, isScheduledOnDate } from "./schedule.js";
 import { getSessionsForDate } from "./session-overview.js";
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
+import { computePnL, renderPnLHTML } from "./pnl-report.js";
 
 const content = await initPage("finance");
 let activeTab = "daily";
@@ -34,6 +35,7 @@ function render() {
       <button class="tab-btn ${activeTab === "late" ? "is-active" : ""}" data-tab="late">${icons.alert}<span>المتأخرات</span></button>
       <button class="tab-btn ${activeTab === "monthly" ? "is-active" : ""}" data-tab="monthly">${icons.shield}<span>الإيرادات الشهرية</span></button>
       <button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات</span></button>
+      <button class="tab-btn ${activeTab === "pnl" ? "is-active" : ""}" data-tab="pnl">${icons.chart}<span>التقرير الختامي</span></button>
     </div>
 
     <div id="tabContent"></div>
@@ -56,6 +58,7 @@ function renderTabContent() {
   if (activeTab === "weekly") return renderWeeklyTab(box);
   if (activeTab === "late") return renderLateTab(box);
   if (activeTab === "monthly") return renderMonthlyTab(box);
+  if (activeTab === "pnl") return renderPnLTab(box);
   return renderChargesTab(box);
 }
 
@@ -1260,5 +1263,54 @@ function renderMonthlyTab(box) {
   document.getElementById("monthFilterSelect").addEventListener("change", (e) => {
     selectedMonthId = e.target.value;
     renderMonthlyTab(box);
+  });
+}
+
+/* ================= التقرير الختامي P&L ================= */
+function renderPnLTab(box) {
+  const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const months = getAcademicMonths().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const years = getAcademicYears();
+
+  box.innerHTML = `
+    <div class="page__header" style="margin-bottom:14px;">
+      <div class="page__subtitle" style="margin:0;">التقرير المالي الختامي — إجمالي الإيرادات والديون والمحافظ والورديات</div>
+    </div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:16px;">
+        <div>
+          <label class="label" style="font-size:12px;">نوع الفترة</label>
+          <select class="select" id="pnlPeriodType" style="min-width:120px;">
+            <option value="month">شهر</option>
+            <option value="term" selected>ترم</option>
+            <option value="year">سنة</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" style="font-size:12px;">الفترة</label>
+          <select class="select" id="pnlPeriodId" style="min-width:220px;"></select>
+        </div>
+        <button class="btn btn-primary btn-sm" id="generatePnLBtn">${icons.chart} عرض التقرير</button>
+      </div>
+    </div>
+    <div id="pnlReportContent"></div>
+  `;
+
+  function updatePeriodOptions() {
+    const type = document.getElementById("pnlPeriodType").value;
+    const sel = document.getElementById("pnlPeriodId");
+    if (type === "month") sel.innerHTML = months.map((m) => `<option value="${m.id}">${escapeHTML(m.name)} (${m.startDate})</option>`).join("");
+    else if (type === "term") sel.innerHTML = terms.map((t) => `<option value="${t.id}">${escapeHTML(t.name)} (${t.startDate})</option>`).join("");
+    else sel.innerHTML = years.map((y) => `<option value="${y.id}">${escapeHTML(y.name)} (${y.startDate})</option>`).join("");
+  }
+
+  document.getElementById("pnlPeriodType").addEventListener("change", updatePeriodOptions);
+  updatePeriodOptions();
+
+  document.getElementById("generatePnLBtn").addEventListener("click", () => {
+    const type = document.getElementById("pnlPeriodType").value;
+    const id = document.getElementById("pnlPeriodId").value;
+    const data = computePnL(type, id);
+    document.getElementById("pnlReportContent").innerHTML = renderPnLHTML(data);
   });
 }

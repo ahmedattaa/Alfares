@@ -9,8 +9,7 @@ import { canAccessPage, firstAccessiblePage } from "./permissions.js";
 /** الصفحات التى تتطلب صندوق مفتوح (وردية نشطة) */
 const SHIFT_REQUIRED_PAGES = [
   "session",
-  "reception",
-  "parent-reception",
+  "visit",
   "finance",
   "quick-attendance",
 ];

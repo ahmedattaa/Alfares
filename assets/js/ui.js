@@ -10,10 +10,9 @@ import { THEMES, getCurrentTheme, setCurrentTheme, applyCurrentTheme } from "./t
 
 const NAV_ITEMS = [
   { page: "dashboard", label: "الرئيسية", icon: icons.home, href: "dashboard.html" },
-  { page: "session", label: "إدارة الحصة", icon: icons.grid, href: "session.html" },
   { page: "quick-attendance", label: "حضور الطلاب", icon: icons.check, href: "quick-attendance.html" },
-  { page: "reception", label: "استقبال الطلاب", icon: icons.inbox, href: "reception.html" },
-  { page: "parent-reception", label: "استقبال ولي الأمر", icon: icons.users, href: "parent-reception.html" },
+  { page: "session", label: "إدارة الحصة", icon: icons.grid, href: "session.html" },
+  { page: "visit", label: "لوحة ولي الأمر", icon: icons.inbox, href: "visit.html" },
   { page: "students", label: "الطلاب", icon: icons.users, href: "students.html" },
   { page: "followup", label: "المتابعة", icon: icons.clipboard, href: "followup.html" },
   { page: "teacher-insights", label: "لوحة المعلم", icon: icons.shield, href: "teacher-insights.html" },
@@ -30,6 +29,7 @@ const PAGE_TITLES = {
   session: "إدارة الحصة",
   reception: "استقبال الطلاب",
   "parent-reception": "استقبال ولي الأمر",
+  visit: "لوحة ولي الأمر",
   "attendance-tracker": "متابعة الحضور والغياب",
   students: "الطلاب",
   student: "تفاصيل الطالب",
