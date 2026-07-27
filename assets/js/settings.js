@@ -159,6 +159,41 @@ function renderCenterTab(box) {
             <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات المحفظة</button>
           </form>
         </div>
+
+        <div class="card card-pad">
+          <div class="card__head"><div class="card__title">${icons.wallet || "💰"} وضع الصندوق (الوردية)</div></div>
+          <form id="shiftModeForm">
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${(settings.shiftMode || "mandatory") === "mandatory" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
+                <input type="radio" name="shiftMode" value="mandatory" ${(settings.shiftMode || "mandatory") === "mandatory" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
+                <div>
+                  <div style="font-weight:700; font-size:14px;">🔒 وردية إجبارية (الافتراضى)</div>
+                  <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس لازم يعدّ فلوس الصندوق بالفئات قبل ما يفتح الوردية. آمن 100% — كل جنيه ليه سجل. التدقيق الأعمى كامل عند التقليل.</div>
+                  <span class="badge badge-success" style="margin-top:6px; font-size:10px;">⭐ الأعلى أماناً</span>
+                </div>
+              </label>
+
+              <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${settings.shiftMode === "no_custody" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
+                <input type="radio" name="shiftMode" value="no_custody" ${settings.shiftMode === "no_custody" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
+                <div>
+                  <div style="font-weight:700; font-size:14px;">🔓 وردية بدون عهدة</div>
+                  <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس يفتح الوردية من غير ما يعدّ فلوس. كل الدفعات بتتسجل والتدقيق شغال — بس مفيش نقطة مرجعية للعهدة الافتتاحية. مناسب لل盜انات اللي مش بتحتفظ بفلوس في الصندوق.</div>
+                  <span class="badge badge-primary" style="margin-top:6px; font-size:10px;">✅ آمن + مرن</span>
+                </div>
+              </label>
+
+              <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${settings.shiftMode === "disabled" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
+                <input type="radio" name="shiftMode" value="disabled" ${settings.shiftMode === "disabled" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
+                <div>
+                  <div style="font-weight:700; font-size:14px;">⚠️ تعطيل الوردية</div>
+                  <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس يقدر يشتغل من غير وردية. مفيش تدقيق على الصندوق ومفيش تقرير يومي كامل. استخدمه فقط في حالات استثنائية مؤقتة.</div>
+                  <span class="badge badge-danger" style="margin-top:6px; font-size:10px;">⚡ أقل أماناً — للمواقف الطارئة</span>
+                </div>
+              </label>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit" style="margin-top:12px;">${icons.check} حفظ وضع الصندوق</button>
+          </form>
+        </div>
       </div>
     </div>
   `;
@@ -175,6 +210,15 @@ function renderCenterTab(box) {
     const data = Object.fromEntries(new FormData(e.target).entries());
     saveSettings({ ...settings, autoDeductWallet: data.autoDeductWallet === "on", autoDeductMaterials: data.autoDeductMaterials === "on" });
     toast("تم حفظ إعدادات المحفظة بنجاح", "success");
+  });
+
+  document.getElementById("shiftModeForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    const mode = data.shiftMode || "mandatory";
+    saveSettings({ ...settings, shiftMode: mode });
+    const labels = { mandatory: "وردية إجبارية", no_custody: "وردية بدون عهدة", disabled: "تعطيل الوردية" };
+    toast(`تم حفظ وضع الصندوق: ${labels[mode]}`, "success");
   });
 }
 

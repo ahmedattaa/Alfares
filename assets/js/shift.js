@@ -13,6 +13,7 @@ import {
   getCurrentShift,
   closeShift,
   getStudents,
+  getSettings,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML } from "./ui.js";
@@ -25,21 +26,22 @@ if (content) render();
 function render() {
   const session = getSession();
   const shift = getCurrentShift();
+  const shiftMode = getSettings().shiftMode || "mandatory";
 
   content.innerHTML = `
     <div class="page__header">
       <div>
         <div class="page__title">${icons.wallet} الصندوق — تقفيل الوردية</div>
-        <div class="page__subtitle">لا يعرض الإجمالي على السكرتير — أنت من يدخل الفلوس بالفئات</div>
+        <div class="page__subtitle">${shiftMode === "no_custody" ? "وضع بدون عهدة — افتح الوردية بدون عد فلوس" : shiftMode === "disabled" ? "الوردية معطّلة — انتبه: لن يتم تسجيل التحصيلات بالصندوق" : "لا يعرض الإجمالي على السكرتير — أنت من يدخل الفلوس بالفئات"}</div>
       </div>
     </div>
 
-    ${shift ? renderOpenShift(shift) : renderOpeningPage()}
+    ${shift ? renderOpenShift(shift) : renderOpeningPage(shiftMode)}
     ${shift ? renderShiftHistory() : ""}
   `;
 
   if (shift) bindOpenShiftEvents(shift);
-  else bindOpeningPageEvents();
+  else bindOpeningPageEvents(shiftMode);
 }
 
 /* ================= الوردية المفتوحة ================= */
@@ -246,9 +248,38 @@ function updateClosingTotal() {
 }
 
 /* ================= فتح وردية — صفحه كامله ================= */
-function renderOpeningPage() {
+function renderOpeningPage(shiftMode = "mandatory") {
   const shifts = getShifts().filter((s) => s.status === "closed");
   const lastShift = shifts.length ? shifts[shifts.length - 1] : null;
+
+  if (shiftMode === "no_custody") {
+    return `
+      ${lastShift ? `
+        <div style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
+          آخر تقفيل: <strong>${lastShift.closedDate}</strong> —
+          الحالة: ${lastShift.variance === 0 ? "✅ متطابق" : `⚠️ ${lastShift.variance > 0 ? "زيادة" : "عجز"} ${formatMoney(Math.abs(lastShift.variance))} ج.م`}
+        </div>
+      ` : ""}
+
+      <div class="card card-pad" style="border:2px solid var(--primary);">
+        <div class="card__head">
+          <div class="card__title" style="color:var(--primary);">${icons.wallet} فتح الوردية — بدون عهدة</div>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
+          هتفتح الوردية <strong>من غير ما تعدّ فلوس الصندوق</strong>. كل التحصيلات هتتسجل عادي والتدقيق هيشتغل — بس مفيش عهدة افتتاحية.
+        </p>
+        <div style="background:var(--primary-bg, rgba(59,130,246,0.08)); border:1px solid var(--primary-border, rgba(59,130,246,0.2)); border-radius:var(--r-md); padding:12px; font-size:12px; line-height:1.7;">
+          <strong>📋 ملاحظة:</strong> عند التقليل، النظام هيساوي العهدة (صفر) بالفعلى. لو لقى فلوس — كلها هتتسجل كـ "ربح صندوق". لو ناقصة — هتتسجل كعجز.
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary btn-lg btn-block" id="openingConfirmBtn">${icons.check} فتح الوردية بدون عهدة</button>
+      </div>
+    `;
+  }
+
+  // default: mandatory mode (denomination form)
 
   return `
     ${lastShift ? `
@@ -291,7 +322,30 @@ function renderOpeningPage() {
   `;
 }
 
-function bindOpeningPageEvents() {
+function bindOpeningPageEvents(shiftMode = "mandatory") {
+  document.getElementById("openingConfirmBtn")?.addEventListener("click", () => {
+    const session = getSession();
+    let total = 0;
+
+    if (shiftMode === "no_custody") {
+      total = 0;
+    } else {
+      document.querySelectorAll(".opening-denom-input").forEach((input) => {
+        const count = parseInt(input.value) || 0;
+        const denom = Number(input.dataset.denom);
+        total += count * denom;
+      });
+    }
+
+    const shift = openShift(total, session?.username || "النظام");
+    if (shift) {
+      toast(shiftMode === "no_custody" ? "تم فتح الوردية بدون عهدة ✓" : `تم فتح الوردية — العهدة: ${formatMoney(total)} ✓`, "success");
+      render();
+    }
+  });
+
+  if (shiftMode === "no_custody") return;
+
   const updateOpeningTotal = () => {
     let total = 0;
     document.querySelectorAll(".opening-denom-input").forEach((input) => {
@@ -308,22 +362,6 @@ function bindOpeningPageEvents() {
 
   document.querySelectorAll(".opening-denom-input").forEach((input) => {
     input.addEventListener("input", updateOpeningTotal);
-  });
-
-  document.getElementById("openingConfirmBtn")?.addEventListener("click", () => {
-    const session = getSession();
-    let total = 0;
-    document.querySelectorAll(".opening-denom-input").forEach((input) => {
-      const count = parseInt(input.value) || 0;
-      const denom = Number(input.dataset.denom);
-      total += count * denom;
-    });
-
-    const shift = openShift(total, session?.username || "النظام");
-    if (shift) {
-      toast(`تم فتح الوردية — العهدة: ${formatMoney(total)} ✓`, "success");
-      render();
-    }
   });
 }
 

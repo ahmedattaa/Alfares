@@ -93,9 +93,15 @@ export function renderShell(activePage) {
           <div class="topbar__right">
             ${(() => {
               const shift = getCurrentShift();
-              return shift
-                ? `<span class="shift-indicator shift-indicator--open" title="وردية مفتوحة — فتحها ${escapeHTML(shift.openedBy)}">${icons.wallet} وردية مفتوحة</span>`
-                : `<span class="shift-indicator shift-indicator--closed" title="لا توجد وردية مفتوحة" style="cursor:pointer;" onclick="window.location.href='shift.html'">${icons.alert} افتح صندوق</span>`;
+              const shiftMode = getSettings().shiftMode || "mandatory";
+              if (shift) {
+                const modeTag = shiftMode === "no_custody" ? " (بدون عهدة)" : "";
+                return `<span class="shift-indicator shift-indicator--open" title="وردية مفتوحة${modeTag} — فتحها ${escapeHTML(shift.openedBy)}">${icons.wallet} وردية مفتوحة${modeTag}</span>`;
+              }
+              if (shiftMode === "disabled") {
+                return `<span class="shift-indicator shift-indicator--open" title="الوردية معطّلة" style="background:var(--warning); color:#000;">${icons.alert} وردية معطّلة</span>`;
+              }
+              return `<span class="shift-indicator shift-indicator--closed" title="لا توجد وردية مفتوحة" style="cursor:pointer;" onclick="window.location.href='shift.html'">${icons.alert} افتح صندوق</span>`;
             })()}
             <span class="topbar__date">${formatHeaderDate()}</span>
             <div class="theme-switcher" id="themeSwitcher">
