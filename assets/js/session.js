@@ -6,10 +6,10 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit } from "./storage.js";
-import { escapeHTML, formatMoney, todayISO, debounce } from "./helpers.js";
+import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getCurrentShift } from "./storage.js";
+import { escapeHTML, formatMoney, todayISO, debounce, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, formModal } from "./ui.js";
-import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup } from "./lookups.js";
+import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup, dueAmount } from "./lookups.js";
 import { recordAttendanceStatus, recordActionStatus } from "./attendance-service.js";
 import { formatTimeAr, sessionTimeStatus } from "./schedule.js";
 import { computeFinanceBreakdown, renderFinancePanelHTML } from "./finance-panel.js";
@@ -62,7 +62,7 @@ function renderSelector() {
       </div>
     </div>
 
-    <div class="card card-pad" style="margin-bottom:20px; max-width:320px;">
+    <div class="card card-pad" style="margin-bottom:20px; max-width:320px; width:100%;">
       <div class="field" style="margin-bottom:0;">
         <label class="field__label">التاريخ</label>
         <input class="input" type="date" id="browseDateInput" value="${selectedDate}">
@@ -233,9 +233,11 @@ function openMakeupModal(group) {
 
         toast(`تم تسجيل ${student.name} كطالب تعويض`, "success");
         close();
-        renderStats(getRoster());
-        renderPager(getRoster());
-        renderStudentZone(getRoster());
+        const roster = getRoster();
+        renderDailyFinancePanel(roster);
+        renderStats(roster);
+        renderPager(roster);
+        renderStudentZone(roster);
       })
     );
   }
@@ -250,6 +252,190 @@ function openMakeupModal(group) {
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".search-hero")) results.classList.remove("is-open");
   });
+}
+
+/* ================= تسجيل طالب زائر ================= */
+function openGuestModal(group) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal__head">
+        <div class="modal__title">${icons.users} طالب زائر — ${escapeHTML(group.name)}</div>
+      </div>
+      <div class="modal__body">
+        <p style="font-size:13px; color:var(--muted); margin-bottom:14px;">سجّل الطالب الزائر بالاسم الأول ورقم تليفون ولي الأمر — هيتحسب في الحصة المالية</p>
+        <div class="field">
+          <label class="field__label">اسم الطالب</label>
+          <input class="input" id="guestNameInput" placeholder="الاسم الأول" autocomplete="off" autofocus>
+        </div>
+        <div class="field">
+          <label class="field__label">تليفون ولي الأمر</label>
+          <input class="input" id="guestPhoneInput" placeholder="01xxxxxxxxx" type="tel" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-outline" id="guestCancel">إلغاء</button>
+        <button type="button" class="btn btn-success" id="guestSubmit">${icons.check} تسجيل الزائر</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.querySelector("#guestCancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  const submit = overlay.querySelector("#guestSubmit");
+  const nameInput = overlay.querySelector("#guestNameInput");
+  const phoneInput = overlay.querySelector("#guestPhoneInput");
+
+  submit.addEventListener("click", () => {
+    const name = nameInput.value.trim();
+    const phone = phoneInput.value.trim();
+    if (!name) { toast("من فضلك اكتب اسم الطالب", "warning"); nameInput.focus(); return; }
+    if (!phone) { toast("من فضلك اكتب تليفون ولي الأمر", "warning"); phoneInput.focus(); return; }
+
+    const guest = addGuestStudent(name, phone, group);
+    if (!guest) { toast("فشلت إضافة الزائر", "error"); return; }
+
+    tempMakeupStudents.push(guest);
+    toast(`تم تسجيل الزائر: ${name}`, "success");
+    close();
+    const roster = getRoster();
+    renderDailyFinancePanel(roster);
+    renderStats(roster);
+    renderPager(roster);
+    renderStudentZone(roster);
+  });
+
+  nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") phoneInput.focus(); });
+  phoneInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submit.click(); });
+}
+
+function addGuestStudent(name, phone, group) {
+  const students = getStudents();
+  const guestCount = students.filter((s) => s.isGuest).length + 1;
+  const guest = {
+    id: generateId("GST"),
+    code: `GST-${String(guestCount).padStart(2, "0")}`,
+    name,
+    phone: "",
+    parentPhone: phone,
+    gradeId: group.gradeId || "",
+    groupId: group.id,
+    joinDate: todayISO(),
+    status: "active",
+    isGuest: true,
+    discount: 0,
+    lateBalance: 0,
+    walletBalance: 0,
+  };
+  students.push(guest);
+  saveStudents(students);
+  return guest;
+}
+
+/* ================= الملخص المالي اليومي ================= */
+function renderDailyFinancePanel(roster) {
+  const rosterIds = new Set(roster.map((s) => s.id));
+  const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance" && rosterIds.has(a.studentId));
+  const payments = getPayments().filter((p) => p.date === selectedDate);
+  const statuses = getStudentStatuses();
+  const group = findGroup(getGroups(), selectedGroupId);
+  const sessionPrice = group?.sessionPrice || 0;
+
+  const guests = roster.filter((s) => s.isGuest);
+  const makeup = roster.filter((s) => !s.isGuest && tempMakeupStudents.some((t) => t.id === s.id));
+
+  let paidCount = 0, unpaidCount = 0, absentCount = 0, excusedCount = 0, guestPaid = 0, guestUnpaid = 0, makeupPaid = 0, makeupUnpaid = 0;
+  let totalCollected = 0, totalExpected = 0;
+
+  roster.forEach((s) => {
+    const record = attendance.find((a) => a.studentId === s.id);
+    const pay = payments.find((p) => p.studentId === s.id && (p.groupId === selectedGroupId || p.sessionDate === selectedDate));
+    const studentDue = dueAmount(s, group);
+    const isGuestStudent = s.isGuest;
+    const isMakeupStudent = !isGuestStudent && makeup.some((m) => m.id === s.id);
+
+    if (!record) { absentCount++; return; }
+
+    const st = statuses.find((x) => x.id === record.statusId);
+    if (st?.id === "ST-PAID") {
+      paidCount++;
+      const payAmount = pay ? Number(pay.amount || 0) : 0;
+      totalCollected += payAmount;
+      totalExpected += studentDue;
+      if (isGuestStudent) guestPaid++;
+      if (isMakeupStudent) makeupPaid++;
+    } else if (st?.id === "ST-UNPAID") {
+      unpaidCount++;
+      totalExpected += studentDue;
+      if (isGuestStudent) guestUnpaid++;
+      if (isMakeupStudent) makeupUnpaid++;
+    } else if (st?.id === "ST-EXCUSED" || st?.id === "ST-ABSENT") {
+      absentCount++;
+    }
+  });
+
+  const remaining = totalExpected - totalCollected;
+
+  // إيداعات المحفظة اليوم
+  const walletTxns = getWalletTransactions().filter((t) => t.date === selectedDate);
+  const totalDeposits = walletTxns.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const depositCount = walletTxns.length;
+
+  // إجمالي الدخل اليومي = تحصيل الحضور + إيداعات المحفظة
+  const totalDayIncome = totalCollected + totalDeposits;
+
+  return `
+    <div class="card card-pad" style="margin-bottom:18px; border:2px solid var(--primary);">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--primary);">💰 الحساب المالي — ${escapeHTML(selectedDate)}</div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:14px;">
+        <div style="padding:10px; background:rgba(16,185,129,.08); border-radius:var(--r-sm); text-align:center; border:1px solid rgba(16,185,129,.15);">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">إجمالي الدخل اليومي</div>
+          <div style="font-size:20px; font-weight:800; color:var(--primary);">${formatMoney(totalDayIncome)}</div>
+          <div style="font-size:10px; color:var(--muted);">حضور + إيداعات</div>
+        </div>
+        <div style="padding:10px; background:var(--bg); border-radius:var(--r-sm); text-align:center;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">تحصيل الحضور</div>
+          <div style="font-size:18px; font-weight:800; color:var(--success);">${formatMoney(totalCollected)}</div>
+          <div style="font-size:10px; color:var(--muted);">${paidCount + unpaidCount} طالب</div>
+        </div>
+        <div style="padding:10px; background:var(--bg); border-radius:var(--r-sm); text-align:center;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">💳 إيداعات المحفظة</div>
+          <div style="font-size:18px; font-weight:800; color:var(--info);">${formatMoney(totalDeposits)}</div>
+          <div style="font-size:10px; color:var(--muted);">${depositCount} إيداع</div>
+        </div>
+        <div style="padding:10px; background:var(--bg); border-radius:var(--r-sm); text-align:center;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">المتوقع (حضور)</div>
+          <div style="font-size:18px; font-weight:800; color:var(--text);">${formatMoney(totalExpected)}</div>
+        </div>
+        <div style="padding:10px; background:var(--bg); border-radius:var(--r-sm); text-align:center;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">المتبقي (حضور)</div>
+          <div style="font-size:18px; font-weight:800; color:${remaining > 0 ? "var(--danger)" : "var(--success)"};">${formatMoney(remaining)}</div>
+        </div>
+        ${guests.length ? `<div style="padding:10px; background:var(--bg); border-radius:var(--r-sm); text-align:center;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">🏷️ الزوار</div>
+          <div style="font-size:18px; font-weight:800; color:var(--info);">${guests.length} <span style="font-size:11px; font-weight:400;">(${guestPaid} دفع / ${guestUnpaid} بدون)</span></div>
+        </div>` : ""}
+        ${makeup.length ? `<div style="padding:10px; background:var(--bg); border-radius:var(--r-sm); text-align:center;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">🔄 التعويض</div>
+          <div style="font-size:18px; font-weight:800; color:var(--warning);">${makeup.length} <span style="font-size:11px; font-weight:400;">(${makeupPaid} دفع / ${makeupUnpaid} بدون)</span></div>
+        </div>` : ""}
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; font-size:12px; color:var(--muted);">
+        <span style="color:var(--success);">● حضر ودفع: ${paidCount}</span>
+        <span style="color:var(--info);">● حضر بدون دفع: ${unpaidCount}</span>
+        <span style="color:var(--danger);">● غياب: ${absentCount}</span>
+        <span>● إجمالي الطلاب: ${roster.length}</span>
+        ${depositCount ? `<span style="color:var(--info);">● 💳 إيداعات: ${depositCount}</span>` : ""}
+      </div>
+    </div>
+  `;
 }
 
 /* ================= شاشة إدارة الحصة (بعد الفتح) ================= */
@@ -284,6 +470,7 @@ function renderWorkspace() {
         <div class="page__subtitle">${escapeHTML(group.name)} (${escapeHTML(group.code)}) · ${escapeHTML(gradeName(grades, group.gradeId))} · ${selectedDate}</div>
       </div>
       <div class="flex-gap" style="flex-wrap:wrap;">
+        <button class="btn btn-info btn-sm" id="guestBtn">${icons.users} طالب زائر</button>
         <button class="btn btn-primary btn-sm" id="makeupBtn">${icons.users} تسجيل طالب تعويض</button>
         <a class="btn btn-outline btn-sm" href="quick-attendance.html?groupId=${group.id}&date=${selectedDate}">${icons.grid} حضور الطلاب</a>
         <a class="btn btn-outline btn-sm" href="attendance-tracker.html?groupId=${group.id}&mode=filter">${icons.clipboard} متابعة الغياب</a>
@@ -293,6 +480,8 @@ function renderWorkspace() {
     </div>
 
     <div class="quick-stats-bar" id="statsBar" style="margin-bottom:18px;"></div>
+
+    <div id="dailyFinancePanel"></div>
 
     <div class="card card-pad" style="margin-bottom:12px;">
       <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
@@ -322,6 +511,7 @@ function renderWorkspace() {
   });
 
   document.getElementById("makeupBtn").addEventListener("click", () => openMakeupModal(group));
+  document.getElementById("guestBtn").addEventListener("click", () => openGuestModal(group));
 
   document.getElementById("closeSessionBtn").addEventListener("click", () => onCloseSession(group));
   document.getElementById("bulkNotifyBtn").addEventListener("click", () => onBulkNotify(group));
@@ -345,6 +535,7 @@ function renderWorkspace() {
     if (!e.target.closest(".search-hero")) results.classList.remove("is-open");
   });
 
+  renderDailyFinancePanel(roster);
   renderStats(roster);
   renderPager(roster);
   renderStudentZone(roster);
@@ -460,7 +651,7 @@ function renderPager(roster) {
   }
   box.innerHTML = `
     <button type="button" class="btn btn-outline btn-icon" id="pagerPrev" ${currentIndex <= 0 ? "disabled" : ""} title="السابق">${icons.arrowLeft}</button>
-    <span class="pager__label">${currentIndex + 1} من ${roster.length}${tempMakeupStudents.length ? ` (${tempMakeupStudents.length} تعويض)` : ""}</span>
+    <span class="pager__label">${currentIndex + 1} من ${roster.length}${tempMakeupStudents.length ? ` (${tempMakeupStudents.length} تعويض)` : ""}${roster.filter((s) => s.isGuest).length ? ` (${roster.filter((s) => s.isGuest).length} زائر)` : ""}</span>
     <button type="button" class="btn btn-outline btn-icon" id="pagerNext" ${currentIndex >= roster.length - 1 ? "disabled" : ""} title="التالى" style="transform:scaleX(-1);">${icons.arrowLeft}</button>
   `;
   document.getElementById("pagerPrev")?.addEventListener("click", () => {
@@ -484,6 +675,8 @@ function renderStats(roster) {
   const countStatus = (id) => attendance.filter((a) => a.statusId === id).length;
   const registered = attendance.length;
   const collected = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const guestCount = roster.filter((s) => s.isGuest).length;
+  const makeupCount = tempMakeupStudents.filter((s) => !roster.some((r) => r.id === s.id || r.isGuest)).length;
 
   box.innerHTML = `
     <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${roster.length}</span><span class="quick-stats-bar__label">إجمالى الطلاب</span></div>
@@ -492,6 +685,7 @@ function renderStats(roster) {
     <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-PAID")}</span><span class="quick-stats-bar__label">حضر ودفع</span></div>
     <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-UNPAID")}</span><span class="quick-stats-bar__label">حضر بدون دفع</span></div>
     <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-EXCUSED") + countStatus("ST-ABSENT")}</span><span class="quick-stats-bar__label">غياب</span></div>
+    ${guestCount ? `<div class="quick-stats-bar__item"><span class="quick-stats-bar__value" style="color:var(--info);">${guestCount}</span><span class="quick-stats-bar__label">🏷️ زوار</span></div>` : ""}
     <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${formatMoney(collected)}</span><span class="quick-stats-bar__label">إجمالى المحصل</span></div>
   `;
 }
@@ -512,6 +706,7 @@ function renderStudentZone(roster) {
   const actionStatuses = statusesByCategory(statuses, "action");
   const group = findGroup(groups, student.groupId);
   const isMakeup = tempMakeupStudents.some((s) => s.id === student.id);
+  const isGuest = student.isGuest;
 
   const today = selectedDate;
   const todayRecord = getAttendance().find((a) => a.studentId === student.id && a.date === today && a.category === "attendance");
@@ -527,7 +722,7 @@ function renderStudentZone(roster) {
           <div class="text-muted" style="font-size:13.5px; margin-top:4px;">
             ${escapeHTML(gradeName(grades, student.gradeId))} · ${escapeHTML(groupName(groups, student.groupId))} ·
             <span class="code-pill">${escapeHTML(student.code || "-")}</span>
-            ${isMakeup ? `<span class="badge badge-primary" style="margin-right:8px;">${icons.users} تعويض</span>` : ""}
+            ${isGuest ? `<span class="badge badge-info" style="margin-right:8px;">🏷️ زائر</span>` : isMakeup ? `<span class="badge badge-primary" style="margin-right:8px;">${icons.users} تعويض</span>` : ""}
           </div>
         </div>
         ${
@@ -605,7 +800,7 @@ function onStatusClick(studentId, statusId, roster) {
     options.collectedAmount = collectedForCharges;
   }
 
-  if (tempMakeupStudents.some((s) => s.id === studentId)) {
+  if (tempMakeupStudents.some((s) => s.id === studentId) || roster.find((s) => s.id === studentId)?.isGuest) {
     options.sessionGroupId = selectedGroupId;
   }
 
@@ -643,6 +838,7 @@ function onStatusClick(studentId, statusId, roster) {
   // الانتقال التلقائى للطالب التالى (لو موجود) لتسريع تسجيل باقى الفصل
   if (currentIndex < roster.length - 1) currentIndex++;
 
+  renderDailyFinancePanel(roster);
   renderStats(roster);
   renderPager(roster);
   renderStudentZone(roster);
@@ -685,8 +881,10 @@ async function openDepositDialog(studentId) {
   if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
   toast(msg, "success");
 
-  renderStats(getRoster());
-  renderStudentZone(getRoster());
+  const roster = getRoster();
+  renderDailyFinancePanel(roster);
+  renderStats(roster);
+  renderStudentZone(roster);
 }
 
 async function onActionClick(studentId, statusId, roster) {
@@ -712,6 +910,7 @@ async function onActionClick(studentId, statusId, roster) {
     toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة المحفظة`, "success");
   }
 
+  renderDailyFinancePanel(roster);
   renderStats(roster);
   renderStudentZone(roster);
 }

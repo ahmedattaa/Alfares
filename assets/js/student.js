@@ -13,6 +13,7 @@ import { buildMonthlyFollowupMessage } from "./reports.js";
 import { recordActionStatus } from "./attendance-service.js";
 import { computeHealthScore, getHealthColor, getHealthLabel, healthScoreHTML, healthBarHTML } from "./health-score.js";
 import { getTypeMeta } from "./achievement-engine.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 const content = await initPage("student");
 if (content) render();
@@ -260,7 +261,7 @@ async function contactParent(student) {
   const message = await whatsappPreviewDialog({
     title: "مراسلة ولى الأمر",
     recipientLabel: `ولى أمر ${student.name} (${student.parentPhone})`,
-    defaultMessage: `عزيزى ولى أمر الطالب/ة ${student.name}،\n\n`,
+    defaultMessage: renderTemplate("gen_student_contact", { studentName: student.name }),
   });
   if (!message) return;
 

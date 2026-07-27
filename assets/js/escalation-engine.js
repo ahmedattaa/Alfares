@@ -8,6 +8,7 @@
 import { getStudents, getAttendance, getStudentStatuses, getSettings, getEscalationLog, addEscalationEntry, saveStudents, saveEscalationLog } from "./storage.js";
 import { findGroup } from "./lookups.js";
 import { formatDateAr } from "./helpers.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 const LEVELS = {
   0: { label: "طبيعي", color: "success", icon: "✅", autoAction: null },
@@ -159,17 +160,9 @@ export function buildEscalationMessage(student, level) {
   const settings = getSettings();
   const centerName = settings?.centerName || "السنتر التعليمي";
 
-  if (level === 1) {
-    return `بسم الله، ولى أمر الطالب/ة ${student.name} المحترم/ة،\n\nنود إعلامكم إن الطالب/ة ${student.name} لم يحضر حصة اليوم.\nنتمنى لهم وللطالب/ة صحة وعافية.\n\nللتواصل: ${centerName}`;
-  }
+  const templateIds = { 1: "esc_level1", 2: "esc_level2", 3: "esc_level3" };
+  const templateId = templateIds[level];
+  if (!templateId) return "";
 
-  if (level === 2) {
-    return `السيد/ة ولى أمر الطالب/ة ${student.name} المحترم/ة،\n\nنلاحظ غياب الطالب/ة ${student.name} بشكل متكرر.\nنرجو منكم التواصل معنا للتحقق من سبب الغياب.\n\nرقم التواصل: ${centerName}\nهذا تنبيه ودي — نهتم على تقدم الطالب/ة.`;
-  }
-
-  if (level === 3) {
-    return `السيد/ة ولى أمر الطالب/ة ${student.name} المحترم/ة،\n\nإشعار هام: الطالب/ة ${student.name} متغيب عن عدة حصص متتالية.\n\nنرجو حضوركم السنتر في أقرب وقت لمناقشة الموقف.\nحساب الطالب/ة متوقف مؤقتاً حتى حضور ولي الأمر.\n\nمع تحيات ${centerName}`;
-  }
-
-  return "";
+  return renderTemplate(templateId, { studentName: student.name, centerName });
 }

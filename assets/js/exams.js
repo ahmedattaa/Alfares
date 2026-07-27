@@ -12,6 +12,7 @@ import { openWhatsApp } from "./whatsapp.js";
 import { sendBulkExamResults } from "./whatsapp-notifications.js";
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 import { detectAchievements, saveDetectedAchievements, generateMessage, getTypeMeta } from "./achievement-engine.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 const content = await initPage("exams");
 let selectedExamId = null;
@@ -452,12 +453,13 @@ async function sendExamResultWhatsApp(studentId, exam) {
 
   const settings = getSettings();
   const centerName = settings.centerName || "السنتر";
-  const defaultMessage = `عزيزى ولى أمر الطالب/ة ${student.name}،
-
-نود إعلامكم بنتيجة "${exam.title}":
-الدرجة: ${result.score} من ${exam.maxScore}
-
-مع تحيات ${centerName}`;
+  const defaultMessage = renderTemplate("exam_result_simple", {
+    studentName: student.name,
+    examTitle: exam.title,
+    score: result.score,
+    maxScore: exam.maxScore,
+    centerName,
+  });
 
   const message = await whatsappPreviewDialog({
     title: "إرسال نتيجة الامتحان",

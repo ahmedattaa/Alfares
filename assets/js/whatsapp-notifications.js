@@ -5,10 +5,11 @@
 // (حضر ودفع / حضر بدون دفع) عبر رسالة واتساب جاهزة.
 // =========================================================
 
-import { getStudents, getGroups, getSettings, getStudentStatuses, getAttendance, getPayments } from "./storage.js";
+import { getStudents, getGroups, getSettings, getStudentStatuses, getAttendance, getPayments, getExams } from "./storage.js";
 import { normalizeEgyptPhone, openWhatsApp } from "./whatsapp.js";
 import { findGroup, dueAmount } from "./lookups.js";
 import { todayISO, formatDateAr, formatMoney } from "./helpers.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 /**
  * يرسل إشعار حضور تلقائي لولي أمر الطالب
@@ -189,67 +190,50 @@ export function openWhatsAppBulk(notifications) {
 
 function buildAttendanceMessage({ studentName, groupName, groupCode, date, statusName, paymentStatus, financeInfo, centerName }) {
   const dateStr = formatDateAr(date);
+  const templateId = paymentStatus === "paid" ? "att_paid" : "att_unpaid";
 
-  let message = `عزيزي ولي أمر الطالب/ة ${studentName}،\n\n`;
-  message += `✅ تم تسجيل حضور الطالب/ة في حصة اليوم\n`;
-  message += `📅 التاريخ: ${dateStr}\n`;
-  message += `📚 المجموعة: ${groupName} - ${groupCode}\n`;
+  const values = {
+    studentName,
+    dateStr,
+    groupName,
+    groupCode,
+    statusName,
+    centerName,
+    collected: financeInfo ? formatMoney(financeInfo.collected) : "",
+    remaining: financeInfo && financeInfo.remaining > 0 ? formatMoney(financeInfo.remaining) : "",
+  };
 
-  if (paymentStatus === "paid") {
-    message += `💰 حالة الدفع: مدفوع ✅\n`;
-    if (financeInfo) {
-      message += `💵 المبلغ المدفوع: ${formatMoney(financeInfo.collected)}\n`;
-      if (financeInfo.remaining > 0) {
-        message += `📊 المتبقي على الطالب: ${formatMoney(financeInfo.remaining)}\n`;
-      }
-    }
-  } else if (paymentStatus === "unpaid") {
-    message += `💰 حالة الدفع: مستحق (لم يُدفع بعد)\n`;
-    if (financeInfo) {
-      message += `📊 المبلغ المستحق: ${formatMoney(financeInfo.collected)}\n`;
-    }
-  }
-
-  message += `\nنتمنى لكم يوماً سعيداً\n${centerName}`;
-
-  return message;
+  return renderTemplate(templateId, values);
 }
 
 function buildAbsenceMessage({ studentName, groupName, groupCode, date, statusName, centerName }) {
-  const dateStr = formatDateAr(date);
-
-  let message = `عزيزي ولي أمر الطالب/ة ${studentName}،\n\n`;
-  message += `⚠️ نود إبلاغكم بغياب الطالب/ة عن حصة اليوم\n`;
-  message += `📅 التاريخ: ${dateStr}\n`;
-  message += `📚 المجموعة: ${groupName} - ${groupCode}\n`;
-  message += `📝 الحالة: ${statusName}\n`;
-  message += `\nللتواصل والاستفسار\n${centerName}`;
-
-  return message;
+  return renderTemplate("absence_notification", {
+    studentName,
+    dateStr: formatDateAr(date),
+    groupName,
+    groupCode,
+    statusName,
+    centerName,
+  });
 }
 
 function buildExamResultMessage({ studentName, examTitle, examDate, score, maxScore, centerName }) {
-  const dateStr = formatDateAr(examDate);
   const percentage = Math.round((score / maxScore) * 100);
+  let gradeComment = "";
+  if (percentage >= 80) gradeComment = "🎉 ممتاز! أداء رائع للطالب/ة";
+  else if (percentage >= 60) gradeComment = "👍 جيد، يمكن التحسن أكثر";
+  else gradeComment = "⚠️ يحتاج الطالب/ة إلى مزيد من المراجعة";
 
-  let message = `عزيزي ولي أمر الطالب/ة ${studentName}،\n\n`;
-  message += `📊 نتيجة الامتحان\n`;
-  message += `📝 الامتحان: ${examTitle}\n`;
-  message += `📅 التاريخ: ${dateStr}\n`;
-  message += `✅ الدرجة: ${score} من ${maxScore}\n`;
-  message += `📈 النسبة: ${percentage}%\n`;
-
-  if (percentage >= 80) {
-    message += `\n🎉 ممتاز! أداء رائع للطالب/ة\n`;
-  } else if (percentage >= 60) {
-    message += `\n👍 جيد، но يمكن التحسن أكثر\n`;
-  } else {
-    message += `\n⚠️ يحتاج الطالب/ة إلى مزيد من المراجعة\n`;
-  }
-
-  message += `\nمع تحيات ${centerName}`;
-
-  return message;
+  return renderTemplate("exam_result", {
+    studentName,
+    examTitle,
+    dateStr: formatDateAr(examDate),
+    score,
+    maxScore,
+    percentage,
+    gradeComment,
+    centerName,
+  });
 }
 
 /**
@@ -265,15 +249,13 @@ export function sendRewardNotification(studentId, rewardAmount, statusName) {
   const centerName = getSettings().centerName || "السنتر";
   const parentName = student.parentName || "ولي الأمر";
 
-  const message =
-    `🌟 *تهنئة خاصة من ${centerName}*\n\n` +
-    `家长 ${parentName} المحترم/ة،\n\n` +
-    `يسعدنا أن نبلغكم أن نجلكم *${student.name}*\n` +
-    ` قد حصل على لقب *"${statusName}"* اليوم! 🏆\n\n` +
-    `💰 *مكافأة: ${formatMoney(rewardAmount)}*\n` +
-    `تمت إضافتها للمحفظة بنجاح.\n\n` +
-    `نتمنى لهم دوام التفوق والنجاح.\n\n` +
-    `مع تحيات ${centerName}`;
+  const message = renderTemplate("reward_notification", {
+    studentName: student.name,
+    parentName,
+    statusName,
+    rewardAmount: formatMoney(rewardAmount),
+    centerName,
+  });
 
   openWhatsApp(phone, message);
   return { sent: true, phone, message };
@@ -304,14 +286,15 @@ export function sendBulkExamResults(examId) {
     const pct = Math.round((r.score / exam.maxScore) * 100);
     const emoji = pct >= 80 ? "🌟" : pct >= 60 ? "✅" : "⚠️";
 
-    const message =
-      `${emoji} *نتيجة امتحان — ${centerName}*\n\n` +
-      `家长 ولى أمر الطالب/ة *${student.name}*،\n\n` +
-      `نتيجة "${exam.title}":\n` +
-      `📊 الدرجة: *${r.score} / ${exam.maxScore}*\n` +
-      `📈 النسبة: *${pct}%*\n\n` +
-      `نتمنى لهم دوام التقدم.\n` +
-      `مع تحيات ${centerName}`;
+    const message = renderTemplate("exam_bulk", {
+      emoji,
+      studentName: student.name,
+      examTitle: exam.title,
+      score: r.score,
+      maxScore: exam.maxScore,
+      pct,
+      centerName,
+    });
 
     notifications.push({ studentId: student.id, studentName: student.name, phone, message, score: r.score, maxScore: exam.maxScore, pct });
   });

@@ -30,6 +30,7 @@ import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
 import { suggestGroupCode, gradeName } from "./lookups.js";
 import { PERMISSION_PAGES, canPerformSensitiveAction } from "./permissions.js";
 import { WEEKDAY_OPTIONS, formatDaysAr, formatTimeAr } from "./schedule.js";
+import { TEMPLATE_REGISTRY, CATEGORIES, getTemplateBody, saveTemplateOverride, resetTemplate, resetAllTemplates, getAllOverrides } from "./whatsapp-templates.js";
 
 const TABS = [
   { id: "center", label: "بيانات السنتر", icon: icons.settings },
@@ -37,6 +38,7 @@ const TABS = [
   { id: "grades", label: "السنوات الدراسية", icon: icons.clipboard },
   { id: "groups", label: "المجموعات", icon: icons.users },
   { id: "statuses", label: "حالات الطالب", icon: icons.check },
+  { id: "whatsapp", label: "رسائل الواتساب", icon: icons.whatsapp || "💬" },
   { id: "team", label: "إدارة", icon: icons.shield },
   { id: "danger", label: "منطقة خطرة", icon: icons.alert },
 ];
@@ -84,6 +86,7 @@ function renderTabContent() {
   if (activeTab === "academic") return renderAcademicPeriodsTab(box);
   if (activeTab === "team") return renderTeamTab(box);
   if (activeTab === "danger") return renderDangerTab(box);
+  if (activeTab === "whatsapp") return renderWhatsAppTemplatesTab(box);
 }
 
 /* ================= بيانات السنتر ================= */
@@ -932,7 +935,7 @@ function renderTeamTable() {
                 <button type="button" class="btn btn-outline btn-icon btn-sm togglePwBtn" data-idx="${idx}" data-pw="${escapeHTML(u.password)}" title="إظهار/إخفاء" style="width:26px;height:26px;">${icons.info}</button>
               </td>
               <td>
-                <div style="display:flex; flex-wrap:wrap; gap:5px; max-width:280px;">
+                <div style="display:flex; flex-wrap:wrap; gap:5px;">
                   ${
                     (u.permissions || []).length
                       ? u.permissions.map((p) => `<span class="badge badge-primary">${escapeHTML(PERMISSION_PAGES.find((pp) => pp.id === p)?.label || p)}</span>`).join("")
@@ -1082,6 +1085,172 @@ function renderDangerTab(box) {
     await resetAllData();
     toast("تم إعادة ضبط النظام، جارٍ إعادة التحميل...", "success");
     setTimeout(() => (window.location.href = "login.html"), 1000);
+  });
+}
+
+/* ================= رسائل الواتساب ================= */
+function renderWhatsAppTemplatesTab(box) {
+  const overrides = getAllOverrides();
+  const overriddenCount = Object.keys(overrides).length;
+
+  box.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head">
+        <div class="card__title">قوالب رسائل الواتساب</div>
+        <div style="display:flex; gap:8px;">
+          ${overriddenCount > 0 ? `<button class="btn btn-outline btn-sm" id="resetAllWaBtn">${icons.trash} إعادة الكل للافتراضى (${overriddenCount} معدّل)</button>` : ""}
+        </div>
+      </div>
+      <p class="text-muted" style="font-size:13.5px; margin-bottom:4px;">
+        كل رسائل الواتساب المستخدمة فى النظام. اضغط على أي قالب لتعديله. المتغيرات giữa أقواس { } بتتضاف تلقائياً من بيانات الطالب والحصة.
+      </p>
+    </div>
+
+    <div id="waTemplatesList"></div>
+  `;
+
+  renderWhatsAppTemplatesList();
+
+  const resetAllBtn = document.getElementById("resetAllWaBtn");
+  if (resetAllBtn) {
+    resetAllBtn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "إعادة كل القوالب للافتراضى",
+        body: `هل أنت متأكد؟ سيتم مسح ${overriddenCount} قالب معدّل والعودة للنصوص الأصلية.`,
+        confirmText: "إعادة الضبط",
+        tone: "warning",
+      });
+      if (!ok) return;
+      resetAllTemplates();
+      toast("تم إعادة كل القوالب للافتراضى", "success");
+      renderWhatsAppTemplatesTab(box);
+    });
+  }
+}
+
+function renderWhatsAppTemplatesList() {
+  const list = document.getElementById("waTemplatesList");
+  if (!list) return;
+
+  const overrides = getAllOverrides();
+
+  let html = "";
+  CATEGORIES.forEach((cat) => {
+    const templates = TEMPLATE_REGISTRY.filter((t) => t.category === cat.id);
+    if (!templates.length) return;
+
+    html += `
+      <div class="card card-pad" style="margin-bottom:16px;">
+        <div class="card__head">
+          <div class="card__title">${cat.icon} ${cat.label}</div>
+          <span class="badge badge-neutral">${templates.length}</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${templates
+            .map((tpl) => {
+              const isEdited = !!overrides[tpl.id];
+              const preview = (overrides[tpl.id] || tpl.defaultBody).split("\n").slice(0, 3).join("\n");
+              return `
+              <div class="wa-tpl-card ${isEdited ? "wa-tpl-card--edited" : ""}" data-id="${tpl.id}" style="cursor:pointer;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                  <div style="min-width:0;">
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
+                      <span style="font-weight:700; font-size:14px;">${escapeHTML(tpl.name)}</span>
+                      ${isEdited ? '<span class="badge badge-warning" style="font-size:10px;">معدّل</span>' : ""}
+                      <span class="badge badge-neutral" style="font-size:10px;">${tpl.recipient === "parent" ? "ولي الأمر" : "الطالب"}</span>
+                    </div>
+                    <div class="text-muted" style="font-size:12px; direction:ltr; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:500px;">${escapeHTML(preview)}</div>
+                  </div>
+                  <div style="display:flex; gap:4px; flex-shrink:0;">
+                    <button class="btn btn-outline btn-icon btn-sm editWaTplBtn" data-id="${tpl.id}" title="تعديل">${icons.edit}</button>
+                    ${isEdited ? `<button class="btn btn-outline btn-icon btn-sm resetWaTplBtn" data-id="${tpl.id}" title="إعادة للافتراضى">${icons.trash}</button>` : ""}
+                  </div>
+                </div>
+              </div>`;
+            })
+            .join("")}
+        </div>
+      </div>`;
+  });
+
+  list.innerHTML = html;
+
+  list.querySelectorAll(".wa-tpl-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".editWaTplBtn") || e.target.closest(".resetWaTplBtn")) return;
+      openTemplateEditor(card.dataset.id);
+    });
+  });
+
+  list.querySelectorAll(".editWaTplBtn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openTemplateEditor(btn.dataset.id);
+    });
+  });
+
+  list.querySelectorAll(".resetWaTplBtn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const tpl = TEMPLATE_REGISTRY.find((t) => t.id === btn.dataset.id);
+      const ok = await confirmDialog({
+        title: "إعادة للافتراضى",
+        body: `هل أنت متأكد من إعادة قالب "<strong>${escapeHTML(tpl?.name || "")}</strong>" للنص الافتراضى؟`,
+        confirmText: "إعادة",
+        tone: "warning",
+      });
+      if (!ok) return;
+      resetTemplate(btn.dataset.id);
+      toast("تم إعادة القالب للافتراضى", "success");
+      renderWhatsAppTemplatesList();
+    });
+  });
+}
+
+function openTemplateEditor(templateId) {
+  const tpl = TEMPLATE_REGISTRY.find((t) => t.id === templateId);
+  if (!tpl) return;
+
+  const { body, isDefault } = getTemplateBody(templateId);
+
+  const bodyHTML = `
+    <div style="margin-bottom:12px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <span class="badge badge-neutral">${tpl.recipient === "parent" ? "ولي الأمر" : "الطالب"}</span>
+        <span class="badge badge-neutral">المصدر: ${escapeHTML(tpl.source)}</span>
+        ${isDefault ? '<span class="badge badge-primary">الافتراضى</span>' : '<span class="badge badge-warning">معدّل</span>'}
+      </div>
+      ${tpl.placeholders.length ? `
+      <div style="background:var(--bg-secondary, #f5f5f5); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:var(--text-secondary);">المتغيرات المتاحة:</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+          ${tpl.placeholders.map((p) => `<code style="background:var(--bg, #fff); padding:2px 8px; border-radius:4px; font-size:12px; border:1px solid var(--border, #e0e0e0);">{${p.key}}</code> <span style="font-size:11px; color:var(--text-secondary);">${escapeHTML(p.label)}</span>`).join("")}
+        </div>
+      </div>
+      ` : ""}
+    </div>
+    <div class="field">
+      <label class="field__label">نص الرسالة</label>
+      <textarea class="input" name="body" rows="12" style="font-family:monospace; font-size:13px; line-height:1.6; resize:vertical; white-space:pre-wrap; direction:rtl;">${escapeHTML(body)}</textarea>
+      <div class="field__hint">استخدم {variable} لأى متغير يتضاف تلقائياً من بيانات الطالب.</div>
+    </div>
+  `;
+
+  formModal({
+    title: `تعديل قالب: ${tpl.name}`,
+    bodyHTML,
+    submitText: "حفظ التعديلات",
+    wide: true,
+  }).then((data) => {
+    if (!data) return;
+    const newBody = (data.body || "").trim();
+    if (!newBody) {
+      toast("نص الرسالة مش فاضى", "danger");
+      return;
+    }
+    saveTemplateOverride(templateId, newBody);
+    toast("تم حفظ التعديلات", "success");
+    renderWhatsAppTemplatesList();
   });
 }
 

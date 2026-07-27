@@ -13,6 +13,7 @@ import { openWhatsApp } from "./whatsapp.js";
 import { computeAllHealthScores, getHealthColor, healthScoreHTML, healthBarHTML } from "./health-score.js";
 import { generateMessage, getTypeMeta, getAllUnsent } from "./achievement-engine.js";
 import { getEscalationSummary, overrideEscalation, logPhoneCall, buildEscalationMessage } from "./escalation-engine.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 const content = await initPage("teacher-insights");
 let activeSection = null;
@@ -814,13 +815,12 @@ async function sendBulkDisengagedAlert(data) {
       const reason = item.examAbsent
         ? "غياب عن امتحان"
         : `${item.consecutiveAbsences} حصص متتالية غياب`;
-      const message =
-        `⚠️ *إنذار عاجل — سنتر الفارس التعليمي*\n\n` +
-        `الطالب/ة: *${s.name}*\n` +
-        `المجموعة: ${groupName}\n` +
-        `السبب: ${reason}\n\n` +
-        `نود إخطاركم بأن الطالب/ة يتعرض لخطر الانقطاع التام عن الحصص التعليمية. نطلب منكم المتابعة العاجلة والتواصل مع الإدارة لتجنب اتخاذ إجراءات إضافية.\n\n` +
-        `مع تحيات إدارة السنتر`;
+      const message = renderTemplate("gen_disengaged_alert", {
+        studentName: s.name,
+        groupName,
+        reason,
+        centerName: "سنتر الفارس التعليمي",
+      });
       return { phone, message, studentName: s.name };
     });
 
@@ -1097,7 +1097,7 @@ function bindWhatsAppButtons(container) {
       const name = btn.dataset.name;
       if (!phone) { toast("لا يوجد رقم هاتف لهذا الطالب", "warning"); return; }
       try {
-        openWhatsApp(phone, `مرحباً، أنا مستر فارس من سنتر الفارس التعليمي. أردت التواصل بخصوص أداء ${name}.`);
+        openWhatsApp(phone, renderTemplate("gen_teacher_contact", { studentName: name, centerName: "سنتر الفارس التعليمي" }));
       } catch (e) { /* popup blocker */ }
     });
   });

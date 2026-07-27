@@ -29,6 +29,7 @@ import { getSessionsForDate } from "./session-overview.js";
 import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk, sendRewardNotification } from "./whatsapp-notifications.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { getEscalationLevel, getLevelMeta } from "./escalation-engine.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 const content = await initPage("quick-attendance");
 
@@ -102,6 +103,7 @@ function renderSessionSummary() {
   const sessionPrice = group.sessionPrice || 0;
 
   let paidCount = 0, unpaidCount = 0, absentCount = 0, excusedCount = 0, calledCount = 0;
+  let guestPaid = 0, guestUnpaid = 0, makeupPaid = 0, makeupUnpaid = 0;
   let collected = 0, expected = 0;
   const breakdownRows = [];
 
@@ -109,6 +111,7 @@ function renderSessionSummary() {
     const record = attendance.find((a) => a.studentId === s.id);
     const studentDue = dueAmount(s, group);
     const discount = Math.min(sessionPrice, Number(s.discount || 0));
+    const isGuestStudent = !!s.isGuest;
 
     if (!record) {
       absentCount++;
@@ -122,6 +125,7 @@ function renderSessionSummary() {
       collected += payAmount;
       expected += studentDue;
       const diff = payAmount - studentDue;
+      if (isGuestStudent) guestPaid++;
       breakdownRows.push({
         name: s.name,
         code: s.code || "-",
@@ -131,10 +135,12 @@ function renderSessionSummary() {
         diff,
         status: "paid",
         statusLabel: st.name,
+        isGuest: isGuestStudent,
       });
     } else if (st?.id === "ST-UNPAID") {
       unpaidCount++;
       expected += studentDue;
+      if (isGuestStudent) guestUnpaid++;
       breakdownRows.push({
         name: s.name,
         code: s.code || "-",
@@ -144,6 +150,7 @@ function renderSessionSummary() {
         diff: -studentDue,
         status: "unpaid",
         statusLabel: st.name,
+        isGuest: isGuestStudent,
       });
     } else if (st?.id === "ST-EXCUSED") {
       excusedCount++;
@@ -156,6 +163,7 @@ function renderSessionSummary() {
         diff: 0,
         status: "excused",
         statusLabel: st.name,
+        isGuest: isGuestStudent,
       });
     } else if (st?.id === "ST-CALL") {
       calledCount++;
@@ -195,6 +203,7 @@ function renderSessionSummary() {
           <span class="sa-summary__legend-item" style="color:var(--warning);">● بإذن (${excusedCount})</span>
           <span class="sa-summary__legend-item" style="color:var(--danger);">● غائب (${absentCount})</span>
           <span class="sa-summary__legend-item" style="color:var(--muted);">● استدعاء (${calledCount})</span>
+          ${(guestPaid + guestUnpaid) > 0 ? `<span class="sa-summary__legend-item" style="color:var(--info);">● زوار (${guestPaid + guestUnpaid})</span>` : ""}
         </div>
       </div>
       <div class="sa-summary__finance-section">
@@ -249,7 +258,7 @@ function renderSessionSummary() {
               const rowBg = r.status === "paid" ? (r.diff < 0 ? "rgba(239,68,68,.06)" : r.diff > 0 ? "rgba(16,185,129,.06)" : "") : r.status === "unpaid" ? "rgba(245,158,11,.06)" : "";
               return `
               <tr style="background:${rowBg};">
-                <td><span class="code-pill" style="font-size:11px;">${escapeHTML(r.code)}</span> ${escapeHTML(r.name)}</td>
+                <td><span class="code-pill" style="font-size:11px;">${escapeHTML(r.code)}</span> ${escapeHTML(r.name)}${r.isGuest ? ` <span class="badge badge-info" style="font-size:9px; padding:1px 5px;">زائر</span>` : ""}</td>
                 <td><span class="badge badge-${r.status === "paid" ? "success" : r.status === "unpaid" ? "danger" : "neutral"}" style="font-size:11px;">${escapeHTML(r.statusLabel)}</span></td>
                 <td>${r.discount > 0 ? `<span style="color:var(--warning); font-weight:700;">−${formatMoney(r.discount)}</span>` : "—"}</td>
                 <td style="font-weight:700;">${formatMoney(r.due)}</td>
@@ -447,7 +456,7 @@ function bindAbsenceEvents(box) {
       if (phone) {
         notifications.push({
           phone,
-          message: `مرحباً، أنا مستر فارس من سنتر الفارس التعليمي. الطالب/ة ${name} غاب اليوم ${formatDateAr(selectedDate)}. يرجى المتابعة.`,
+          message: renderTemplate("absence_general", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }),
           studentName: name,
         });
       }
@@ -470,7 +479,7 @@ function bindAbsenceEvents(box) {
 
       if (phone) {
         try {
-          openWhatsApp(phone, `مرحباً، أنا مستر فارس من سنتر الفارس التعليمي. الطالب/ة ${name} غاب اليوم ${formatDateAr(selectedDate)} بدون إذن. يرجى المتابعة.`);
+          openWhatsApp(phone, renderTemplate("absence_without_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }));
         } catch (e) { /* popup blocker */ }
       }
 
@@ -493,7 +502,7 @@ function bindAbsenceEvents(box) {
 
       if (phone) {
         try {
-          openWhatsApp(phone, `مرحباً، أنا مستر فارس من سنتر الفارس التعليمي. الطالب/ة ${name} غاب اليوم ${formatDateAr(selectedDate)} بإذن. شكراً لكم.`);
+          openWhatsApp(phone, renderTemplate("absence_with_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }));
         } catch (e) { /* popup blocker */ }
         toast(`تم إرسال إشعار لولي أمر ${name}`, "success");
       }
@@ -512,7 +521,7 @@ function bindAbsenceEvents(box) {
       const phone = btn.dataset.phone;
       const name = btn.dataset.name;
       if (!phone) { toast("لا يوجد رقم هاتف", "warning"); return; }
-      try { openWhatsApp(phone, `مرحباً، أنا مستر فارس من سنتر الفارس التعليمي. الطالب/ة ${name} غاب اليوم ${formatDateAr(selectedDate)}. يرجى المتابعة.`); } catch (e) { /* popup blocker */ }
+      try { openWhatsApp(phone, renderTemplate("absence_general", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" })); } catch (e) { /* popup blocker */ }
     });
   });
 }
@@ -568,6 +577,88 @@ async function onBulkNotify() {
       toast(`تم فتح واتساب لإرسال ${result.total} إشعار (أول إشعار: ${result.first})`, "success");
     }
   } catch (e) { /* popup blocker */ }
+}
+
+/* ================= تسجيل طالب زائر ================= */
+function openGuestModal() {
+  if (!selectedGroupId) { toast("اختر مجموعة أولاً", "warning"); return; }
+  const group = findGroup(getGroups(), selectedGroupId);
+  if (!group) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal__head">
+        <div class="modal__title">${icons.users} طالب زائر — ${escapeHTML(group.name)}</div>
+      </div>
+      <div class="modal__body">
+        <p style="font-size:13px; color:var(--muted); margin-bottom:14px;">سجّل الطالب الزائر بالاسم الأول ورقم تليفون ولي الأمر — هيتحسب في الحصة المالية</p>
+        <div class="field">
+          <label class="field__label">اسم الطالب</label>
+          <input class="input" id="guestNameInput" placeholder="الاسم الأول" autocomplete="off" autofocus>
+        </div>
+        <div class="field">
+          <label class="field__label">تليفون ولي الأمر</label>
+          <input class="input" id="guestPhoneInput" placeholder="01xxxxxxxxx" type="tel" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-outline" id="guestCancel">إلغاء</button>
+        <button type="button" class="btn btn-success" id="guestSubmit">${icons.check} تسجيل الزائر</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.querySelector("#guestCancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  const submit = overlay.querySelector("#guestSubmit");
+  const nameInput = overlay.querySelector("#guestNameInput");
+  const phoneInput = overlay.querySelector("#guestPhoneInput");
+
+  submit.addEventListener("click", () => {
+    const name = nameInput.value.trim();
+    const phone = phoneInput.value.trim();
+    if (!name) { toast("من فضلك اكتب اسم الطالب", "warning"); nameInput.focus(); return; }
+    if (!phone) { toast("من فضلك اكتب تليفون ولي الأمر", "warning"); phoneInput.focus(); return; }
+
+    const guest = addGuestStudent(name, phone, group);
+    if (!guest) { toast("فشلت إضافة الزائر", "error"); return; }
+
+    toast(`تم تسجيل الزائر: ${name}`, "success");
+    close();
+    refreshUI();
+  });
+
+  nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") phoneInput.focus(); });
+  phoneInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submit.click(); });
+}
+
+function addGuestStudent(name, phone, group) {
+  const students = getStudents();
+  const guestCount = students.filter((s) => s.isGuest).length + 1;
+  const guest = {
+    id: generateId("GST"),
+    code: `GST-${String(guestCount).padStart(2, "0")}`,
+    name,
+    phone: "",
+    parentPhone: phone,
+    gradeId: group.gradeId || "",
+    groupId: group.id,
+    joinDate: todayISO(),
+    status: "active",
+    isGuest: true,
+    discount: 0,
+    lateBalance: 0,
+    walletBalance: 0,
+  };
+  students.push(guest);
+  saveStudents(students);
+  return guest;
 }
 
 /* ================= قائمة طلاب المجموعة المختارة ================= */
@@ -644,7 +735,8 @@ function renderRoster() {
         <input class="input input--roster" id="searchInput" inputmode="none" placeholder="اكتب كود الطالب..." value="${escapeHTML(searchTerm)}">
         <button type="button" class="numpad__toggle" id="numpadToggle" title="البحث بالاسم">أب</button>
       </div>
-      <div class="roster-controls__filter">
+      <div class="roster-controls__filter" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+        <button type="button" class="btn btn-info btn-sm" id="guestBtn" style="white-space:nowrap;">${icons.users} زائر</button>
         <select class="select select--roster" id="filterSelect">
           <option value="all" ${currentFilter === "all" ? "selected" : ""}>جميع الطلاب (${totalStudents})</option>
           <option value="paid" ${currentFilter === "paid" ? "selected" : ""}>✓ تم الدفع (${paidCount})</option>
@@ -689,6 +781,8 @@ function renderRoster() {
     currentFilter = e.target.value;
     renderRoster();
   });
+
+  document.getElementById("guestBtn")?.addEventListener("click", () => openGuestModal());
 
   document.getElementById("searchInput").addEventListener("input", (e) => {
     searchTerm = e.target.value.trim();
@@ -824,9 +918,9 @@ function renderStudentsList(data) {
       const escMeta = getLevelMeta(escLevel);
 
       return `
-        <div class="qa-row ${hasRecord ? "is-processed" : ""} ${isPaid ? "is-paid" : ""} ${isUnpaid ? "is-unpaid" : ""} ${isAbsent ? "is-absent" : ""} ${isExcused ? "is-excused" : ""} ${isLocked ? "is-locked" : ""}" data-student-id="${s.id}">
+        <div class="qa-row ${hasRecord ? "is-processed" : ""} ${isPaid ? "is-paid" : ""} ${isUnpaid ? "is-unpaid" : ""} ${isAbsent ? "is-absent" : ""} ${isExcused ? "is-excused" : ""} ${isLocked ? "is-locked" : ""} ${s.isGuest ? "is-guest" : ""}" data-student-id="${s.id}">
           <span class="code-pill">${escapeHTML(s.code || "-")}</span>
-          <span class="qa-row__name">${escapeHTML(s.name)}</span>
+          <span class="qa-row__name">${escapeHTML(s.name)}${s.isGuest ? ` <span class="badge badge-info" style="font-size:9px; padding:1px 5px;">زائر</span>` : ""}</span>
           ${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success" style="font-size:10px;">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : ""}
           ${escLevel > 0 ? `<span class="badge badge-${escMeta.color}" style="font-size:10px;">${escMeta.icon} تصعيد ${escLevel}</span>` : ""}
           ${isLocked ? `<span class="badge badge-danger" style="margin-right:auto;">مقفول: ${escapeHTML(s.lockReason || "")}</span>` : ""}
@@ -1219,7 +1313,13 @@ async function openDepositDialog(studentId) {
 
   try {
     if (student.parentPhone) {
-      openWhatsApp(student.parentPhone, `تم استلام ${formatMoney(amount)} لحساب ${student.name}${result.debtCovered > 0 ? ` (تغطية متأخرات: ${formatMoney(result.debtCovered)})` : ""}. الرصيد المتاح: ${formatMoney(result.newWalletBalance)}. شكراً لكم — سنتر الفارس التعليمي`);
+      openWhatsApp(student.parentPhone, renderTemplate("wallet_deposit", {
+        studentName: student.name,
+        amount: formatMoney(amount),
+        debtCovered: result.debtCovered > 0 ? ` (تغطية متأخرات: ${formatMoney(result.debtCovered)})` : "",
+        newWalletBalance: formatMoney(result.newWalletBalance),
+        centerName: "سنتر الفارس التعليمي",
+      }));
     }
   } catch (e) { /* popup blocker */ }
 
@@ -1290,6 +1390,10 @@ style.textContent = `
   .qa-row.is-locked {
     background: rgba(239, 68, 68, 0.08);
     border-left: 3px solid var(--danger);
+  }
+  .qa-row.is-guest:not(.is-paid):not(.is-unpaid):not(.is-absent):not(.is-excused):not(.is-locked) {
+    background: rgba(59, 130, 246, 0.06);
+    border-left: 3px solid var(--info);
   }
   .qa-row__name {
     flex: 1;

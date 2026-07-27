@@ -5,6 +5,7 @@
 
 import { getSettings } from "./storage.js";
 import { formatMoney, todayISO } from "./helpers.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 /** أول وآخر يوم فى شهر معين (Date objects) */
 function monthBounds(monthStr) {
@@ -40,30 +41,31 @@ export function buildMonthlyFollowupMessage({ student, attendance, exams, extraC
   const settings = getSettings();
   const centerName = settings.centerName || "السنتر";
 
-  const lines = [
-    `تقرير متابعة حالة الطالب: ${student.name}`,
-    `عن الفترة من ${formatArDate(start)} إلى ${formatArDate(end)}`,
-    ``,
+  const bodyLines = [
     `- عدد مرات الحضور والدفع: ${paidCount}`,
     `- عدد مرات الحضور بدون دفع: ${unpaidCount}`,
     `- عدد مرات الغياب بإذن: ${excusedCount}`,
     `- عدد مرات الغياب بدون إذن: ${absentCount}`,
   ];
 
-  if (callCount > 0) lines.push(`- عدد مرات استدعاء ولى الأمر: ${callCount}`);
-  if (expelCount > 0) lines.push(`- عدد مرات الطرد: ${expelCount}`);
+  if (callCount > 0) bodyLines.push(`- عدد مرات استدعاء ولى الأمر: ${callCount}`);
+  if (expelCount > 0) bodyLines.push(`- عدد مرات الطرد: ${expelCount}`);
 
   if (monthExams.length) {
-    lines.push(`- نتائج امتحانات الشهر:`);
-    monthExams.forEach((e) => lines.push(`  • ${e.title}: ${e.absent ? "غائب" : `${e.score} من ${e.maxScore}`}`));
+    bodyLines.push(`- نتائج امتحانات الشهر:`);
+    monthExams.forEach((e) => bodyLines.push(`  • ${e.title}: ${e.absent ? "غائب" : `${e.score} من ${e.maxScore}`}`));
   }
 
-  if (student.lateBalance > 0) lines.push(`- متأخرات مالية مستحقة: ${formatMoney(student.lateBalance)}`);
+  if (student.lateBalance > 0) bodyLines.push(`- متأخرات مالية مستحقة: ${formatMoney(student.lateBalance)}`);
   if (unpaidCharges.length) {
-    lines.push(`- استحقاقات إضافية غير مدفوعة:`);
-    unpaidCharges.forEach((c) => lines.push(`  • ${c.name}: ${formatMoney(c.amount)}`));
+    bodyLines.push(`- استحقاقات إضافية غير مدفوعة:`);
+    unpaidCharges.forEach((c) => bodyLines.push(`  • ${c.name}: ${formatMoney(c.amount)}`));
   }
 
-  lines.push(``, `مع تحيات ${centerName}`);
-  return lines.join("\n");
+  return renderTemplate("gen_monthly_report", {
+    studentName: student.name,
+    period: `${formatArDate(start)} إلى ${formatArDate(end)}`,
+    reportBody: bodyLines.join("\n"),
+    centerName,
+  });
 }

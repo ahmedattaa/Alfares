@@ -189,7 +189,7 @@ export function generateMessage(achievement, teacherName) {
       return `🏆 درجة كاملة! برافو ${studentName}!\n\nمستر ${t} فخور جداً بحصولك على ${achievement.newScore} من ${achievement.maxScore} في امتحان "${achievement.examTitle}" — درجة كاملة ومجهود يستحق التقدير.\n\nأدام الله تقدمك ونجاحك 💪`;
 
     case "academic_jump":
-      return `🚀 قفزة أكاديمية مذهلة!\n\nبرافو ${studentName}! مستر ${t} لاحظ تقدمك الملموس في امتحان "${achievement.examTitle}" — حصلت على ${achievement.newPct}% وentoaverage كان ${achievement.oldAvg}%.\n\nده تحسن ${achievement.improvement}% ودليل واضح على جهدك. كمّل كده! ⭐`;
+      return `🚀 قفزة أكاديمية مذهلة!\n\nبرافو ${studentName}! مستر ${t} لاحظ تقدمك الملموس في امتحان "${achievement.examTitle}" — حصلت على ${achievement.newPct}% ومتوسطه كان ${achievement.oldAvg}%.\n\nده تحسن ${achievement.improvement}% ودليل واضح على جهدك. كمّل كده! ⭐`;
 
     case "excellence":
       return `⭐ تميّز أكاديمي!\n\n${studentName} حصل على ${achievement.newPct}% في امتحان "${achievement.examTitle}" — تقدم ملحوظ عن متوسطه السابق (${achievement.oldAvg}%).\n\nمستر ${t} فخور جداً بتطورك. استمر يا بطل! 🌟`;

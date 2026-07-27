@@ -23,6 +23,7 @@ import { findGroup, gradeName, dueAmount } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { formatTimeAr, formatDaysAr, WEEKDAY_OPTIONS } from "./schedule.js";
 import { isStudentLocked, settleExtraCharge } from "./attendance-service.js";
+import { renderTemplate } from "./whatsapp-templates.js";
 
 const content = await initPage("parent-reception");
 let selectedStudentId = null;
@@ -314,7 +315,12 @@ function renderFinanceTab(box, student) {
     if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
     toast(msg, "success");
     try {
-      if (student.parentPhone) openWhatsApp(student.parentPhone, `تم استلام ${formatMoney(amount)} لحساب ${student.name}. الرصيد المتاح: ${formatMoney(result.newWalletBalance)}. شكراً لكم — سنتر الفارس التعليمي`);
+      if (student.parentPhone) openWhatsApp(student.parentPhone, renderTemplate("wallet_deposit_reception", {
+        studentName: student.name,
+        amount: formatMoney(amount),
+        newWalletBalance: formatMoney(result.newWalletBalance),
+        centerName: "سنتر الفارس التعليمي",
+      }));
     } catch (e) { /* popup blocker */ }
     renderStudentZone();
   });
@@ -418,10 +424,13 @@ function renderContactTab(box, student) {
   const wallet = Number(student.walletBalance || 0);
   const debt = Number(student.lateBalance || 0);
 
-  const summaryMessage = `مرحباً، هذا ملخص حالة ${student.name} في سنتر الفارس التعليمي:
-• الرصيد المتاح: ${formatMoney(wallet)}
-• المتأخرات: ${formatMoney(debt)}
-• المجموعة: ${findGroup(getGroups(), student.groupId)?.name || "—"}`;
+  const summaryMessage = renderTemplate("gen_summary", {
+    studentName: student.name,
+    wallet: formatMoney(wallet),
+    debt: formatMoney(debt),
+    groupName: findGroup(getGroups(), student.groupId)?.name || "—",
+    centerName: "سنتر الفارس التعليمي",
+  });
 
   box.innerHTML = `
     <div class="card card-pad">
@@ -444,7 +453,7 @@ function renderContactTab(box, student) {
 
   document.getElementById("waCustomBtn").addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
-    try { openWhatsApp(student.parentPhone, `مرحباً، أنا مستر فارس من سنتر الفارس التعليمي. بخصوص ${student.name}...`); } catch (e) { /* popup blocker */ }
+    try { openWhatsApp(student.parentPhone, renderTemplate("gen_custom_opener", { studentName: student.name, centerName: "سنتر الفارس التعليمي" })); } catch (e) { /* popup blocker */ }
   });
 }
 

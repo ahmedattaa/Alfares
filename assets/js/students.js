@@ -92,7 +92,7 @@ function renderTable() {
   const box = document.getElementById("studentsTable");
   const grades = getGrades();
   const groups = getGroups();
-  let students = getStudents().filter((s) => s.status !== "expelled");
+  let students = getStudents().filter((s) => s.status !== "expelled" && !s.isGuest);
 
   if (searchTerm) {
     const term = searchTerm.toLowerCase();
