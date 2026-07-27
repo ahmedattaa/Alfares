@@ -469,6 +469,7 @@ function renderLatePayersSection(box) {
           </div>
           <div class="ti-student-row__amount">${formatMoney(s.lateBalance || 0)}</div>
           <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+          ${s.parentPhone || s.phone ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone || s.phone || "")}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
           <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
         </div>`;
       }).join("")}
@@ -569,6 +570,7 @@ function renderFollowupEscalation(inner, summary, groups, grades, session) {
         <span class="badge badge-${s.levelBadge}" style="font-size:11px; white-space:nowrap;">${s.levelTag}</span>
         <div class="ti-student-row__actions" style="gap:4px;">
           ${s.escalationLevel === 1 || s.escalationLevel === 2 ? `<button type="button" class="btn btn-success btn-sm escWaBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" data-phone="${escapeHTML(s.parentPhone || "")}" data-level="${s.escalationLevel}">${icons.whatsapp}</button>` : ""}
+          ${s.escalationLevel === 1 || s.escalationLevel === 2 ? (s.parentPhone ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : "") : ""}
           ${s.escalationLevel === 2 ? `<button type="button" class="btn btn-warning btn-sm escCallBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">✓ تم الاتصال</button>` : ""}
           ${s.escalationLevel === 3 ? `<button type="button" class="btn btn-danger btn-sm escOverrideBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">فتح القفل</button>` : ""}
           <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
@@ -665,6 +667,7 @@ function renderFollowupDisengaged(inner, students, attendance, statuses, groups,
           ${badge}
           <div class="ti-student-row__actions">
             <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+            ${(s.parentPhone || s.phone) ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone || s.phone || "")}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
             <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
           </div>
         </div>`;
@@ -717,6 +720,7 @@ function renderFollowupTroublemakers(inner, students, attendance, statuses, grou
       </div>
       <div class="ti-student-row__actions">
         <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+        ${(s.parentPhone || s.phone) ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone || s.phone || "")}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
         <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
       </div>
     </div>`;
@@ -797,6 +801,7 @@ function renderFollowupDeclining(inner, students, groups, exams) {
       `}
       <div class="ti-student-row__actions">
         <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+        ${(s.parentPhone || s.phone) ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone || s.phone || "")}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
         <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
       </div>
     </div>`;

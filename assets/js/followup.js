@@ -255,6 +255,7 @@ function renderTable() {
               <td style="white-space:nowrap;">
                 <button class="btn btn-outline btn-icon addNoteBtn" data-id="${r.s.id}" title="${logTooltip}">${recentDot}${icons.edit}</button>
                 <button class="btn btn-outline btn-icon sendFollowupWaBtn" data-id="${r.s.id}" title="إرسال تقرير متابعة شهرية واتساب">${icons.whatsapp}</button>
+                ${r.s.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(r.s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
               </td>
             </tr>`;
             })

@@ -80,6 +80,7 @@ function render() {
         <div class="flex-gap" style="flex-wrap:wrap;">
           <button class="btn btn-outline btn-sm" id="contactParentBtn">${icons.whatsapp} مراسلة ولى الأمر</button>
           <button class="btn btn-success btn-sm" id="monthlyReportBtn">${icons.whatsapp} المتابعة الشهرية</button>
+          ${student.parentPhone ? `<a class="btn btn-outline btn-sm" href="tel:${student.parentPhone}" style="text-decoration:none;">${icons.phone} اتصال بولي الأمر</a>` : ""}
           <button class="btn btn-danger btn-sm" id="actionBtn">${icons.alert} اتخاذ إجراء استثنائى</button>
           <span class="badge ${student.status === "active" ? "badge-success" : "badge-neutral"}">${student.status === "active" ? "نشط" : "متوقف"}</span>
         </div>

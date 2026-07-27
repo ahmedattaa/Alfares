@@ -240,9 +240,9 @@ function renderGradesPanel() {
                   <td>
                     ${
                       isAbsent
-                        ? `<button type="button" class="btn btn-outline btn-icon sendAbsentWaBtn" data-student-id="${s.id}" data-student-name="${escapeHTML(s.name)}" title="إشعار غياب لولى الأمر واتساب">${icons.whatsapp}</button>`
+                        ? `<button type="button" class="btn btn-outline btn-icon sendAbsentWaBtn" data-student-id="${s.id}" data-student-name="${escapeHTML(s.name)}" title="إشعار غياب لولى الأمر واتساب">${icons.whatsapp}</button>${s.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}`
                         : score != null
-                          ? `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${s.id}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>`
+                          ? `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${s.id}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>${s.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}`
                           : ""
                     }
                   </td>
@@ -290,7 +290,8 @@ function renderGradesPanel() {
         if (cb.checked) {
           if (!actionCell.querySelector(".sendAbsentWaBtn")) {
             const student = getStudents().find((st) => st.id === studentId);
-            actionCell.innerHTML = `<button type="button" class="btn btn-outline btn-icon sendAbsentWaBtn" data-student-id="${studentId}" data-student-name="${escapeHTML(student?.name || "")}" title="إشعار غياب لولى الأمر واتساب">${icons.whatsapp}</button>`;
+            const callLink = student?.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(student.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : "";
+            actionCell.innerHTML = `<button type="button" class="btn btn-outline btn-icon sendAbsentWaBtn" data-student-id="${studentId}" data-student-name="${escapeHTML(student?.name || "")}" title="إشعار غياب لولى الأمر واتساب">${icons.whatsapp}</button>${callLink}`;
             actionCell.querySelector(".sendAbsentWaBtn").addEventListener("click", () => sendExamAbsentWhatsApp(studentId, exam));
           }
         } else {
@@ -298,9 +299,13 @@ function renderGradesPanel() {
           if (existingAbsentBtn) {
             const scoreInput2 = panel.querySelector(`.scoreInput[data-student-id="${studentId}"]`);
             const val = scoreInput2?.value;
-            actionCell.innerHTML = val ? `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${studentId}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>` : "";
             if (val) {
+              const student2 = getStudents().find((st) => st.id === studentId);
+              const callLink2 = student2?.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(student2.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : "";
+              actionCell.innerHTML = `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${studentId}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>${callLink2}`;
               actionCell.querySelector(".sendWaBtn")?.addEventListener("click", () => sendExamResultWhatsApp(studentId, exam));
+            } else {
+              actionCell.innerHTML = "";
             }
           }
         }

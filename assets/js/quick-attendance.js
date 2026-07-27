@@ -424,6 +424,7 @@ function renderAbsenceSection() {
               <div style="flex:1; min-width:0;">
                 <div style="font-weight:700; font-size:13px;">${escapeHTML(s.name)}</div>
               </div>
+              ${phone ? `<a type="button" class="btn btn-outline btn-xs" href="tel:${escapeHTML(phone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
               <button type="button" class="btn btn-outline btn-xs absentWaBtn" data-phone="${escapeHTML(phone || "")}" data-name="${escapeHTML(s.name)}" title="إرسال لولي الأمر">${icons.whatsapp}</button>
               <button type="button" class="btn btn-danger btn-xs excuseOffBtn" data-student-id="${s.id}" data-phone="${escapeHTML(phone || "")}" data-name="${escapeHTML(s.name)}">🚫 بدون إذن</button>
               <button type="button" class="btn btn-warning btn-xs excuseOnBtn" data-student-id="${s.id}" data-phone="${escapeHTML(phone || "")}" data-name="${escapeHTML(s.name)}">📋 بإذن</button>
