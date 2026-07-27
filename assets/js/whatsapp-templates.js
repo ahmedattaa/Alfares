@@ -168,6 +168,29 @@ export const TEMPLATE_REGISTRY = [
 مع تحيات {centerName}`,
   },
   {
+    id: "exam_absent_notification",
+    name: "غياب عن امتحان",
+    category: "exam",
+    recipient: "parent",
+    source: "exams.js",
+    placeholders: [
+      { key: "studentName", label: "اسم الطالب" },
+      { key: "examTitle", label: "اسم الامتحان" },
+      { key: "dateStr", label: "التاريخ" },
+      { key: "centerName", label: "اسم السنتر" },
+    ],
+    defaultBody: `عزيزي ولي أمر الطالب/ة {studentName}،
+
+❌ إشعار غياب عن امتحان
+📝 الامتحان: {examTitle}
+📅 التاريخ: {dateStr}
+❌ الحالة: غائب عن الامتحان
+
+يرجى المتابعة مع الطالب.
+
+{centerName}`,
+  },
+  {
     id: "exam_bulk",
     name: "نتائج امتحان (جماعى)",
     category: "exam",

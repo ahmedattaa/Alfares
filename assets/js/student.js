@@ -4,9 +4,9 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent } from "./storage.js";
-import { escapeHTML, initials, formatMoney, formatDateAr } from "./helpers.js";
-import { emptyStateHTML, toast, whatsappPreviewDialog } from "./ui.js";
+import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession } from "./storage.js";
+import { escapeHTML, initials, formatMoney, formatDateAr, todayISO, generateId } from "./helpers.js";
+import { emptyStateHTML, toast, whatsappPreviewDialog, formModal, confirmDialog } from "./ui.js";
 import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
@@ -84,6 +84,7 @@ function render() {
           <span class="badge ${student.status === "active" ? "badge-success" : "badge-neutral"}">${student.status === "active" ? "نشط" : "متوقف"}</span>
         </div>
       </div>
+      ${renderAdvancePermissions(id)}
       <div class="divider"></div>
       <div class="grid-3">
         <div><div class="text-muted" style="font-size:12.5px;">هاتف الطالب</div><div style="font-weight:700; margin-top:3px;">${escapeHTML(student.phone)}</div></div>
@@ -161,7 +162,7 @@ function render() {
         exams.length
           ? simpleTable(
               ["الامتحان", "التاريخ", "الدرجة"],
-              exams.map((e) => [escapeHTML(e.title), formatDateAr(e.date), e.absent ? `<span class="badge badge-neutral">غائب</span>` : `${e.score} / ${e.maxScore}`])
+              exams.map((e) => [escapeHTML(e.title), formatDateAr(e.date), e.absent ? `<span class="badge ${e.excused ? "badge-primary" : "badge-neutral"}">${e.excused ? "📋 غائب بإذن" : "غائب"}</span>` : `${e.score} / ${e.maxScore}`])
             )
           : emptyStateHTML({ icon: icons.chart, title: "لا توجد نتائج امتحانات بعد" })
       }
@@ -219,6 +220,18 @@ function render() {
   document.getElementById("monthlyReportBtn").addEventListener("click", () => sendMonthlyReport(student, attendance, exams, extraCharges));
   document.getElementById("contactParentBtn").addEventListener("click", () => contactParent(student));
   document.getElementById("actionBtn").addEventListener("click", () => openActionModal(student));
+
+  document.getElementById("addAdvancePermBtn")?.addEventListener("click", () => openAdvancePermForm(student));
+  document.querySelectorAll(".deleteAdvancePermBtn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const ok = await confirmDialog({ title: "حذف إذن مسبق", body: "هل أنت متأكد من حذف هذا الإذن؟", confirmText: "حذف", tone: "danger" });
+      if (!ok) return;
+      deleteAdvancePermission(btn.dataset.id);
+      toast("تم حذف الإذن المسبق", "success");
+      render();
+    });
+  });
 }
 
 function statCard(tone, icon, value, label) {
@@ -238,6 +251,52 @@ function simpleTable(headers, rows) {
         <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
         <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
       </table>
+    </div>
+  `;
+}
+
+function renderAdvancePermissions(studentId) {
+  const perms = getAdvancePermissionsForStudent(studentId);
+  const today = todayISO();
+
+  return `
+    <div style="margin-top:16px; padding:14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md);">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:18px;">📋</span>
+          <span style="font-weight:700; font-size:14px;">إذن مسبق — غياب مستقبلي</span>
+          ${perms.filter((p) => !p.used && p.date >= today).length ? `<span class="badge badge-primary">${perms.filter((p) => !p.used && p.date >= today).length} نشط</span>` : ""}
+        </div>
+        <button class="btn btn-outline btn-sm" id="addAdvancePermBtn">${icons.plus} إضافة إذن</button>
+      </div>
+      ${perms.length ? `
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          ${perms.map((p) => {
+            const isPast = p.date < today;
+            const isUsed = p.used;
+            const isUpcoming = p.date >= today && !isUsed;
+            let statusBadge = "";
+            if (isUsed) statusBadge = `<span class="badge badge-success" style="font-size:10px;">✅ تم استخدامه</span>`;
+            else if (isPast) statusBadge = `<span class="badge badge-neutral" style="font-size:10px;">⏰ منتهى</span>`;
+            else statusBadge = `<span class="badge badge-primary" style="font-size:10px;">📅 قادم</span>`;
+            return `
+              <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm); ${isUpcoming ? "border-right:3px solid var(--primary);" : isUsed ? "border-right:3px solid var(--success); opacity:0.7;" : "border-right:3px solid var(--muted); opacity:0.5;"}">
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-weight:700; font-size:13px;">📅 ${formatDateAr(p.date)}</span>
+                    ${statusBadge}
+                  </div>
+                  <div style="font-size:12px; color:var(--muted); margin-top:3px;">${escapeHTML(p.reason)}</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:2px;">سجّله: ${escapeHTML(p.grantedBy)} · ${formatDateAr(p.createdAt?.slice(0, 10) || "")}</div>
+                </div>
+                ${isUpcoming ? `<button class="btn btn-outline btn-icon btn-sm deleteAdvancePermBtn" data-id="${p.id}" title="حذف" style="color:var(--danger); flex-shrink:0;">${icons.trash}</button>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      ` : `
+        <div style="text-align:center; padding:16px; color:var(--muted); font-size:13px;">لا يوجد إذن مسبق مسجل</div>
+      `}
     </div>
   `;
 }
@@ -320,6 +379,47 @@ function openActionModal(student) {
 
     toast(`تم تسجيل: ${result.status.name} — ${student.name}`, result.status.tone === "danger" ? "danger" : "success");
     close();
+    render();
+  });
+}
+
+/* ── إذن مسبق — غياب مستقبلي ── */
+function openAdvancePermForm(student) {
+  const today = todayISO();
+  const bodyHTML = `
+    <div style="margin-bottom:14px; padding:12px; background:var(--primary-bg, rgba(59,130,246,0.08)); border:1px solid var(--primary-border, rgba(59,130,246,0.2)); border-radius:var(--r-md); font-size:13px; line-height:1.7;">
+      <strong>📋 إذن مسبق:</strong> حدد تاريخ الغياب المتوقع وسببه. لما الطالب مش بيحضر في التاريخ ده، النظام هيسجله تلقائياً <strong>غياب بإذن</strong> — مش هيبعت رسالة تصعيد ومش هيأثر على التصعيد.
+    </div>
+    <div class="field">
+      <label class="field__label">تاريخ الغياب المتوقع</label>
+      <input class="input" type="date" name="permDate" min="${today}" required style="font-size:15px;">
+    </div>
+    <div class="field">
+      <label class="field__label">سبب الغياب</label>
+      <textarea class="input" name="permReason" rows="3" placeholder="مثال: والدي هيعمل عملية جراحية وأكون مرافق معاه" required style="resize:vertical;"></textarea>
+    </div>
+  `;
+
+  formModal({
+    title: `إذن مسبق — ${student.name}`,
+    bodyHTML,
+    submitText: "حفظ الإذن",
+  }).then((data) => {
+    if (!data) return;
+    if (!data.permDate) { toast("حدد تاريخ الغياب", "warning"); return; }
+    if (!data.permReason?.trim()) { toast("اكتب سبب الغياب", "warning"); return; }
+
+    const session = getSession();
+    addAdvancePermission({
+      id: generateId(),
+      studentId: student.id,
+      date: data.permDate,
+      reason: data.permReason.trim(),
+      grantedBy: session?.username || "المست فارس",
+      createdAt: new Date().toISOString(),
+      used: false,
+    });
+    toast("تم حفظ الإذن المسبق ✓", "success");
     render();
   });
 }

@@ -21,6 +21,7 @@ import {
   addWalletDeposit,
   recordCashCollection,
   getSettings,
+  getAdvancePermissionForStudent,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, menuDialog, formModal, emptyStateHTML, ensureOverlay } from "./ui.js";
@@ -921,7 +922,7 @@ function renderStudentsList(data) {
       return `
         <div class="qa-row ${hasRecord ? "is-processed" : ""} ${isPaid ? "is-paid" : ""} ${isUnpaid ? "is-unpaid" : ""} ${isAbsent ? "is-absent" : ""} ${isExcused ? "is-excused" : ""} ${isLocked ? "is-locked" : ""} ${s.isGuest ? "is-guest" : ""}" data-student-id="${s.id}">
           <span class="code-pill">${escapeHTML(s.code || "-")}</span>
-          <span class="qa-row__name">${escapeHTML(s.name)}${s.isGuest ? ` <span class="badge badge-info" style="font-size:9px; padding:1px 5px;">زائر</span>` : ""}</span>
+          <span class="qa-row__name">${escapeHTML(s.name)}${s.isGuest ? ` <span class="badge badge-info" style="font-size:9px; padding:1px 5px;">زائر</span>` : ""}${getAdvancePermissionForStudent(s.id, selectedDate) ? ` <span class="badge badge-primary" style="font-size:9px; padding:1px 5px;">📋 إذن مسبق</span>` : ""}</span>
           ${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success" style="font-size:10px;">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : ""}
           ${escLevel > 0 ? `<span class="badge badge-${escMeta.color}" style="font-size:10px;">${escMeta.icon} تصعيد ${escLevel}</span>` : ""}
           ${isLocked ? `<span class="badge badge-danger" style="margin-right:auto;">مقفول: ${escapeHTML(s.lockReason || "")}</span>` : ""}

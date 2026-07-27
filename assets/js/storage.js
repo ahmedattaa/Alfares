@@ -34,6 +34,7 @@ const KEYS = {
   ledger: "center_ledger",
   achievements: "center_achievements",
   escalationLogs: "center_escalation_logs",
+  advancePermissions: "center_advance_permissions",
   seeded: "center_seeded_v12",
 };
 
@@ -888,4 +889,39 @@ export function addEscalationEntry(entry) {
 
 export function getEscalationLogsForStudent(studentId) {
   return getEscalationLog().filter((e) => e.studentId === studentId).sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+/* =========================================================
+   إذن مسبق — Advance Permissions
+   يسجّل الطالب إذن غياب مسبق لتاريخ مستقبلي
+   ========================================================= */
+export const getAdvancePermissions = () => readJSON(KEYS.advancePermissions, []);
+export const saveAdvancePermissions = (list) => writeJSON(KEYS.advancePermissions, list);
+
+export function addAdvancePermission(perm) {
+  const list = getAdvancePermissions();
+  list.push(perm);
+  saveAdvancePermissions(list);
+}
+
+export function deleteAdvancePermission(id) {
+  const list = getAdvancePermissions().filter((p) => p.id !== id);
+  saveAdvancePermissions(list);
+}
+
+export function getAdvancePermissionForStudent(studentId, date) {
+  return getAdvancePermissions().find((p) => p.studentId === studentId && p.date === date && !p.used);
+}
+
+export function getAdvancePermissionsForStudent(studentId) {
+  return getAdvancePermissions().filter((p) => p.studentId === studentId).sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+export function markAdvancePermissionUsed(id) {
+  const list = getAdvancePermissions();
+  const item = list.find((p) => p.id === id);
+  if (item) {
+    item.used = true;
+    saveAdvancePermissions(list);
+  }
 }

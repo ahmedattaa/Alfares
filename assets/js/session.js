@@ -6,7 +6,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getCurrentShift, getSettings } from "./storage.js";
+import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getCurrentShift, getSettings, getAdvancePermissionForStudent } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, debounce, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, formModal } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup, dueAmount } from "./lookups.js";
@@ -723,6 +723,7 @@ function renderStudentZone(roster) {
             ${escapeHTML(gradeName(grades, student.gradeId))} · ${escapeHTML(groupName(groups, student.groupId))} ·
             <span class="code-pill">${escapeHTML(student.code || "-")}</span>
             ${isGuest ? `<span class="badge badge-info" style="margin-right:8px;">🏷️ زائر</span>` : isMakeup ? `<span class="badge badge-primary" style="margin-right:8px;">${icons.users} تعويض</span>` : ""}
+            ${getAdvancePermissionForStudent(student.id, selectedDate) ? `<span class="badge badge-primary" style="margin-right:8px;">📋 إذن مسبق</span>` : ""}
           </div>
         </div>
         ${

@@ -4,11 +4,11 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getExams, saveExams, getGroups, getStudents, getGrades, getSettings } from "./storage.js";
+import { getExams, saveExams, getGroups, getStudents, getGrades, getSettings, getAdvancePermissionForStudent } from "./storage.js";
 import { escapeHTML, initials, formatDateAr, generateId, todayISO } from "./helpers.js";
 import { toast, formModal, emptyStateHTML, whatsappPreviewDialog, confirmDialog } from "./ui.js";
 import { groupName, gradeName, findGroup } from "./lookups.js";
-import { openWhatsApp } from "./whatsapp.js";
+import { openWhatsApp, openWhatsAppBulk } from "./whatsapp.js";
 import { sendBulkExamResults } from "./whatsapp-notifications.js";
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 import { detectAchievements, saveDetectedAchievements, generateMessage, getTypeMeta } from "./achievement-engine.js";
@@ -190,6 +190,7 @@ function renderGradesPanel() {
   groupStudents = sortStudents(groupStudents, resultsMap, exam.maxScore);
 
   const scoredCount = exam.results.filter((r) => !r.absent && r.score != null).length;
+  const absentCount = exam.results.filter((r) => r.absent).length;
 
   panel.innerHTML = `
     ${statsHTML}
@@ -201,6 +202,7 @@ function renderGradesPanel() {
       <button class="btn btn-outline btn-sm" id="examExportExcelBtn">${icons.download} تصدير Excel</button>
       <button class="btn btn-outline btn-sm" id="examExportPdfBtn">${icons.print} طباعة / PDF</button>
       ${scoredCount > 0 ? `<button class="btn btn-sm btn-success" id="bulkSendWaBtn">${icons.whatsapp} إرسال النتائج للكل (${scoredCount})</button>` : ""}
+      ${absentCount > 0 ? `<button class="btn btn-sm btn-warning" id="bulkSendAbsentWaBtn">${icons.whatsapp} إشعار غياب للولياء (${absentCount})</button>` : ""}
     </div>
     <form id="gradesForm">
       <div class="table-wrap" style="margin-bottom:16px;">
@@ -234,12 +236,14 @@ function renderGradesPanel() {
                     <input class="input scoreInput" style="max-width:100px;" type="number" min="0" max="${exam.maxScore}" name="${s.id}" value="${score != null ? score : ""}" placeholder="-" data-student-id="${s.id}" ${isAbsent ? "disabled" : ""}>
                   </td>
                   <td><input type="checkbox" class="absentCheckbox" data-student-id="${s.id}" ${isAbsent ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;" title="غائب عن الامتحان"></td>
-                  <td>${isAbsent ? `<span class="badge badge-neutral">غائب</span>` : pct != null ? `<span class="badge ${pct >= 60 ? "badge-success" : pct >= 40 ? "badge-warning" : "badge-danger"}">${pct}%</span>` : `<span class="text-muted">—</span>`}</td>
+                  <td>${isAbsent ? `<span class="badge ${ra?.excused ? "badge-primary" : "badge-neutral"}">${ra?.excused ? "📋 غائب بإذن" : "غائب"}</span>` : pct != null ? `<span class="badge ${pct >= 60 ? "badge-success" : pct >= 40 ? "badge-warning" : "badge-danger"}">${pct}%</span>` : `<span class="text-muted">—</span>`}</td>
                   <td>
                     ${
-                      !isAbsent && score != null
-                        ? `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${s.id}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>`
-                        : ""
+                      isAbsent
+                        ? `<button type="button" class="btn btn-outline btn-icon sendAbsentWaBtn" data-student-id="${s.id}" data-student-name="${escapeHTML(s.name)}" title="إشعار غياب لولى الأمر واتساب">${icons.whatsapp}</button>`
+                        : score != null
+                          ? `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${s.id}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>`
+                          : ""
                     }
                   </td>
                 </tr>`;
@@ -267,6 +271,10 @@ function renderGradesPanel() {
     btn.addEventListener("click", () => sendExamResultWhatsApp(btn.dataset.studentId, exam))
   );
 
+  panel.querySelectorAll(".sendAbsentWaBtn").forEach((btn) =>
+    btn.addEventListener("click", () => sendExamAbsentWhatsApp(btn.dataset.studentId, exam))
+  );
+
   panel.querySelectorAll(".absentCheckbox").forEach((cb) =>
     cb.addEventListener("change", () => {
       const studentId = cb.dataset.studentId;
@@ -275,13 +283,41 @@ function renderGradesPanel() {
         scoreInput.disabled = cb.checked;
         if (cb.checked) scoreInput.value = "";
       }
+      // تحديث/إظهار/إخفاء زر واتساب الغياب
+      const row = cb.closest("tr");
+      const actionCell = row?.querySelector("td:last-child");
+      if (actionCell) {
+        if (cb.checked) {
+          if (!actionCell.querySelector(".sendAbsentWaBtn")) {
+            const student = getStudents().find((st) => st.id === studentId);
+            actionCell.innerHTML = `<button type="button" class="btn btn-outline btn-icon sendAbsentWaBtn" data-student-id="${studentId}" data-student-name="${escapeHTML(student?.name || "")}" title="إشعار غياب لولى الأمر واتساب">${icons.whatsapp}</button>`;
+            actionCell.querySelector(".sendAbsentWaBtn").addEventListener("click", () => sendExamAbsentWhatsApp(studentId, exam));
+          }
+        } else {
+          const existingAbsentBtn = actionCell.querySelector(".sendAbsentWaBtn");
+          if (existingAbsentBtn) {
+            const scoreInput2 = panel.querySelector(`.scoreInput[data-student-id="${studentId}"]`);
+            const val = scoreInput2?.value;
+            actionCell.innerHTML = val ? `<button type="button" class="btn btn-outline btn-icon sendWaBtn" data-student-id="${studentId}" title="إرسال النتيجة لولى الأمر واتساب">${icons.whatsapp}</button>` : "";
+            if (val) {
+              actionCell.querySelector(".sendWaBtn")?.addEventListener("click", () => sendExamResultWhatsApp(studentId, exam));
+            }
+          }
+        }
+      }
     })
   );
 
-  // إرسال واتساب جماعي
+  // إرسال واتساب جماعي — نتائج
   const bulkBtn = panel.querySelector("#bulkSendWaBtn");
   if (bulkBtn) {
     bulkBtn.addEventListener("click", () => openBulkExamWhatsApp(exam.id));
+  }
+
+  // إرسال واتساب جماعي — غياب
+  const bulkAbsentBtn = panel.querySelector("#bulkSendAbsentWaBtn");
+  if (bulkAbsentBtn) {
+    bulkAbsentBtn.addEventListener("click", () => sendBulkExamAbsentWhatsApp(exam));
   }
 
   // إدخال سريع بالكيبورد: Arrow Down / Enter ينتقل للطالب التالي
@@ -311,7 +347,8 @@ function renderGradesPanel() {
     const results = [];
     for (const [studentId, score] of formData.entries()) {
       if (absentIds.has(studentId)) {
-        results.push({ studentId, score: 0, absent: true });
+        const advancePerm = getAdvancePermissionForStudent(studentId, exam.date);
+        results.push({ studentId, score: 0, absent: true, excused: !!advancePerm });
       } else if (score !== "") {
         results.push({ studentId, score: Number(score) });
       }
@@ -469,6 +506,68 @@ async function sendExamResultWhatsApp(studentId, exam) {
   if (!message) return;
 
   openWhatsApp(student.parentPhone, message);
+}
+
+async function sendExamAbsentWhatsApp(studentId, exam) {
+  const student = getStudents().find((s) => s.id === studentId);
+  if (!student) return;
+
+  const settings = getSettings();
+  const centerName = settings.centerName || "السنتر";
+  const defaultMessage = renderTemplate("exam_absent_notification", {
+    studentName: student.name,
+    examTitle: exam.title,
+    dateStr: formatDateAr(exam.date),
+    centerName,
+  });
+
+  const message = await whatsappPreviewDialog({
+    title: "إشعار غياب عن امتحان",
+    recipientLabel: `ولى أمر ${student.name} (${student.parentPhone})`,
+    defaultMessage,
+  });
+  if (!message) return;
+
+  openWhatsApp(student.parentPhone, message);
+}
+
+async function sendBulkExamAbsentWhatsApp(exam) {
+  const absentResults = exam.results.filter((r) => r.absent && !r.excused);
+  if (!absentResults.length) { toast("لا يوجد غائبين لإرسال إشعار لهم", "warning"); return; }
+
+  const students = getStudents();
+  const settings = getSettings();
+  const centerName = settings.centerName || "السنتر";
+
+  const notifications = absentResults
+    .map((r) => {
+      const student = students.find((s) => s.id === r.studentId);
+      if (!student?.parentPhone) return null;
+      return {
+        phone: student.parentPhone,
+        message: renderTemplate("exam_absent_notification", {
+          studentName: student.name,
+          examTitle: exam.title,
+          dateStr: formatDateAr(exam.date),
+          centerName,
+        }),
+        studentName: student.name,
+      };
+    })
+    .filter(Boolean);
+
+  if (!notifications.length) { toast("لا يوجد أرقام واتساب للولياء الغائبين", "warning"); return; }
+
+  const ok = await confirmDialog({
+    title: "إرسال إشعارات غياب للولياء",
+    body: `هل تريد إرسال إشعار غياب عن الامتحان لـ ${notifications.length} ولي أمر؟`,
+    confirmText: "إرسال",
+    tone: "warning",
+  });
+  if (!ok) return;
+
+  try { openWhatsAppBulk(notifications); } catch (e) { /* popup blocker */ }
+  toast(`تم فتح واتساب لإرسال ${notifications.length} إشعار غياب`, "success");
 }
 
 async function openExamForm() {

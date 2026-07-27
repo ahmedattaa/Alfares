@@ -10,7 +10,7 @@
 // بيتقفل تلقائيًا ومبيحضرش الحصة الجاية غير لما المستير يفتح القفل.
 // =========================================================
 
-import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, initStudentLedger, getSettings } from "./storage.js";
+import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, initStudentLedger, getSettings, getAdvancePermissionForStudent, markAdvancePermissionUsed } from "./storage.js";
 import { generateId, todayISO, formatMoney } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
 import { checkEscalation, buildEscalationMessage } from "./escalation-engine.js";
@@ -71,6 +71,19 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
   // فحص القفل: لو الطالب مقفول ومفيش option يسمح بالتجاوز
   if (student && isStudentLocked(student) && !options.forceUnlock) {
     return { locked: true, student, reason: student.lockReason };
+  }
+
+  // ── إذن مسبق: لو الطالب مسجل عليه ST-ABSENT وفيه إذن مسبق لهذا التاريخ ──
+  if (statusId === "ST-ABSENT" && student) {
+    const advancePerm = getAdvancePermissionForStudent(studentId, date);
+    if (advancePerm) {
+      const excusedStatus = statuses.find((s) => s.id === "ST-EXCUSED");
+      if (excusedStatus) {
+        statusId = "ST-EXCUSED";
+        status = excusedStatus;
+        markAdvancePermissionUsed(advancePerm.id);
+      }
+    }
   }
 
   // تحديد الفترة الأكاديمية تلقائيًا
