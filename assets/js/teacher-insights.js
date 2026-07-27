@@ -1,21 +1,22 @@
 // =========================================================
-// Teacher Insights — لوحة متابعة المدرس
-// أزرار جميلة: متأخرون في الدفع · منقطون · المتفوقون · أداء المجموعات
+// Teacher Insights — لوحة المعلم
+// 5 أقسام: الدفع · المتابعة · صحة الطلاب · المجموعات · الإنجازات
 // =========================================================
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGroups, getGrades, getAttendance, getPayments, getStudentStatuses, getExams, getSession, getAchievements, markAchievementSent } from "./storage.js";
-import { todayISO, formatMoney, escapeHTML, formatDateAr, generateId } from "./helpers.js";
+import { getStudents, getGroups, getGrades, getAttendance, getStudentStatuses, getExams, getSession, getAchievements, markAchievementSent } from "./storage.js";
+import { formatMoney, escapeHTML, formatDateAr } from "./helpers.js";
 import { toast, confirmDialog } from "./ui.js";
-import { gradeName, findGroup, dueAmount } from "./lookups.js";
+import { gradeName, findGroup } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
-import { computeAllHealthScores, getHealthColor, getHealthLabel, healthScoreHTML, healthBarHTML } from "./health-score.js";
-import { detectAchievements, saveDetectedAchievements, generateMessage, generateBatchMessage, getTypeMeta, getAllUnsent } from "./achievement-engine.js";
-import { getEscalatedStudents, getEscalationSummary, getLevelMeta, overrideEscalation, logPhoneCall, buildEscalationMessage } from "./escalation-engine.js";
+import { computeAllHealthScores, getHealthColor, healthScoreHTML, healthBarHTML } from "./health-score.js";
+import { generateMessage, getTypeMeta, getAllUnsent } from "./achievement-engine.js";
+import { getEscalationSummary, overrideEscalation, logPhoneCall, buildEscalationMessage } from "./escalation-engine.js";
 
 const content = await initPage("teacher-insights");
 let activeSection = null;
+let followupSubTab = "escalation";
 let disengagedGradeFilter = "all";
 let disengagedMode = "more2";
 
@@ -25,23 +26,20 @@ function render() {
   const students = getStudents().filter((s) => s.status === "active");
   const attendance = getAttendance();
   const statuses = getStudentStatuses();
-  const payments = getPayments();
   const groups = getGroups();
   const grades = getGrades();
-  const exams = getExams();
 
   const latePayers = students.filter((s) => (s.lateBalance || 0) > 0);
-  const disengaged = calcDisengaged(students, attendance, statuses, groups, exams, { mode: "more2" });
-  const topCount = calcTopStars(students, attendance, statuses, groups, exams).reduce((sum, arr) => sum + arr.students.length, 0);
   const atRiskCount = calcAtRiskStudents(students, groups).length;
   const troublemakersCount = calcTroublemakers(students, attendance, statuses, groups).length;
   const unsentAchievements = getAllUnsent().length;
   const escalationSummary = getEscalationSummary();
+  const followupTotal = escalationSummary.total + troublemakersCount + atRiskCount;
 
   content.innerHTML = `
     <div class="page__header">
       <div>
-        <div class="page__title">سجل الأداء</div>
+        <div class="page__title">لوحة المعلم</div>
         <div class="page__subtitle">نظرة شاملة على أداء الطلاب والمجموعات</div>
       </div>
     </div>
@@ -50,71 +48,36 @@ function render() {
       <button class="ti-action-btn ti-action-btn--danger ${activeSection === "late" ? "is-active" : ""}" data-section="late">
         <span class="ti-action-btn__icon">${icons.wallet}</span>
         <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">متأخرون في الدفع</span>
-          <span class="ti-action-btn__count">${latePayers.length} طالب</span>
+          <span class="ti-action-btn__title">💰 الدفع</span>
+          <span class="ti-action-btn__count">${latePayers.length} طالب متأخر</span>
         </span>
       </button>
-      <button class="ti-action-btn ti-action-btn--warning ${activeSection === "disengaged" ? "is-active" : ""}" data-section="disengaged">
+      <button class="ti-action-btn ti-action-btn--warning ${activeSection === "followup" ? "is-active" : ""}" data-section="followup">
         <span class="ti-action-btn__icon">${icons.alert}</span>
         <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">منقطون</span>
-          <span class="ti-action-btn__count">${disengaged.length} طالب</span>
+          <span class="ti-action-btn__title">🔔 المتابعة</span>
+          <span class="ti-action-btn__count">${followupTotal} طالب يحتاج متابعة</span>
         </span>
       </button>
-      <button class="ti-action-btn ti-action-btn--success ${activeSection === "top" ? "is-active" : ""}" data-section="top">
+      <button class="ti-action-btn ti-action-btn--success ${activeSection === "health" ? "is-active" : ""}" data-section="health">
         <span class="ti-action-btn__icon">${icons.shield}</span>
         <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">فرسان السنتر</span>
-          <span class="ti-action-btn__count">${topCount} طالب</span>
-        </span>
-      </button>
-      <button class="ti-action-btn ti-action-btn--danger ${activeSection === "troublemakers" ? "is-active" : ""}" data-section="troublemakers">
-        <span class="ti-action-btn__icon">${icons.alert}</span>
-        <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">المشاغلون</span>
-          <span class="ti-action-btn__count">${troublemakersCount} طالب</span>
+          <span class="ti-action-btn__title">💚 صحة الطلاب</span>
+          <span class="ti-action-btn__count">${calcStudentHealthCount()} طالب تحت الخطر</span>
         </span>
       </button>
       <button class="ti-action-btn ti-action-btn--primary ${activeSection === "groups" ? "is-active" : ""}" data-section="groups">
         <span class="ti-action-btn__icon">${icons.chart}</span>
         <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">أداء المجموعات</span>
+          <span class="ti-action-btn__title">📊 المجموعات</span>
           <span class="ti-action-btn__count">${groups.length} مجموعة</span>
-        </span>
-      </button>
-      <button class="ti-action-btn ti-action-btn--danger ${activeSection === "declining" ? "is-active" : ""}" data-section="declining">
-        <span class="ti-action-btn__icon">${icons.radar}</span>
-        <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">الرادار الأكاديمي</span>
-          <span class="ti-action-btn__count">${atRiskCount} طالب تحت الخطر</span>
-        </span>
-      </button>
-      <button class="ti-action-btn ti-action-btn--primary ${activeSection === "health" ? "is-active" : ""}" data-section="health">
-        <span class="ti-action-btn__icon">${icons.chart}</span>
-        <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">صحة السنتر</span>
-          <span class="ti-action-btn__count">المؤشرات</span>
-        </span>
-      </button>
-      <button class="ti-action-btn ti-action-btn--danger ${activeSection === "studentHealth" ? "is-active" : ""}" data-section="studentHealth">
-        <span class="ti-action-btn__icon">${icons.radar}</span>
-        <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">صحة الطلاب</span>
-          <span class="ti-action-btn__count">${calcStudentHealthCount()} طالب</span>
         </span>
       </button>
       <button class="ti-action-btn ti-action-btn--success ${activeSection === "achievements" ? "is-active" : ""}" data-section="achievements">
         <span class="ti-action-btn__icon">${icons.shield}</span>
         <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">إنجازات الطلاب</span>
-          <span class="ti-action-btn__count">${unsentAchievements} إنجاز</span>
-        </span>
-      </button>
-      <button class="ti-action-btn ti-action-btn--danger ${activeSection === "escalation" ? "is-active" : ""}" data-section="escalation">
-        <span class="ti-action-btn__icon">${icons.alert}</span>
-        <span class="ti-action-btn__text">
-          <span class="ti-action-btn__title">التصعيد</span>
-          <span class="ti-action-btn__count">${escalationSummary.total} طالب</span>
+          <span class="ti-action-btn__title">🏅 الإنجازات</span>
+          <span class="ti-action-btn__count">${unsentAchievements} إنجاز جديد</span>
         </span>
       </button>
     </div>
@@ -194,87 +157,6 @@ function calcDisengaged(students, attendance, statuses, groups, exams, opts = {}
     if (!a.examAbsent && b.examAbsent) return -1;
     return (a.lastDates[0] || "").localeCompare(b.lastDates[0] || "");
   });
-}
-
-function calcTopPerformers(students, attendance, statuses, groups) {
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const cutoff = thirtyDaysAgo.toISOString().slice(0, 10);
-
-  const recent = attendance.filter((a) => a.date >= cutoff && a.category === "attendance");
-
-  const studentData = {};
-  students.forEach((s) => (studentData[s.id] = { present: 0, total: 0, paid: 0 }));
-  recent.forEach((a) => {
-    if (!studentData[a.studentId]) return;
-    studentData[a.studentId].total++;
-    const st = statuses.find((x) => x.id === a.statusId);
-    if (st?.presence === "present") {
-      studentData[a.studentId].present++;
-      if (a.statusId === "ST-PAID") studentData[a.studentId].paid++;
-    }
-  });
-
-  const byGroup = {};
-  students.forEach((s) => {
-    if (!byGroup[s.groupId]) byGroup[s.groupId] = [];
-    const d = studentData[s.id];
-    if (d.total < 2) return;
-    const rate = Math.round((d.present / d.total) * 100);
-    if (rate >= 80) {
-      byGroup[s.groupId].push({ student: s, rate, sessions: d.total, paid: d.paid });
-    }
-  });
-
-  Object.keys(byGroup).forEach((gid) => {
-    byGroup[gid].sort((a, b) => b.rate - a.rate || b.paid - a.paid);
-    byGroup[gid] = byGroup[gid].slice(0, 10);
-  });
-
-  return groups.map((g) => ({
-    group: g,
-    grade: gradeName(getGrades(), g.gradeId),
-    students: byGroup[g.id] || [],
-  })).filter((g) => g.students.length > 0);
-}
-
-function calcDecliningStudents(students, groups) {
-  const exams = getExams().slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-  if (exams.length < 2) return [];
-
-  const studentExamData = {};
-  students.forEach((s) => (studentExamData[s.id] = []));
-
-  exams.forEach((exam) => {
-    exam.results.forEach((r) => {
-      if (!studentExamData[r.studentId] || r.absent) return;
-      const pct = Math.round((r.score / exam.maxScore) * 100);
-      studentExamData[r.studentId].push({ examId: exam.id, date: exam.date, pct, title: exam.title });
-    });
-  });
-
-  const declining = [];
-  students.forEach((s) => {
-    const scores = studentExamData[s.id];
-    if (!scores || scores.length < 2) return;
-
-    const last = scores[scores.length - 1];
-    const prev = scores.slice(0, -1);
-    const avgPrev = Math.round(prev.reduce((sum, x) => sum + x.pct, 0) / prev.length);
-    const drop = avgPrev - last.pct;
-
-    if (drop >= 15) {
-      declining.push({
-        student: s,
-        group: findGroup(groups, s.groupId),
-        lastExam: last,
-        avgPrev,
-        drop,
-      });
-    }
-  });
-
-  return declining.sort((a, b) => b.drop - a.drop);
 }
 
 function calcWeakestExam(exams, groups) {
@@ -400,86 +282,6 @@ function calcTroublemakers(students, attendance, statuses, groups) {
     .sort((a, b) => b.count - a.count);
 }
 
-function calcTopStars(students, attendance, statuses, groups, exams) {
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const cutoff = thirtyDaysAgo.toISOString().slice(0, 10);
-
-  const recent = attendance.filter((a) => a.date >= cutoff && a.category === "attendance");
-  const negativeActions = new Set(
-    statuses.filter((s) => s.category === "action" && (s.tone === "warning" || s.tone === "danger")).map((s) => s.id)
-  );
-  const allActions = attendance.filter((a) => a.date >= cutoff && a.category === "action");
-
-  const studentExamAvg = {};
-  exams.forEach((exam) => {
-    (exam.results || []).forEach((r) => {
-      if (r.absent || r.score == null) return;
-      if (!studentExamAvg[r.studentId]) studentExamAvg[r.studentId] = { total: 0, count: 0 };
-      studentExamAvg[r.studentId].total += Math.round((r.score / exam.maxScore) * 100);
-      studentExamAvg[r.studentId].count++;
-    });
-  });
-
-  const studentData = {};
-  students.forEach((s) => {
-    studentData[s.id] = { present: 0, total: 0, paid: 0, hasNegativeAction: false };
-  });
-
-  recent.forEach((a) => {
-    if (!studentData[a.studentId]) return;
-    studentData[a.studentId].total++;
-    const st = statuses.find((x) => x.id === a.statusId);
-    if (st?.presence === "present") {
-      studentData[a.studentId].present++;
-      if (a.statusId === "ST-PAID") studentData[a.studentId].paid++;
-    }
-  });
-
-  allActions.forEach((a) => {
-    if (!studentData[a.studentId]) return;
-    if (negativeActions.has(a.statusId)) studentData[a.studentId].hasNegativeAction = true;
-  });
-
-  const byGroup = {};
-  students.forEach((s) => {
-    if (!byGroup[s.groupId]) byGroup[s.groupId] = [];
-    const d = studentData[s.id];
-    if (d.total < 2) return;
-
-    const attendanceRate = Math.round((d.present / d.total) * 100);
-    const examData = studentExamAvg[s.id];
-    const examAvg = examData ? Math.round(examData.total / examData.count) : 0;
-    const hasExams = !!examData;
-
-    const score = hasExams
-      ? Math.round(attendanceRate * 0.4 + examAvg * 0.4 + (d.hasNegativeAction ? 0 : 20))
-      : Math.round(attendanceRate * 0.7 + (d.hasNegativeAction ? 0 : 30));
-
-    byGroup[s.groupId].push({
-      student: s,
-      attendanceRate,
-      examAvg,
-      hasExams,
-      hasNegativeAction: d.hasNegativeAction,
-      score,
-      sessions: d.total,
-      paid: d.paid,
-    });
-  });
-
-  Object.keys(byGroup).forEach((gid) => {
-    byGroup[gid].sort((a, b) => b.score - a.score || b.attendanceRate - a.attendanceRate);
-    byGroup[gid] = byGroup[gid].slice(0, 10);
-  });
-
-  return groups.map((g) => ({
-    group: g,
-    grade: gradeName(getGrades(), g.gradeId),
-    students: byGroup[g.id] || [],
-  })).filter((g) => g.students.length > 0);
-}
-
 function calcGroupPerformance(students, attendance, statuses, groups, grades) {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -576,15 +378,10 @@ function renderSection() {
   const box = document.getElementById("sectionContent");
   if (!activeSection) { box.innerHTML = `<div class="ti-empty">اختر قسماً من الأزرار أعلاه</div>`; return; }
   if (activeSection === "late") return renderLatePayersSection(box);
-  if (activeSection === "disengaged") return renderDisengagedSection(box);
-  if (activeSection === "top") return renderTopSection(box);
-  if (activeSection === "troublemakers") return renderTroublemakersSection(box);
+  if (activeSection === "followup") return renderFollowupSection(box);
+  if (activeSection === "health") return renderStudentHealthSection(box);
   if (activeSection === "groups") return renderGroupsSection(box);
-  if (activeSection === "declining") return renderDecliningSection(box);
-  if (activeSection === "health") return renderCenterHealthSection(box);
-  if (activeSection === "studentHealth") return renderStudentHealthSection(box);
   if (activeSection === "achievements") return renderAchievementsSection(box);
-  if (activeSection === "escalation") return renderEscalationSection(box);
 }
 
 /* ── متأخرون في الدفع ── */
@@ -686,6 +483,326 @@ function renderLatePayersSection(box) {
   renderList();
 }
 
+/* ═══════════════════════════════════════════════════════════
+   🔔 المتابعة — قسم موحد (تصعيد + منقطون + مشاغلون + يتأخرون)
+   ═══════════════════════════════════════════════════════════ */
+function renderFollowupSection(box) {
+  const students = getStudents().filter((s) => s.status === "active");
+  const groups = getGroups();
+  const grades = getGrades();
+  const attendance = getAttendance();
+  const statuses = getStudentStatuses();
+  const exams = getExams();
+  const session = getSession();
+  const escalationSummary = getEscalationSummary();
+
+  const tabs = [
+    { id: "escalation", label: "التصعيد", count: escalationSummary.total, color: "danger" },
+    { id: "disengaged", label: "المنقطعون", count: calcDisengaged(students, attendance, statuses, groups, exams, { mode: disengagedMode }).length, color: "warning" },
+    { id: "troublemakers", label: "المشاغلون", count: calcTroublemakers(students, attendance, statuses, groups).length, color: "danger" },
+    { id: "declining", label: "يتأخرون", count: calcAtRiskStudents(students, groups).length, color: "warning" },
+  ];
+
+  box.innerHTML = `
+    <div class="card card-pad">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--warning);">${icons.alert} المتابعة</div>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;">
+        ${tabs.map((t) => `<button class="btn btn-sm ${followupSubTab === t.id ? "btn-primary" : "btn-outline"} followup-tab-btn" data-tab="${t.id}">${t.label} (${t.count})</button>`).join("")}
+      </div>
+      <div id="followupContent"></div>
+    </div>
+  `;
+
+  box.querySelectorAll(".followup-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      followupSubTab = btn.dataset.tab;
+      renderFollowupSection(box);
+    });
+  });
+
+  const inner = document.getElementById("followupContent");
+  if (followupSubTab === "escalation") renderFollowupEscalation(inner, escalationSummary, groups, grades, session);
+  else if (followupSubTab === "disengaged") renderFollowupDisengaged(inner, students, attendance, statuses, groups, exams);
+  else if (followupSubTab === "troublemakers") renderFollowupTroublemakers(inner, students, attendance, statuses, groups);
+  else if (followupSubTab === "declining") renderFollowupDeclining(inner, students, groups, exams);
+}
+
+/* ── التصعيد (داخل المتابعة) ── */
+function renderFollowupEscalation(inner, summary, groups, grades, session) {
+  const allEscalated = [
+    ...summary.level3.map((s) => ({ ...s, levelTag: "🔴 قفل — استدعاء", levelBadge: "danger" })),
+    ...summary.level2.map((s) => ({ ...s, levelTag: "🟠 اتصال مطلوب", levelBadge: "warning" })),
+    ...summary.level1.map((s) => ({ ...s, levelTag: "🟡 إنذار أول", levelBadge: "info" })),
+  ];
+
+  inner.innerHTML = `
+    <p style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.7;">
+      الغياب الأول المتتالي (بدون إذن): رسالة واتساب آلية هادئة · الثاني: اتصال هاتفي مطلوب · الثالث: قفل + استدعاء ولي الأمر
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+      ${summary.level3.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--danger);">🔴 ${summary.level3.length} قفل</span>` : ""}
+      ${summary.level2.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--warning);">🟠 ${summary.level2.length} اتصال مطلوب</span>` : ""}
+      ${summary.level1.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--info);">🟡 ${summary.level1.length} إنذار أول</span>` : ""}
+    </div>
+    <div id="escList"></div>
+  `;
+
+  const listEl = document.getElementById("escList");
+  if (!allEscalated.length) {
+    listEl.innerHTML = `<div class="ti-empty">لا يوجد طلاب في حالة تصعيد — الكل طبيعي 👍</div>`;
+    return;
+  }
+
+  listEl.innerHTML = allEscalated.map((s) => {
+    const group = findGroup(groups, s.groupId);
+    const grade = gradeName(grades, group?.gradeId);
+    return `
+      <div class="ti-student-row ti-student-row--${s.levelBadge}">
+        <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
+        <div class="ti-student-row__info">
+          <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
+          <div class="ti-student-row__meta">${escapeHTML(group?.name || "")} · ${escapeHTML(grade || "")} · ${s.consecutiveAbsences} غيابات متتالية</div>
+        </div>
+        <span class="badge badge-${s.levelBadge}" style="font-size:11px; white-space:nowrap;">${s.levelTag}</span>
+        <div class="ti-student-row__actions" style="gap:4px;">
+          ${s.escalationLevel === 1 || s.escalationLevel === 2 ? `<button type="button" class="btn btn-success btn-sm escWaBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" data-phone="${escapeHTML(s.parentPhone || "")}" data-level="${s.escalationLevel}">${icons.whatsapp}</button>` : ""}
+          ${s.escalationLevel === 2 ? `<button type="button" class="btn btn-warning btn-sm escCallBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">✓ تم الاتصال</button>` : ""}
+          ${s.escalationLevel === 3 ? `<button type="button" class="btn btn-danger btn-sm escOverrideBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">فتح القفل</button>` : ""}
+          <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".escWaBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const phone = btn.dataset.phone;
+      const name = btn.dataset.name;
+      const level = parseInt(btn.dataset.level);
+      if (!phone) { toast("لا يوجد هاتف لولى الأمر", "warning"); return; }
+      const msg = buildEscalationMessage({ name }, level);
+      if (msg) openWhatsApp(phone, msg);
+    });
+  });
+
+  listEl.querySelectorAll(".escCallBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const studentId = btn.dataset.id;
+      const name = btn.dataset.name;
+      const ok = await confirmDialog({
+        title: `تأكيد اتصال هاتفي`,
+        body: `تم الاتصال بولي أمر الطالب <strong>${name}</strong>؟`,
+        confirmText: "نعم، تم الاتصال",
+        tone: "warning",
+      });
+      if (!ok) return;
+      logPhoneCall(studentId, session?.username || "المستخدم");
+      toast(`تم تسجيل الاتصال بنجاح`, "success");
+      render();
+    });
+  });
+
+  listEl.querySelectorAll(".escOverrideBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const studentId = btn.dataset.id;
+      const name = btn.dataset.name;
+      const note = await prompt(`فتح القفل — ${name}\nملاحظة (اختياري):`);
+      if (note === null) return;
+      overrideEscalation(studentId, session?.username || "المستخدم", note || "فتح استثنائي");
+      toast(`تم فتح القفل على ${name}`, "success");
+      render();
+    });
+  });
+}
+
+/* ── المنقطعون (داخل المتابعة) ── */
+function renderFollowupDisengaged(inner, students, attendance, statuses, groups, exams) {
+  function renderInner() {
+    const data = calcDisengaged(students, attendance, statuses, groups, exams, {
+      gradeId: disengagedGradeFilter,
+      mode: disengagedMode,
+    });
+
+    inner.innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button type="button" class="btn btn-danger btn-sm" id="bulkDisengagedAlert" ${data.length ? "" : "disabled"}>${icons.whatsapp} إرسال إنذار جماعي</button>
+        <span class="badge badge-warning">${data.length} طالب</span>
+        <select id="disGradeFilter" class="select" style="max-width:180px;">
+          <option value="all">كل السنوات الدراسية</option>
+          ${getGrades().map((g) => `<option value="${g.id}" ${disengagedGradeFilter === g.id ? "selected" : ""}>${escapeHTML(g.name)}</option>`).join("")}
+        </select>
+        <select id="disDaysFilter" class="select" style="max-width:200px;">
+          <option value="2" ${disengagedMode === "2" ? "selected" : ""}>يومان متتاليان</option>
+          <option value="more2" ${disengagedMode === "more2" ? "selected" : ""}>أكثر من يومان</option>
+          <option value="exam" ${disengagedMode === "exam" ? "selected" : ""}>غياب أيام الامتحانات</option>
+        </select>
+      </div>
+      <div id="disengagedList"></div>
+    `;
+
+    const list = document.getElementById("disengagedList");
+    if (!data.length) {
+      list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد طلاب منقطعين</div>`;
+    } else {
+      list.innerHTML = data.map((item) => {
+        const s = item.student;
+        const meta = item.examAbsent
+          ? `${escapeHTML(item.group?.name || "")} · غائب عن امتحان`
+          : `${escapeHTML(item.group?.name || "")} · آخر حضور: ${formatDateAr(item.lastDates[0])}`;
+        const badge = item.examAbsent
+          ? `<span class="badge badge-secondary">غياب امتحان</span>`
+          : `<span class="badge badge-danger">${item.consecutiveAbsences} غياب</span>`;
+        return `
+        <div class="ti-student-row ti-student-row--warning">
+          <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
+          <div class="ti-student-row__info">
+            <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
+            <div class="ti-student-row__meta">${meta}</div>
+          </div>
+          ${badge}
+          <div class="ti-student-row__actions">
+            <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+            <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
+          </div>
+        </div>`;
+      }).join("");
+    }
+    bindWhatsAppButtons(list);
+  }
+
+  renderInner();
+
+  document.getElementById("bulkDisengagedAlert")?.addEventListener("click", () => {
+    const currentData = calcDisengaged(students, attendance, statuses, groups, exams, {
+      gradeId: disengagedGradeFilter,
+      mode: disengagedMode,
+    });
+    sendBulkDisengagedAlert(currentData);
+  });
+  document.getElementById("disGradeFilter")?.addEventListener("change", (e) => { disengagedGradeFilter = e.target.value; renderInner(); });
+  document.getElementById("disDaysFilter")?.addEventListener("change", (e) => { disengagedMode = e.target.value; renderInner(); });
+}
+
+/* ── المشاغلون (داخل المتابعة) ── */
+function renderFollowupTroublemakers(inner, students, attendance, statuses, groups) {
+  const data = calcTroublemakers(students, attendance, statuses, groups);
+
+  inner.innerHTML = `
+    <div class="field__hint" style="margin-bottom:12px;">الطلاب الذين سُجّلت لهم إجراءات استثنائية سلبية (استدعاء ولي أمر، طرد، أو غيرها) في آخر 30 يوم</div>
+    <div id="troublemakersList"></div>
+  `;
+
+  const list = document.getElementById("troublemakersList");
+  if (!data.length) {
+    list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد مشاغلون حالياً</div>`;
+    return;
+  }
+
+  list.innerHTML = data.map((item) => {
+    const s = item.student;
+    const lastAction = item.actions[item.actions.length - 1];
+    return `
+    <div class="ti-student-row ti-student-row--danger">
+      <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
+      <div class="ti-student-row__info">
+        <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
+        <div class="ti-student-row__meta">${escapeHTML(item.group?.name || "")} · آخر إجراء: ${lastAction?.statusName || ""} (${formatDateAr(item.lastDate)})</div>
+      </div>
+      <div style="text-align:center; margin:0 8px;">
+        <div style="font-size:11px; color:var(--muted);">الإجراءات</div>
+        <div style="font-size:18px; font-weight:800; color:var(--danger);">${item.count}</div>
+      </div>
+      <div class="ti-student-row__actions">
+        <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+        <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
+      </div>
+    </div>`;
+  }).join("");
+  bindWhatsAppButtons(list);
+}
+
+/* ── يتأخرون / الرادار الأكاديمي (داخل المتابعة) ── */
+function renderFollowupDeclining(inner, students, groups, exams) {
+  const atRisk = calcAtRiskStudents(students, groups);
+  const weakest = calcWeakestExam(exams, groups);
+
+  inner.innerHTML = `
+    ${weakest ? `
+    <div class="card card-pad" style="margin-bottom:14px; border:1px solid var(--border);">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--danger);">🎯 أضعف امتحان</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:8px 0;">
+        <div style="flex:1; min-width:200px;">
+          <div style="font-weight:700; font-size:15px; margin-bottom:4px;">${escapeHTML(weakest.exam.title)}</div>
+          <div style="font-size:13px; color:var(--muted);">${escapeHTML(weakest.group?.name || "")} · ${formatDateAr(weakest.exam.date)}</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:12px; color:var(--muted);">المتوسط العام</div>
+          <div style="font-size:28px; font-weight:800; color:var(--danger);">${weakest.avgPct}%</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:12px; color:var(--muted);">عدد الممتحنين</div>
+          <div style="font-size:20px; font-weight:700;">${weakest.gradedStudents} / ${weakest.totalStudents}</div>
+        </div>
+      </div>
+      <div class="field__hint" style="margin-top:8px;">هذا الامتحان حقق أقل متوسط درجات على مستوى السنتر — قد يكون المنهج فيه صعب ويحتاج حصة مراجعة</div>
+    </div>
+    ` : ""}
+
+    <div class="field__hint" style="margin-bottom:10px;">طلاب انخفضت درجاتهم بشكل ملحوظ (15% أو أكثر) بين امتحانين — يحتاجون تدخل فوري</div>
+    <div id="atRiskList"></div>
+  `;
+
+  const list = document.getElementById("atRiskList");
+  if (!atRisk.length) {
+    list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد طلاب يتأخرون حالياً</div>`;
+    return;
+  }
+
+  list.innerHTML = atRisk.map((item) => {
+    const s = item.student;
+    const wp = item.worstPair;
+    return `
+    <div class="ti-student-row ti-student-row--warning">
+      <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
+      <div class="ti-student-row__info">
+        <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
+        <div class="ti-student-row__meta">${escapeHTML(item.group?.name || "")} · ${item.totalExams} امتحانات</div>
+      </div>
+      ${wp ? `
+        <div style="text-align:center; margin:0 8px;">
+          <div style="font-size:11px; color:var(--muted);">${escapeHTML(wp.prev.title)}</div>
+          <div style="font-weight:800; font-size:15px; color:var(--success);">${wp.prev.pct}%</div>
+        </div>
+        <span style="color:var(--danger); font-weight:700; font-size:18px;">→</span>
+        <div style="text-align:center; margin:0 8px;">
+          <div style="font-size:11px; color:var(--muted);">${escapeHTML(wp.curr.title)}</div>
+          <div style="font-weight:800; font-size:15px; color:var(--danger);">${wp.curr.pct}%</div>
+        </div>
+        <span class="badge badge-danger" style="margin:0 8px;">- ${item.maxDrop}%</span>
+      ` : `
+        <div style="text-align:center; margin:0 8px;">
+          <div style="font-size:11px; color:var(--muted);">المتوسط السابق</div>
+          <div style="font-weight:800; font-size:15px;">${item.avgPrev}%</div>
+        </div>
+        <div style="text-align:center; margin:0 8px;">
+          <div style="font-size:11px; color:var(--muted);">آخر درجة</div>
+          <div style="font-weight:800; font-size:15px; color:var(--danger);">${item.lastExam.pct}%</div>
+        </div>
+        <span class="badge badge-danger" style="margin:0 8px;">- ${item.overallDrop}%</span>
+      `}
+      <div class="ti-student-row__actions">
+        <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
+        <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
+      </div>
+    </div>`;
+  }).join("");
+  bindWhatsAppButtons(list);
+}
+
 /* ── المنقطعون ── */
 async function sendBulkDisengagedAlert(data) {
   const notifications = data
@@ -740,312 +857,18 @@ async function sendBulkDisengagedAlert(data) {
     idx++;
   }, 1000);
 }
-function renderDisengagedSection(box) {
-  const students = getStudents().filter((s) => s.status === "active");
-  const groups = getGroups();
-  const grades = getGrades();
-  const attendance = getAttendance();
-  const statuses = getStudentStatuses();
-  const exams = getExams();
-
-  const modeLabels = {
-    "2": "يومان متتاليان",
-    more2: "أكثر من يومان",
-    exam: "غياب أيام الامتحانات",
-  };
-
-  function renderInner() {
-    const data = calcDisengaged(students, attendance, statuses, groups, exams, {
-      gradeId: disengagedGradeFilter,
-      mode: disengagedMode,
-    });
-
-    box.innerHTML = `
-      <div class="card card-pad">
-        <div class="card__head">
-          <div class="card__title" style="color:var(--warning);">⚠️ المنقطعون</div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <button type="button" class="btn btn-danger btn-sm" id="bulkDisengagedAlert" ${data.length ? "" : "disabled"}>${icons.whatsapp} إرسال إنذار جماعي</button>
-            <span class="badge badge-warning">${data.length} طالب</span>
-          </div>
-        </div>
-        <div class="ti-filters" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-          <select id="disGradeFilter" class="select" style="max-width:180px;">
-            <option value="all">كل السنوات الدراسية</option>
-            ${grades.map((g) => `<option value="${g.id}" ${disengagedGradeFilter === g.id ? "selected" : ""}>${escapeHTML(g.name)}</option>`).join("")}
-          </select>
-          <select id="disDaysFilter" class="select" style="max-width:200px;">
-            <option value="2" ${disengagedMode === "2" ? "selected" : ""}>يومان متتاليان</option>
-            <option value="more2" ${disengagedMode === "more2" ? "selected" : ""}>أكثر من يومان</option>
-            <option value="exam" ${disengagedMode === "exam" ? "selected" : ""}>غياب أيام الامتحانات</option>
-          </select>
-        </div>
-        <div id="disengagedList"></div>
-      </div>
-    `;
-
-    const list = document.getElementById("disengagedList");
-    if (!data.length) {
-      list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد طلاب منقطعين</div>`;
-    } else {
-      list.innerHTML = data.map((item) => {
-        const s = item.student;
-        const meta = item.examAbsent
-          ? `${escapeHTML(item.group?.name || "")} · غائب عن امتحان`
-          : `${escapeHTML(item.group?.name || "")} · آخر حضور: ${formatDateAr(item.lastDates[0])}`;
-        const badge = item.examAbsent
-          ? `<span class="badge badge-secondary">غياب امتحان</span>`
-          : `<span class="badge badge-danger">${item.consecutiveAbsences} غياب</span>`;
-        return `
-        <div class="ti-student-row ti-student-row--warning">
-          <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
-          <div class="ti-student-row__info">
-            <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
-            <div class="ti-student-row__meta">${meta}</div>
-          </div>
-          ${badge}
-          <div class="ti-student-row__actions">
-            <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
-            <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
-          </div>
-        </div>`;
-      }).join("");
-    }
-    bindWhatsAppButtons(list);
-  }
-
-  renderInner();
-
-  document.getElementById("bulkDisengagedAlert")?.addEventListener("click", () => {
-    const currentData = calcDisengaged(students, attendance, statuses, groups, exams, {
-      gradeId: disengagedGradeFilter,
-      mode: disengagedMode,
-    });
-    sendBulkDisengagedAlert(currentData);
-  });
-
-  document.getElementById("disGradeFilter")?.addEventListener("change", (e) => {
-    disengagedGradeFilter = e.target.value;
-    renderInner();
-  });
-  document.getElementById("disDaysFilter")?.addEventListener("change", (e) => {
-    disengagedMode = e.target.value;
-    renderInner();
-  });
-}
-
-/* ── الطلاب المتفوقون ── */
-function renderTopSection(box) {
-  const students = getStudents().filter((s) => s.status === "active");
-  const groups = getGroups();
-  const attendance = getAttendance();
-  const statuses = getStudentStatuses();
-  const exams = getExams();
-  const data = calcTopStars(students, attendance, statuses, groups, exams);
-
-  box.innerHTML = `
-    <div class="card card-pad">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--success);">🏆 فرسان السنتر — أفضل 10 لكل مجموعة</div>
-      </div>
-      <div class="field__hint" style="margin-bottom:12px;">خوارزمية مركبة: 40% حضور + 40% امتحانات + 20% سجل نظيف (بدون استدعاءات أو طرد)</div>
-      <div id="topList"></div>
-    </div>
-  `;
-
-  const list = document.getElementById("topList");
-  if (!data.length) {
-    list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد طلاب متفوقين حالياً</div>`;
-    return;
-  }
-
-  list.innerHTML = data.map((g) => {
-    const medals = ["🥇", "🥈", "🥉"];
-    return `
-    <div style="margin-bottom:20px;">
-      <div class="ti-group-header">
-        <span class="ti-group-header__name">${escapeHTML(g.group.name)}</span>
-        <span class="ti-group-header__grade">${escapeHTML(g.grade)}</span>
-        <span class="ti-group-header__count">${g.students.length} طالب</span>
-      </div>
-      ${g.students.map((item, i) => {
-        const s = item.student;
-        const medal = medals[i] || `#${i + 1}`;
-        const badges = [];
-        if (item.score >= 90) badges.push(`<span class="badge badge-success" style="font-size:10px;">ممتاز</span>`);
-        if (!item.hasNegativeAction) badges.push(`<span class="badge badge-info" style="font-size:10px;">سجل نظيف</span>`);
-        if (item.hasExams && item.examAvg >= 80) badges.push(`<span class="badge badge-success" style="font-size:10px;">امتحانات ممتازة</span>`);
-        return `
-        <div class="ti-student-row ti-student-row--success">
-          <div class="ti-student-row__medal">${medal}</div>
-          <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
-          <div class="ti-student-row__info">
-            <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
-            <div class="ti-student-row__meta">${item.sessions} حصة · حضور ${item.attendanceRate}%${item.hasExams ? " · امتحانات " + item.examAvg + "%" : ""}</div>
-            <div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:2px;">${badges.join("")}</div>
-          </div>
-          <div style="text-align:center; min-width:50px;">
-            <div style="font-size:10px; color:var(--muted);">النتيجة</div>
-            <div style="font-size:18px; font-weight:800; color:var(--success);">${item.score}</div>
-          </div>
-          <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
-        </div>`;
-      }).join("")}
-    </div>`;
-  }).join("");
-}
-
-/* ── طلاب يتراجعون ── */
-function renderDecliningSection(box) {
-  const students = getStudents().filter((s) => s.status === "active");
-  const groups = getGroups();
-  const exams = getExams();
-  const atRisk = calcAtRiskStudents(students, groups);
-  const weakest = calcWeakestExam(exams, groups);
-
-  box.innerHTML = `
-    <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--danger);">🎯 أضعف امتحان</div>
-      </div>
-      ${weakest ? `
-        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:8px 0;">
-          <div style="flex:1; min-width:200px;">
-            <div style="font-weight:700; font-size:15px; margin-bottom:4px;">${escapeHTML(weakest.exam.title)}</div>
-            <div style="font-size:13px; color:var(--muted);">${escapeHTML(weakest.group?.name || "")} · ${formatDateAr(weakest.exam.date)}</div>
-          </div>
-          <div style="text-align:center;">
-            <div style="font-size:12px; color:var(--muted);">المتوسط العام</div>
-            <div style="font-size:28px; font-weight:800; color:var(--danger);">${weakest.avgPct}%</div>
-          </div>
-          <div style="text-align:center;">
-            <div style="font-size:12px; color:var(--muted);">عدد الممتحنين</div>
-            <div style="font-size:20px; font-weight:700;">${weakest.gradedStudents} / ${weakest.totalStudents}</div>
-          </div>
-          <div style="text-align:center;">
-            <div style="font-size:12px; color:var(--muted);">أعلى درجة مطلوبة</div>
-            <div style="font-size:20px; font-weight:700;">${weakest.exam.maxScore}</div>
-          </div>
-        </div>
-        <div class="field__hint" style="margin-top:8px;">هذا الامتحان حقق أقل متوسط درجات على مستوى السنتر — قد يكون المنهج فيه صعب ويحتاج حصة مراجعة</div>
-      ` : `
-        <div class="text-muted" style="padding:16px; text-align:center;">لا توجد امتحانات كافية لتحليل المنهج</div>
-      `}
-    </div>
-
-    <div class="card card-pad">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--warning);">🔔 جرس الإنذار — طلاب تحت الخطر</div>
-        <span class="badge badge-warning">${atRisk.length} طالب</span>
-      </div>
-      <div class="field__hint" style="margin-bottom:12px;">طلاب انخفضت درجاتهم بشكل ملحوظ بين امتحانين — يحتاجون تدخل فوري</div>
-      <div id="atRiskList"></div>
-    </div>
-  `;
-
-  const list = document.getElementById("atRiskList");
-  if (!atRisk.length) {
-    list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد طلاب تحت الخطر حالياً</div>`;
-    return;
-  }
-
-  list.innerHTML = atRisk.map((item) => {
-    const s = item.student;
-    const wp = item.worstPair;
-    return `
-    <div class="ti-student-row ti-student-row--warning">
-      <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
-      <div class="ti-student-row__info">
-        <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
-        <div class="ti-student-row__meta">${escapeHTML(item.group?.name || "")} · ${item.totalExams} امتحانات</div>
-      </div>
-      ${wp ? `
-        <div style="text-align:center; margin:0 8px;">
-          <div style="font-size:11px; color:var(--muted);">${escapeHTML(wp.prev.title)}</div>
-          <div style="font-weight:800; font-size:15px; color:var(--success);">${wp.prev.pct}%</div>
-        </div>
-        <span style="color:var(--danger); font-weight:700; font-size:18px;">→</span>
-        <div style="text-align:center; margin:0 8px;">
-          <div style="font-size:11px; color:var(--muted);">${escapeHTML(wp.curr.title)}</div>
-          <div style="font-weight:800; font-size:15px; color:var(--danger);">${wp.curr.pct}%</div>
-        </div>
-        <span class="badge badge-danger" style="margin:0 8px;">- ${item.maxDrop}%</span>
-      ` : `
-        <div style="text-align:center; margin:0 8px;">
-          <div style="font-size:11px; color:var(--muted);">المتوسط السابق</div>
-          <div style="font-weight:800; font-size:15px;">${item.avgPrev}%</div>
-        </div>
-        <div style="text-align:center; margin:0 8px;">
-          <div style="font-size:11px; color:var(--muted);">آخر درجة</div>
-          <div style="font-weight:800; font-size:15px; color:var(--danger);">${item.lastExam.pct}%</div>
-        </div>
-        <span class="badge badge-danger" style="margin:0 8px;">- ${item.overallDrop}%</span>
-      `}
-      <div class="ti-student-row__actions">
-        <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
-        <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
-      </div>
-    </div>`;
-  }).join("");
-  bindWhatsAppButtons(list);
-}
-
-/* ── المشاغلون ── */
-function renderTroublemakersSection(box) {
-  const students = getStudents().filter((s) => s.status === "active");
-  const groups = getGroups();
-  const attendance = getAttendance();
-  const statuses = getStudentStatuses();
-  const data = calcTroublemakers(students, attendance, statuses, groups);
-
-  box.innerHTML = `
-    <div class="card card-pad">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--danger);">⚠️ المشاغلون — إجراءات استثنائية</div>
-        <span class="badge badge-danger">${data.length} طالب</span>
-      </div>
-      <div class="field__hint" style="margin-bottom:12px;">الطلاب الذين سُجّلت لهم إجراءات استثنائية سلبية (استدعاء ولي أمر، طرد، أو غيرها) في آخر 30 يوم</div>
-      <div id="troublemakersList"></div>
-    </div>
-  `;
-
-  const list = document.getElementById("troublemakersList");
-  if (!data.length) {
-    list.innerHTML = `<div class="text-muted" style="padding:20px; text-align:center;">لا يوجد مشاغلون حالياً</div>`;
-    return;
-  }
-
-  list.innerHTML = data.map((item) => {
-    const s = item.student;
-    const lastAction = item.actions[item.actions.length - 1];
-    return `
-    <div class="ti-student-row ti-student-row--danger">
-      <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
-      <div class="ti-student-row__info">
-        <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
-        <div class="ti-student-row__meta">${escapeHTML(item.group?.name || "")} · آخر إجراء: ${lastAction?.statusName || ""} (${formatDateAr(item.lastDate)})</div>
-      </div>
-      <div style="text-align:center; margin:0 8px;">
-        <div style="font-size:11px; color:var(--muted);">الإجراءات</div>
-        <div style="font-size:18px; font-weight:800; color:var(--danger);">${item.count}</div>
-      </div>
-      <div class="ti-student-row__actions">
-        <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
-        <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
-      </div>
-    </div>`;
-  }).join("");
-  bindWhatsAppButtons(list);
-}
 
 /* ── أداء المجموعات ── */
 function renderGroupsSection(box) {
-  const students = getStudents().filter((s) => s.status === "active");
+  const allStudents = getStudents();
+  const students = allStudents.filter((s) => s.status === "active");
+  const pausedStudents = allStudents.filter((s) => s.status === "paused");
   const groups = getGroups();
   const grades = getGrades();
   const attendance = getAttendance();
   const statuses = getStudentStatuses();
   const data = calcGroupPerformance(students, attendance, statuses, groups, grades);
+  const centerHealth = calcCenterHealth(students, attendance, statuses, groups);
 
   const gradeGroups = {};
   data.forEach((g) => {
@@ -1053,7 +876,61 @@ function renderGroupsSection(box) {
     gradeGroups[g.grade].push(g);
   });
 
+  const now = new Date();
+  const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  const currentMonth = monthNames[now.getMonth()];
+  const growthColor = centerHealth.growthTrend > 0 ? "var(--success)" : centerHealth.growthTrend < 0 ? "var(--danger)" : "var(--muted)";
+  const growthIcon = centerHealth.growthTrend > 0 ? "📈" : centerHealth.growthTrend < 0 ? "📉" : "➡️";
+  const growthText = centerHealth.growthTrend > 0 ? `+${centerHealth.growthTrend} عن الشهر الماضى` : centerHealth.growthTrend < 0 ? `${centerHealth.growthTrend} عن الشهر الماضى` : "مثل الشهر الماضى";
+
   box.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--primary);">📊 صحة السنتر — ${escapeHTML(currentMonth)} ${now.getFullYear()}</div>
+      </div>
+      <div class="ti-health-grid">
+        <div class="ti-health-card ti-health-card--primary">
+          <div class="ti-health-card__icon">${icons.users}</div>
+          <div class="ti-health-card__value">${centerHealth.totalActive}</div>
+          <div class="ti-health-card__label">طالب نشط</div>
+        </div>
+        <div class="ti-health-card ti-health-card--success">
+          <div class="ti-health-card__icon">${icons.plus}</div>
+          <div class="ti-health-card__value">${centerHealth.newThisMonth}</div>
+          <div class="ti-health-card__label">تسجيل جديد هذا الشهر</div>
+          <div class="ti-health-card__sub" style="color:${growthColor}">${growthIcon} ${growthText}</div>
+        </div>
+        <div class="ti-health-card ti-health-card--danger">
+          <div class="ti-health-card__icon">${icons.alert}</div>
+          <div class="ti-health-card__value">${centerHealth.totalPaused}</div>
+          <div class="ti-health-card__label">طالب متوقف</div>
+          <div class="ti-health-card__sub">${centerHealth.pausedThisMonth} توقف هذا الشهر</div>
+        </div>
+        <div class="ti-health-card ti-health-card--warning">
+          <div class="ti-health-card__icon">${icons.chart}</div>
+          <div class="ti-health-card__value">${centerHealth.churnRate}%</div>
+          <div class="ti-health-card__label">معدل التسرب</div>
+        </div>
+        <div class="ti-health-card ti-health-card--success">
+          <div class="ti-health-card__icon">${icons.check}</div>
+          <div class="ti-health-card__value">${centerHealth.attendanceRate}%</div>
+          <div class="ti-health-card__label">نسبة الحضور (30 يوم)</div>
+          <div class="ti-health-card__bar"><div class="ti-health-card__bar-fill" style="width:${centerHealth.attendanceRate}%; background:var(--success);"></div></div>
+        </div>
+        <div class="ti-health-card ti-health-card--primary">
+          <div class="ti-health-card__icon">${icons.wallet}</div>
+          <div class="ti-health-card__value">${centerHealth.paymentRate}%</div>
+          <div class="ti-health-card__label">نسبة الدفع</div>
+          <div class="ti-health-card__bar"><div class="ti-health-card__bar-fill" style="width:${centerHealth.paymentRate}%; background:var(--primary);"></div></div>
+        </div>
+        <div class="ti-health-card ti-health-card--danger">
+          <div class="ti-health-card__icon">${icons.money}</div>
+          <div class="ti-health-card__value">${formatMoney(centerHealth.totalLateBalance)}</div>
+          <div class="ti-health-card__label">إجمالى المتأخرات</div>
+        </div>
+      </div>
+    </div>
+
     <div class="card card-pad">
       <div class="card__head">
         <div class="card__title" style="color:var(--primary);">📊 أداء المجموعات (آخر 30 يوم)</div>
@@ -1226,100 +1103,6 @@ function bindWhatsAppButtons(container) {
   });
 }
 
-/* ── صحة السنتر ── */
-function renderCenterHealthSection(box) {
-  const allStudents = getStudents();
-  const students = allStudents.filter((s) => s.status === "active");
-  const groups = getGroups();
-  const attendance = getAttendance();
-  const statuses = getStudentStatuses();
-  const data = calcCenterHealth(students, attendance, statuses, groups);
-
-  const now = new Date();
-  const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
-  const currentMonth = monthNames[now.getMonth()];
-
-  const growthColor = data.growthTrend > 0 ? "var(--success)" : data.growthTrend < 0 ? "var(--danger)" : "var(--muted)";
-  const growthIcon = data.growthTrend > 0 ? "📈" : data.growthTrend < 0 ? "📉" : "➡️";
-  const growthText = data.growthTrend > 0 ? `+${data.growthTrend} عن الشهر الماضى` : data.growthTrend < 0 ? `${data.growthTrend} عن الشهر الماضى` : "مثل الشهر الماضى";
-
-  box.innerHTML = `
-    <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--primary);">📊 صحة السنتر — ${escapeHTML(currentMonth)} ${now.getFullYear()}</div>
-      </div>
-      <div class="ti-health-grid">
-        <div class="ti-health-card ti-health-card--primary">
-          <div class="ti-health-card__icon">${icons.users}</div>
-          <div class="ti-health-card__value">${data.totalActive}</div>
-          <div class="ti-health-card__label">طالب نشط</div>
-        </div>
-        <div class="ti-health-card ti-health-card--success">
-          <div class="ti-health-card__icon">${icons.plus}</div>
-          <div class="ti-health-card__value">${data.newThisMonth}</div>
-          <div class="ti-health-card__label">تسجيل جديد هذا الشهر</div>
-          <div class="ti-health-card__sub" style="color:${growthColor}">${growthIcon} ${growthText}</div>
-        </div>
-        <div class="ti-health-card ti-health-card--danger">
-          <div class="ti-health-card__icon">${icons.alert}</div>
-          <div class="ti-health-card__value">${data.totalPaused}</div>
-          <div class="ti-health-card__label">طالب متوقف</div>
-          <div class="ti-health-card__sub">${data.pausedThisMonth} توقف هذا الشهر</div>
-        </div>
-        <div class="ti-health-card ti-health-card--warning">
-          <div class="ti-health-card__icon">${icons.chart}</div>
-          <div class="ti-health-card__value">${data.churnRate}%</div>
-          <div class="ti-health-card__label">معدل التسرب</div>
-          <div class="ti-health-card__sub">${data.totalPaused} / ${data.totalAll} طالب</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--success);">📈 أداء الحضور والدفع</div>
-      </div>
-      <div class="ti-health-grid">
-        <div class="ti-health-card ti-health-card--success">
-          <div class="ti-health-card__icon">${icons.check}</div>
-          <div class="ti-health-card__value">${data.attendanceRate}%</div>
-          <div class="ti-health-card__label">نسبة الحضور (30 يوم)</div>
-          <div class="ti-health-card__bar"><div class="ti-health-card__bar-fill" style="width:${data.attendanceRate}%; background:var(--success);"></div></div>
-        </div>
-        <div class="ti-health-card ti-health-card--primary">
-          <div class="ti-health-card__icon">${icons.wallet}</div>
-          <div class="ti-health-card__value">${data.paymentRate}%</div>
-          <div class="ti-health-card__label">نسبة الدفع</div>
-          <div class="ti-health-card__bar"><div class="ti-health-card__bar-fill" style="width:${data.paymentRate}%; background:var(--primary);"></div></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card card-pad">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--danger);">💰 المتأخرات المالية</div>
-      </div>
-      <div class="ti-health-grid">
-        <div class="ti-health-card ti-health-card--danger">
-          <div class="ti-health-card__icon">${icons.money}</div>
-          <div class="ti-health-card__value">${formatMoney(data.totalLateBalance)}</div>
-          <div class="ti-health-card__label">إجمالى المتأخرات</div>
-        </div>
-        <div class="ti-health-card ti-health-card--warning">
-          <div class="ti-health-card__icon">${icons.wallet}</div>
-          <div class="ti-health-card__value">${formatMoney(data.avgBalance)}</div>
-          <div class="ti-health-card__label">متوسط المتأخر للطالب</div>
-        </div>
-        <div class="ti-health-card ti-health-card--primary">
-          <div class="ti-health-card__icon">${icons.grid}</div>
-          <div class="ti-health-card__value">${data.groupsCount}</div>
-          <div class="ti-health-card__label">عدد المجموعات</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 /* ═══════════════════════════════════════════════════════════
    CSS
    ═══════════════════════════════════════════════════════════ */
@@ -1334,6 +1117,7 @@ function renderStudentHealthSection(box) {
   const danger = all.filter((s) => s.health.total < 40);
   const warning = all.filter((s) => s.health.total >= 40 && s.health.total < 60);
   const healthy = all.filter((s) => s.health.total >= 60);
+  const topStars = all.filter((s) => s.health.total >= 80);
 
   let filterGradeId = "all";
   let filterGroupId = "all";
@@ -1351,7 +1135,8 @@ function renderStudentHealthSection(box) {
     if (filterColor === "danger") list = list.filter((s) => s.health.total < 40);
     else if (filterColor === "warning") list = list.filter((s) => s.health.total >= 40 && s.health.total < 60);
     else if (filterColor === "success") list = list.filter((s) => s.health.total >= 60);
-    return list;
+    else if (filterColor === "top") list = list.filter((s) => s.health.total >= 80);
+    return list.sort((a, b) => b.health.total - a.health.total);
   }
 
   function renderList() {
@@ -1374,12 +1159,18 @@ function renderStudentHealthSection(box) {
       if (h.hasExams && h.examAvg < 50) reasons.push(`درجات ${h.examAvg}%`);
       if (h.recentActions > 0) reasons.push(`${h.recentActions} إجراء سلوكي`);
 
+      const badges = [];
+      if (h.total >= 90) badges.push(`<span class="badge badge-success" style="font-size:10px;">ممتاز</span>`);
+      if (h.total >= 80 && h.total < 90) badges.push(`<span class="badge badge-info" style="font-size:10px;">جيد جداً</span>`);
+      if (h.behaviorScore >= 18) badges.push(`<span class="badge badge-info" style="font-size:10px;">سجل نظيف</span>`);
+
       return `
         <a href="student.html?id=${s.id}" class="ti-student-row ti-student-row--${color}" style="text-decoration:none;">
           <div style="flex-shrink:0;">${healthScoreHTML(h.total, 40)}</div>
           <div class="ti-student-row__info">
             <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
             <div class="ti-student-row__meta">${grade} · ${group?.name || ""}</div>
+            ${badges.length ? `<div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:2px;">${badges.join("")}</div>` : ""}
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0;">
             ${reasons.length ? `<div style="font-size:11px; color:var(--danger);">${reasons.join(" · ")}</div>` : ""}
@@ -1417,6 +1208,11 @@ function renderStudentHealthSection(box) {
           <strong style="color:var(--success);">${healthy.length}</strong>
           <span class="text-muted">صحي</span>
         </div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px; padding:6px 12px; border-radius:var(--r-md); background:color-mix(in srgb, var(--success) 8%, transparent); border:1px solid color-mix(in srgb, var(--success) 20%, transparent);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--success);"></span>
+          <strong style="color:var(--success);">🏆 ${topStars.length}</strong>
+          <span class="text-muted">متفوقون</span>
+        </div>
       </div>
 
       <div class="ti-filters">
@@ -1427,11 +1223,12 @@ function renderStudentHealthSection(box) {
         <select class="select" id="shGroupFilter" style="max-width:160px;">
           <option value="all">كل المجموعات</option>
         </select>
-        <select class="select" id="shColorFilter" style="max-width:140px;">
-          <option value="all">كل الألوان</option>
-          <option value="danger">🔴 في الخطر</option>
+        <select class="select" id="shColorFilter" style="max-width:160px;">
+          <option value="all">كل الطلاب</option>
+          <option value="top">🏆 المتفوقون (80+)</option>
+          <option value="success">🟢 صحي (60+)</option>
           <option value="warning">🟡 محتاج متابعة</option>
-          <option value="success">🟢 صحي</option>
+          <option value="danger">🔴 في الخطر</option>
         </select>
       </div>
 
@@ -1589,108 +1386,6 @@ function renderAchievementsSection(box) {
   });
 
   renderList(activeFilter);
-}
-
-/* ── التصعيد ── */
-function renderEscalationSection(box) {
-  const summary = getEscalationSummary();
-  const groups = getGroups();
-  const grades = getGrades();
-  const session = getSession();
-
-  const allEscalated = [
-    ...summary.level3.map((s) => ({ ...s, levelTag: "🔴 قفل — استدعاء", levelBadge: "danger" })),
-    ...summary.level2.map((s) => ({ ...s, levelTag: "🟠 اتصال مطلوب", levelBadge: "warning" })),
-    ...summary.level1.map((s) => ({ ...s, levelTag: "🟡 إنذار أول", levelBadge: "info" })),
-  ];
-
-  box.innerHTML = `
-    <div class="card card-pad">
-      <div class="card__head">
-        <div class="card__title" style="color:var(--danger);">${icons.alert} تصعيد الإنذارات</div>
-        <span class="badge badge-${summary.total ? "danger" : "success"}">${summary.total} طالب متصاعد</span>
-      </div>
-      <p style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.7;">
-        الغياب الأول المتتالي (بدون إذن): رسالة واتساب آلية هادئة · الثاني: اتصال هاتفي مطلوب · الثالث: قفل + استدعاء ولي الأمر
-      </p>
-
-      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
-        ${summary.level3.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--danger);">🔴 ${summary.level3.length} قفل</span>` : ""}
-        ${summary.level2.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--warning);">🟠 ${summary.level2.length} اتصال مطلوب</span>` : ""}
-        ${summary.level1.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--info);">🟡 ${summary.level1.length} إنذار أول</span>` : ""}
-      </div>
-
-      <div id="escalationList"></div>
-    </div>
-  `;
-
-  const listEl = document.getElementById("escalationList");
-
-  if (!allEscalated.length) {
-    listEl.innerHTML = `<div class="ti-empty">لا يوجد طلاب في حالة تصعيد — الكل طبيعي 👍</div>`;
-    return;
-  }
-
-  listEl.innerHTML = allEscalated.map((s) => {
-    const group = findGroup(groups, s.groupId);
-    const grade = gradeName(grades, group?.gradeId);
-    return `
-      <div class="ti-student-row ti-student-row--${s.levelBadge}">
-        <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
-        <div class="ti-student-row__info">
-          <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
-          <div class="ti-student-row__meta">${escapeHTML(group?.name || "")} · ${escapeHTML(grade || "")} · ${s.consecutiveAbsences} غيابات متتالية</div>
-        </div>
-        <span class="badge badge-${s.levelBadge}" style="font-size:11px; white-space:nowrap;">${s.levelTag}</span>
-        <div class="ti-student-row__actions" style="gap:4px;">
-          ${s.escalationLevel === 1 || s.escalationLevel === 2 ? `<button type="button" class="btn btn-success btn-sm escWaBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" data-phone="${escapeHTML(s.parentPhone || "")}" data-level="${s.escalationLevel}">${icons.whatsapp}</button>` : ""}
-          ${s.escalationLevel === 2 ? `<button type="button" class="btn btn-warning btn-sm escCallBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">✓ تم الاتصال</button>` : ""}
-          ${s.escalationLevel === 3 ? `<button type="button" class="btn btn-danger btn-sm escOverrideBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">فتح القفل</button>` : ""}
-          <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  listEl.querySelectorAll(".escWaBtn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const phone = btn.dataset.phone;
-      const name = btn.dataset.name;
-      const level = parseInt(btn.dataset.level);
-      if (!phone) { toast("لا يوجد هاتف لولى الأمر", "warning"); return; }
-      const msg = buildEscalationMessage({ name }, level);
-      if (msg) openWhatsApp(phone, msg);
-    });
-  });
-
-  listEl.querySelectorAll(".escCallBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const studentId = btn.dataset.id;
-      const name = btn.dataset.name;
-      const ok = await confirmDialog({
-        title: `تأكيد اتصال هاتفي`,
-        body: `تم الاتصال بولي أمر الطالب <strong>${name}</strong>؟`,
-        confirmText: "نعم، تم الاتصال",
-        tone: "warning",
-      });
-      if (!ok) return;
-      logPhoneCall(studentId, session?.username || "المستخدم");
-      toast(`تم تسجيل الاتصال بنجاح`, "success");
-      render();
-    });
-  });
-
-  listEl.querySelectorAll(".escOverrideBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const studentId = btn.dataset.id;
-      const name = btn.dataset.name;
-      const note = await prompt(`فتح القفل — ${name}\nملاحظة (اختياري):`);
-      if (note === null) return;
-      overrideEscalation(studentId, session?.username || "المستخدم", note || "فتح استثنائي");
-      toast(`تم فتح القفل على ${name}`, "success");
-      render();
-    });
-  });
 }
 
 /* ═══════════════════════════════════════════════════════════
