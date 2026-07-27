@@ -28,6 +28,7 @@ import { recordAttendanceStatus, recordActionStatus, settleLateBalance, settleEx
 import { getSessionsForDate } from "./session-overview.js";
 import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk, sendRewardNotification } from "./whatsapp-notifications.js";
 import { openWhatsApp } from "./whatsapp.js";
+import { getEscalationLevel, getLevelMeta } from "./escalation-engine.js";
 
 const content = await initPage("quick-attendance");
 
@@ -819,12 +820,15 @@ function renderStudentsList(data) {
       const isExcused = record?.statusId === "ST-EXCUSED";
       const hasRecord = !!record;
       const isLocked = isStudentLocked(s);
+      const escLevel = getEscalationLevel(s.id);
+      const escMeta = getLevelMeta(escLevel);
 
       return `
         <div class="qa-row ${hasRecord ? "is-processed" : ""} ${isPaid ? "is-paid" : ""} ${isUnpaid ? "is-unpaid" : ""} ${isAbsent ? "is-absent" : ""} ${isExcused ? "is-excused" : ""} ${isLocked ? "is-locked" : ""}" data-student-id="${s.id}">
           <span class="code-pill">${escapeHTML(s.code || "-")}</span>
           <span class="qa-row__name">${escapeHTML(s.name)}</span>
           ${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success" style="font-size:10px;">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : ""}
+          ${escLevel > 0 ? `<span class="badge badge-${escMeta.color}" style="font-size:10px;">${escMeta.icon} تصعيد ${escLevel}</span>` : ""}
           ${isLocked ? `<span class="badge badge-danger" style="margin-right:auto;">مقفول: ${escapeHTML(s.lockReason || "")}</span>` : ""}
           ${
             hasRecord

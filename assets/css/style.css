@@ -1321,3 +1321,58 @@ table.table tbody tr:last-child td{ border-bottom:none; }
 html{ overflow-x:auto; }
 body{ overflow-x:auto; min-width:0; width:100%; }
 .page{ overflow:visible; }
+.table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* --- Ultra-small phones (≤320px): fix inline min-widths --- */
+@media (max-width: 320px){
+  .ti-actions{ gap:8px; margin-bottom:16px; }
+  .ti-action-btn{ padding:12px 10px; gap:10px; border-radius:10px; }
+  .ti-action-btn__icon{ width:32px; height:32px; }
+  .ti-action-btn__icon svg{ width:16px; height:16px; }
+  .ti-action-btn__title{ font-size:11px; }
+  .ti-action-btn__count{ font-size:10px; }
+
+  .ti-student-row{ flex-wrap:wrap; gap:6px; padding:10px 0; }
+  .ti-student-row__actions{ width:100%; justify-content:flex-end; }
+  .ti-group-header{ flex-wrap:wrap; gap:6px; }
+
+  .ti-exam-table{ font-size:11px; }
+  .ti-exam-table th, .ti-exam-table td{ padding:6px 8px; font-size:11px; }
+
+  .ti-health-grid{ grid-template-columns:1fr 1fr; gap:8px; }
+  .ti-health-card{ padding:10px; }
+  .ti-health-card__value{ font-size:18px; }
+
+  .qa-group-card{ min-width:110px; padding:10px; }
+  .qa-group-card__name{ font-size:12px; }
+  .qa-group-card__code{ font-size:10px; }
+
+  .sa-summary__progress-section{ min-width:0; flex:1 1 100%; }
+  .sa-summary__finance-section{ min-width:0; flex:1 1 100%; }
+  .sa-summary__progress-header{ flex-wrap:wrap; gap:6px; }
+  .sa-summary__progress-count{ font-size:12px; }
+  .sa-summary__progress-percent{ font-size:14px; }
+  .sa-summary__progress-legend{ flex-wrap:wrap; gap:4px 10px; }
+  .sa-summary__legend-item{ font-size:10px; }
+
+  .roster-header{ flex-direction:column; gap:4px; }
+  .roster-controls__search{ min-width:0; }
+
+  .qa-row{ flex-wrap:wrap; }
+  .qa-row .btn{ padding:4px 6px; font-size:11px; }
+
+  .card-pad{ padding:14px 12px; }
+  .card__title{ font-size:13px; }
+
+  .page{ padding:10px 8px; }
+  .page__title{ font-size:15px; }
+  .page__subtitle{ font-size:11px; }
+
+  .badge{ font-size:10px; padding:2px 6px; }
+  .btn-sm{ padding:5px 8px; font-size:11px; }
+
+  .auth-card{ padding:20px 16px; }
+  .auth-card__title{ font-size:16px; }
+
+  .denomination-grid{ grid-template-columns:1fr !important; }
+}

@@ -13,6 +13,8 @@
 import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, initStudentLedger, getSettings } from "./storage.js";
 import { generateId, todayISO, formatMoney } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
+import { checkEscalation, buildEscalationMessage } from "./escalation-engine.js";
+import { openWhatsApp } from "./whatsapp.js";
 
 function nowTime() {
   return new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
@@ -198,7 +200,22 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
   savePayments(payments);
   saveStudents(students);
 
-  return { record, status, student, financeInfo };
+  // ── تصعيد الإنذارات: بعد تسجيل غياب بدون إذن ──
+  let escalationResult = null;
+  if (statusId === "ST-ABSENT" && student) {
+    escalationResult = checkEscalation(studentId, statusId, date);
+    if (escalationResult && escalationResult.level >= 1) {
+      try {
+        const phone = student.parentPhone || student.phone;
+        if (phone && escalationResult.level <= 2) {
+          const msg = buildEscalationMessage(student, escalationResult.level);
+          if (msg) openWhatsApp(phone, msg);
+        }
+      } catch (e) { /* popup blocker */ }
+    }
+  }
+
+  return { record, status, student, financeInfo, escalationResult };
 }
 
 /**

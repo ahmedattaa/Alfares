@@ -4,13 +4,15 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions } from "./storage.js";
+import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent } from "./storage.js";
 import { escapeHTML, initials, formatMoney, formatDateAr } from "./helpers.js";
 import { emptyStateHTML, toast, whatsappPreviewDialog } from "./ui.js";
 import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
 import { recordActionStatus } from "./attendance-service.js";
+import { computeHealthScore, getHealthColor, getHealthLabel, healthScoreHTML, healthBarHTML } from "./health-score.js";
+import { getTypeMeta } from "./achievement-engine.js";
 
 const content = await initPage("student");
 if (content) render();
@@ -93,6 +95,20 @@ function render() {
     </div>
 
     <div class="stat-grid">
+      ${(() => { const h = computeHealthScore(id); const color = getHealthColor(h.total); return `
+        <div class="stat-card" style="grid-column:1/-1; display:flex; align-items:center; gap:16px; padding:16px 20px; border:2px solid var(--${color}); background:color-mix(in srgb, var(--${color}) 6%, transparent);">
+          ${healthScoreHTML(h.total, 56)}
+          <div style="flex:1;">
+            <div style="font-weight:800; font-size:16px; color:var(--${color});">صحة الطالب — ${getHealthLabel(h.total)}</div>
+            <div style="margin-top:6px;">${healthBarHTML(h.total, 8)}</div>
+            <div style="display:flex; gap:16px; margin-top:8px; font-size:12px; color:var(--muted); flex-wrap:wrap;">
+              <span>حضور: <strong style="color:var(--text);">${h.attendanceRate}%</strong></span>
+              ${h.hasExams ? `<span>درجات: <strong style="color:var(--text);">${h.examAvg}%</strong> <span class="text-muted">(${h.examCount} امتحان)</span></span>` : `<span class="text-muted">بدون امتحانات</span>`}
+              <span>سلوكي: <strong style="color:var(--text);">${h.behaviorScore}/20</strong></span>
+            </div>
+          </div>
+        </div>
+      `; })()}
       ${statCard("tone-success", icons.check, presentCount, "مرات الحضور")}
       ${statCard("tone-danger", icons.x, absentCount, "مرات الغياب")}
       ${statCard("tone-warning", icons.alert, countByStatus("ST-CALL"), "استدعاءات ولى الأمر")}
@@ -149,6 +165,35 @@ function render() {
           : emptyStateHTML({ icon: icons.chart, title: "لا توجد نتائج امتحانات بعد" })
       }
     </div>
+
+    ${(() => {
+      const achievements = getAchievementsForStudent(id);
+      if (!achievements.length) return "";
+      return `
+        <div class="card card-pad" style="margin-top:18px; border:2px solid var(--success);">
+          <div class="card__head">
+            <div class="card__title" style="color:var(--success);">${icons.shield} الإنجازات الأكاديمية</div>
+            <span class="badge badge-success">${achievements.length} إنجاز</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            ${achievements.map((a) => {
+              const meta = getTypeMeta(a.type);
+              return `
+                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg); border-radius:var(--r-md); border:1px solid var(--border);">
+                  <span style="font-size:20px;">${meta.icon}</span>
+                  <div style="flex:1;">
+                    <div style="font-weight:700; font-size:13px;">${meta.label} — ${escapeHTML(a.examTitle || "")}</div>
+                    <div style="font-size:12px; color:var(--muted);">${formatDateAr(a.date)}${a.oldAvg ? ` · كان ${a.nowAbove || a.oldAvg}% → ${a.newPct}%` : ""}</div>
+                  </div>
+                  <span class="badge badge-${meta.color}">${a.newPct}%</span>
+                  ${a.sent ? `<span style="font-size:11px; color:var(--success);">${icons.check} مرسل</span>` : ""}
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    })()}
 
     <div class="card card-pad" style="margin-top:18px;">
       <div class="card__head"><div class="card__title">استحقاقات مالية إضافية (خارج سعر الحصة)</div></div>

@@ -11,6 +11,7 @@ import { groupName, gradeName, findGroup } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { sendBulkExamResults } from "./whatsapp-notifications.js";
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
+import { detectAchievements, saveDetectedAchievements, generateMessage, getTypeMeta } from "./achievement-engine.js";
 
 const content = await initPage("exams");
 let selectedExamId = null;
@@ -317,6 +318,28 @@ function renderGradesPanel() {
     exam.results = results;
     saveExams(exams);
     toast("تم حفظ درجات الامتحان بنجاح", "success");
+
+    /* ── كشف الإنجازات ── */
+    const allDetected = [];
+    results.forEach((r) => {
+      if (r.absent || r.score == null) return;
+      const detected = detectAchievements(r.studentId, exam.id, r.score, exam.maxScore);
+      if (detected.length) {
+        saveDetectedAchievements(detected);
+        allDetected.push(...detected);
+      }
+    });
+
+    if (allDetected.length) {
+      const students = getStudents();
+      const summary = allDetected.map((a) => {
+        const st = students.find((s) => s.id === a.studentId);
+        const meta = getTypeMeta(a.type);
+        return `${meta.icon} ${st?.name || ""} — ${meta.label}`;
+      }).join("\n");
+      toast(`🎉 تم اكتشاف ${allDetected.length} إنجاز:\n${summary}`, "success", 6000);
+    }
+
     renderExamsList();
     renderGradesPanel();
   });

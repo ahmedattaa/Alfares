@@ -32,6 +32,8 @@ const KEYS = {
   academicMonths: "center_academic_months",
   shifts: "center_shifts",
   ledger: "center_ledger",
+  achievements: "center_achievements",
+  escalationLogs: "center_escalation_logs",
   seeded: "center_seeded_v12",
 };
 
@@ -840,4 +842,50 @@ export function recordLedgerOnly(studentId, type, description, debit = 0, credit
     referenceType: options.referenceType || "",
     createdBy: options.createdBy || "النظام",
   });
+}
+
+/* =========================================================
+   Achievements — إنجازات الطلاب
+   ========================================================= */
+export const getAchievements = () => readJSON(KEYS.achievements, []);
+export const saveAchievements = (list) => writeJSON(KEYS.achievements, list);
+
+export function addAchievement(achievement) {
+  const list = getAchievements();
+  list.push(achievement);
+  saveAchievements(list);
+}
+
+export function markAchievementSent(id) {
+  const list = getAchievements();
+  const item = list.find((a) => a.id === id);
+  if (item) {
+    item.sent = true;
+    item.sentAt = new Date().toISOString();
+    saveAchievements(list);
+  }
+}
+
+export function getUnsentAchievements() {
+  return getAchievements().filter((a) => !a.sent);
+}
+
+export function getAchievementsForStudent(studentId) {
+  return getAchievements().filter((a) => a.studentId === studentId).sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+/* =========================================================
+   Escalation Logs — سجل تصعيد الإنذارات
+   ========================================================= */
+export const getEscalationLog = () => readJSON(KEYS.escalationLogs, []);
+export const saveEscalationLog = (list) => writeJSON(KEYS.escalationLogs, list);
+
+export function addEscalationEntry(entry) {
+  const list = getEscalationLog();
+  list.push(entry);
+  saveEscalationLog(list);
+}
+
+export function getEscalationLogsForStudent(studentId) {
+  return getEscalationLog().filter((e) => e.studentId === studentId).sort((a, b) => (a.date < b.date ? 1 : -1));
 }

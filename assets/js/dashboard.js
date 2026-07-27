@@ -1,5 +1,5 @@
 // =========================================================
-// Dashboard — حصص اليوم فقط
+// Dashboard — حصص اليوم + صحة الطلاب
 // =========================================================
 
 import { initPage } from "./app.js";
@@ -8,6 +8,9 @@ import { todayISO, escapeHTML } from "./helpers.js";
 import { emptyStateHTML } from "./ui.js";
 import { formatTimeAr } from "./schedule.js";
 import { getSessionsForDate } from "./session-overview.js";
+import { getHealthSummary, healthScoreHTML, healthBarHTML, healthStudentRowHTML } from "./health-score.js";
+import { getEscalationSummary, getLevelMeta } from "./escalation-engine.js";
+import { getGroups, getGrades } from "./storage.js";
 
 const content = await initPage("dashboard");
 if (content) render();
@@ -15,6 +18,11 @@ if (content) render();
 function render() {
   const today = todayISO();
   const sessions = getSessionsForDate(today);
+  const summary = getHealthSummary();
+  const groups = getGroups();
+  const grades = getGrades();
+
+  const escalation = getEscalationSummary();
 
   content.innerHTML = `
     <div class="page__header">
@@ -24,10 +32,83 @@ function render() {
       </div>
     </div>
 
+    ${summary.danger.length > 0 ? renderDangerZone(summary, groups, grades) : ""}
+    ${escalation.total > 0 ? renderEscalationCard(escalation, groups) : ""}
+
     <div id="todaySessions"></div>
   `;
 
   renderTodaySessions(sessions, today);
+}
+
+/* ── منطقة الخطر ── */
+function renderDangerZone(summary, groups, grades) {
+  const top5 = summary.danger.slice(0, 5);
+  const hasWarning = summary.warning.length > 0;
+
+  return `
+    <div class="card card-pad" style="margin-bottom:20px; border:2px solid var(--danger); border-right:6px solid var(--danger);">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--danger);">${icons.alert} منطقة الخطر — صحة الطلاب</div>
+        <a href="teacher-insights.html" style="font-size:12px; color:var(--primary); text-decoration:none;">عرض الكل ←</a>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <span style="width:10px; height:10px; border-radius:50%; background:var(--danger);"></span>
+          <strong style="color:var(--danger);">${summary.danger.length}</strong>
+          <span class="text-muted">في الخطر</span>
+        </div>
+        ${hasWarning ? `
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <span style="width:10px; height:10px; border-radius:50%; background:var(--warning);"></span>
+          <strong style="color:var(--warning);">${summary.warning.length}</strong>
+          <span class="text-muted">محتاج متابعة</span>
+        </div>
+        ` : ""}
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <span style="width:10px; height:10px; border-radius:50%; background:var(--success);"></span>
+          <strong style="color:var(--success);">${summary.healthy.length}</strong>
+          <span class="text-muted">صحي</span>
+        </div>
+      </div>
+      <div id="dangerList">
+        ${top5.map((s) => healthStudentRowHTML(s, groups, grades)).join("")}
+      </div>
+      ${summary.danger.length > 5 ? `<div style="text-align:center; margin-top:8px;"><a href="teacher-insights.html" style="font-size:13px; color:var(--primary); text-decoration:none; font-weight:700;">+${summary.danger.length - 5} طالب آخرين ←</a></div>` : ""}
+    </div>
+  `;
+}
+
+/* ── ملخص التصعيد ── */
+function renderEscalationCard(escalation, groups) {
+  const l3 = escalation.level3.slice(0, 3);
+  const l2 = escalation.level2.slice(0, 3);
+  const l1 = escalation.level1.slice(0, 3);
+
+  function studentLink(s) {
+    const g = groups.find((gr) => gr.id === s.groupId);
+    return `<a href="student.html?id=${s.id}" style="color:inherit; text-decoration:none; font-weight:700;">${escapeHTML(s.name)}</a> <span style="font-size:11px; color:var(--muted);">${escapeHTML(g?.name || "")}</span>`;
+  }
+
+  return `
+    <div class="card card-pad" style="margin-bottom:20px; border:2px solid var(--warning); border-right:6px solid var(--warning);">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--warning);">${icons.alert} تصعيد الإنذارات</div>
+        <a href="teacher-insights.html" style="font-size:12px; color:var(--primary); text-decoration:none;">عرض الكل ←</a>
+      </div>
+      <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px;">
+        ${escalation.level3.length ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--danger);"></span><strong style="color:var(--danger);">${escalation.level3.length}</strong><span class="text-muted">قفل + استدعاء</span></div>` : ""}
+        ${escalation.level2.length ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--warning);"></span><strong style="color:var(--warning);">${escalation.level2.length}</strong><span class="text-muted">اتصال مطلوب</span></div>` : ""}
+        ${escalation.level1.length ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--info);"></span><strong style="color:var(--info);">${escalation.level1.length}</strong><span class="text-muted">إنذار أول</span></div>` : ""}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        ${l3.map((s) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px;"><span>🔴</span>${studentLink(s)}<span style="margin-right:auto; font-size:11px; color:var(--danger);">${s.consecutiveAbsences} غيابات متتالية</span></div>`).join("")}
+        ${l2.map((s) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px;"><span>🟠</span>${studentLink(s)}<span style="margin-right:auto; font-size:11px; color:var(--warning);">${s.consecutiveAbsences} غيابات متتالية</span></div>`).join("")}
+        ${l1.map((s) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px;"><span>🟡</span>${studentLink(s)}<span style="margin-right:auto; font-size:11px; color:var(--info);">${s.consecutiveAbsences} غيابات متتالية</span></div>`).join("")}
+      </div>
+      ${escalation.total > 9 ? `<div style="text-align:center; margin-top:8px;"><a href="teacher-insights.html" style="font-size:13px; color:var(--primary); text-decoration:none; font-weight:700;">+${escalation.total - 9} طالب آخرين ←</a></div>` : ""}
+    </div>
+  `;
 }
 
 function renderTodaySessions(sessions, today) {

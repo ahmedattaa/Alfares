@@ -34,12 +34,12 @@ function render() {
       </div>
     </div>
 
-    ${shift ? renderOpenShift(shift) : renderClosedView()}
-    ${renderShiftHistory()}
+    ${shift ? renderOpenShift(shift) : renderOpeningPage()}
+    ${shift ? renderShiftHistory() : ""}
   `;
 
   if (shift) bindOpenShiftEvents(shift);
-  else bindClosedViewEvents();
+  else bindOpeningPageEvents();
 }
 
 /* ================= الوردية المفتوحة ================= */
@@ -245,51 +245,25 @@ function updateClosingTotal() {
   if (display) display.textContent = total > 0 ? `${formatMoney(total)} ج.م` : "٠ ج.م";
 }
 
-/* ================= الوردية المقفولة ================= */
-function renderClosedView() {
+/* ================= فتح وردية — صفحه كامله ================= */
+function renderOpeningPage() {
   const shifts = getShifts().filter((s) => s.status === "closed");
   const lastShift = shifts.length ? shifts[shifts.length - 1] : null;
 
   return `
-    <div id="openingForm" style="display:none;"></div>
-    <div id="closedInfo">
-      <div class="card card-pad" style="margin-bottom:20px; text-align:center; padding:40px 20px;">
-        <div style="font-size:48px; margin-bottom:12px;">📭</div>
-        <div style="font-size:18px; font-weight:800; margin-bottom:8px;">لا توجد وردية مفتوحة</div>
-        <p style="font-size:13px; color:var(--muted); margin-bottom:20px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.7;">
-          قبل ما تبدأ تحصيل أي أموال، لازم تفتح وردية جديدة وتكتب العهدة الافتتاحية (الفلس اللي في الدرج).
-        </p>
-        ${lastShift ? `
-          <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">
-            آخر تقفيل: ${lastShift.closedDate} — الحالة: ${lastShift.variance === 0 ? "✅ متطابق" : `⚠️ ${lastShift.variance > 0 ? "زيادة" : "عجز"} ${formatMoney(Math.abs(lastShift.variance))}`}
-          </div>
-        ` : ""}
-        <button class="btn btn-primary btn-lg" id="openShiftBtn">${icons.plus} فتح وردية جديدة</button>
+    ${lastShift ? `
+      <div style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
+        آخر تقفيل: <strong>${lastShift.closedDate}</strong> —
+        الحالة: ${lastShift.variance === 0 ? "✅ متطابق" : `⚠️ ${lastShift.variance > 0 ? "زيادة" : "عجز"} ${formatMoney(Math.abs(lastShift.variance))} ج.م`}
       </div>
-    </div>
-  `;
-}
+    ` : ""}
 
-function bindClosedViewEvents() {
-  document.getElementById("openShiftBtn")?.addEventListener("click", showOpeningForm);
-}
-
-/* ================= فتح وردية — صفحه داخليه ================= */
-function showOpeningForm() {
-  const formBox = document.getElementById("openingForm");
-  const infoBox = document.getElementById("closedInfo");
-  if (!formBox || !infoBox) return;
-
-  infoBox.style.display = "none";
-  formBox.style.display = "block";
-
-  formBox.innerHTML = `
-    <div class="card card-pad" style="border:2px solid var(--primary); margin-bottom:20px;">
+    <div class="card card-pad" style="border:2px solid var(--primary);">
       <div class="card__head">
-        <div class="card__title" style="color:var(--primary);">${icons.wallet} فتح وردية جديدة</div>
+        <div class="card__title" style="color:var(--primary);">${icons.wallet} العهدة الافتتاحية</div>
       </div>
       <p style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
-        عدّ الفلوس اللي في الدرج دلوقتي (العهدة الافتتاحية / الفكة) بالفئات.
+        عدّ الفلوس اللي في الدرج دلوقتي بالفئات واكتب العدد بتاع كل فئة.
       </p>
       <div class="denomination-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
         ${DENOMINATIONS.map((d) => `
@@ -309,40 +283,37 @@ function showOpeningForm() {
         <span style="font-size:13px; color:var(--muted);">إجمالي العهدة:</span>
         <span id="openingTotalDisplay" style="font-size:22px; font-weight:800; color:var(--primary);">٠ ج.م</span>
       </div>
-      <div style="display:flex; gap:10px; margin-top:16px;">
-        <button class="btn btn-outline" id="openingCancelBtn" style="flex:1;">إلغاء</button>
-        <button class="btn btn-primary btn-lg" id="openingConfirmBtn" style="flex:2;">${icons.check} فتح الوردية</button>
-      </div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <button class="btn btn-primary btn-lg btn-block" id="openingConfirmBtn">${icons.check} فتح الوردية</button>
     </div>
   `;
+}
 
+function bindOpeningPageEvents() {
   const updateOpeningTotal = () => {
     let total = 0;
-    formBox.querySelectorAll(".opening-denom-input").forEach((input) => {
+    document.querySelectorAll(".opening-denom-input").forEach((input) => {
       const count = parseInt(input.value) || 0;
       const denom = Number(input.dataset.denom);
       const subtotal = count * denom;
       total += subtotal;
-      const subEl = formBox.querySelector(`[data-opening-subtotal="${denom}"]`);
+      const subEl = document.querySelector(`[data-opening-subtotal="${denom}"]`);
       if (subEl) subEl.textContent = subtotal > 0 ? `${count} × ${formatMoney(denom)} = ${formatMoney(subtotal)}` : "—";
     });
-    const display = formBox.querySelector("#openingTotalDisplay");
+    const display = document.getElementById("openingTotalDisplay");
     if (display) display.textContent = total > 0 ? `${formatMoney(total)} ج.م` : "٠ ج.م";
   };
 
-  formBox.querySelectorAll(".opening-denom-input").forEach((input) => {
+  document.querySelectorAll(".opening-denom-input").forEach((input) => {
     input.addEventListener("input", updateOpeningTotal);
   });
 
-  formBox.querySelector("#openingCancelBtn").addEventListener("click", () => {
-    formBox.style.display = "none";
-    infoBox.style.display = "";
-  });
-
-  formBox.querySelector("#openingConfirmBtn").addEventListener("click", () => {
+  document.getElementById("openingConfirmBtn")?.addEventListener("click", () => {
     const session = getSession();
     let total = 0;
-    formBox.querySelectorAll(".opening-denom-input").forEach((input) => {
+    document.querySelectorAll(".opening-denom-input").forEach((input) => {
       const count = parseInt(input.value) || 0;
       const denom = Number(input.dataset.denom);
       total += count * denom;

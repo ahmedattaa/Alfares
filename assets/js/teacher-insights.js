@@ -5,11 +5,14 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGroups, getGrades, getAttendance, getPayments, getStudentStatuses, getExams } from "./storage.js";
+import { getStudents, getGroups, getGrades, getAttendance, getPayments, getStudentStatuses, getExams, getSession, getAchievements, markAchievementSent } from "./storage.js";
 import { todayISO, formatMoney, escapeHTML, formatDateAr, generateId } from "./helpers.js";
 import { toast, confirmDialog } from "./ui.js";
 import { gradeName, findGroup, dueAmount } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
+import { computeAllHealthScores, getHealthColor, getHealthLabel, healthScoreHTML, healthBarHTML } from "./health-score.js";
+import { detectAchievements, saveDetectedAchievements, generateMessage, generateBatchMessage, getTypeMeta, getAllUnsent } from "./achievement-engine.js";
+import { getEscalatedStudents, getEscalationSummary, getLevelMeta, overrideEscalation, logPhoneCall, buildEscalationMessage } from "./escalation-engine.js";
 
 const content = await initPage("teacher-insights");
 let activeSection = null;
@@ -32,6 +35,8 @@ function render() {
   const topCount = calcTopStars(students, attendance, statuses, groups, exams).reduce((sum, arr) => sum + arr.students.length, 0);
   const atRiskCount = calcAtRiskStudents(students, groups).length;
   const troublemakersCount = calcTroublemakers(students, attendance, statuses, groups).length;
+  const unsentAchievements = getAllUnsent().length;
+  const escalationSummary = getEscalationSummary();
 
   content.innerHTML = `
     <div class="page__header">
@@ -89,6 +94,27 @@ function render() {
         <span class="ti-action-btn__text">
           <span class="ti-action-btn__title">صحة السنتر</span>
           <span class="ti-action-btn__count">المؤشرات</span>
+        </span>
+      </button>
+      <button class="ti-action-btn ti-action-btn--danger ${activeSection === "studentHealth" ? "is-active" : ""}" data-section="studentHealth">
+        <span class="ti-action-btn__icon">${icons.radar}</span>
+        <span class="ti-action-btn__text">
+          <span class="ti-action-btn__title">صحة الطلاب</span>
+          <span class="ti-action-btn__count">${calcStudentHealthCount()} طالب</span>
+        </span>
+      </button>
+      <button class="ti-action-btn ti-action-btn--success ${activeSection === "achievements" ? "is-active" : ""}" data-section="achievements">
+        <span class="ti-action-btn__icon">${icons.shield}</span>
+        <span class="ti-action-btn__text">
+          <span class="ti-action-btn__title">إنجازات الطلاب</span>
+          <span class="ti-action-btn__count">${unsentAchievements} إنجاز</span>
+        </span>
+      </button>
+      <button class="ti-action-btn ti-action-btn--danger ${activeSection === "escalation" ? "is-active" : ""}" data-section="escalation">
+        <span class="ti-action-btn__icon">${icons.alert}</span>
+        <span class="ti-action-btn__text">
+          <span class="ti-action-btn__title">التصعيد</span>
+          <span class="ti-action-btn__count">${escalationSummary.total} طالب</span>
         </span>
       </button>
     </div>
@@ -330,6 +356,10 @@ function calcAtRiskStudents(students, groups) {
   return atRisk.sort((a, b) => b.maxDrop - a.maxDrop);
 }
 
+function calcStudentHealthCount() {
+  return computeAllHealthScores().filter((s) => s.health.total < 60).length;
+}
+
 function calcTroublemakers(students, attendance, statuses, groups) {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -552,6 +582,9 @@ function renderSection() {
   if (activeSection === "groups") return renderGroupsSection(box);
   if (activeSection === "declining") return renderDecliningSection(box);
   if (activeSection === "health") return renderCenterHealthSection(box);
+  if (activeSection === "studentHealth") return renderStudentHealthSection(box);
+  if (activeSection === "achievements") return renderAchievementsSection(box);
+  if (activeSection === "escalation") return renderEscalationSection(box);
 }
 
 /* ── متأخرون في الدفع ── */
@@ -1289,6 +1322,379 @@ function renderCenterHealthSection(box) {
 
 /* ═══════════════════════════════════════════════════════════
    CSS
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── صحة الطلاب ── */
+function renderStudentHealthSection(box) {
+  const all = computeAllHealthScores();
+  const groups = getGroups();
+  const grades = getGrades();
+  const gradeList = grades.sort((a, b) => a.order - b.order);
+
+  const danger = all.filter((s) => s.health.total < 40);
+  const warning = all.filter((s) => s.health.total >= 40 && s.health.total < 60);
+  const healthy = all.filter((s) => s.health.total >= 60);
+
+  let filterGradeId = "all";
+  let filterGroupId = "all";
+  let filterColor = "all";
+
+  function getFiltered() {
+    let list = all;
+    if (filterGradeId !== "all") {
+      const gIds = groups.filter((g) => g.gradeId === filterGradeId).map((g) => g.id);
+      list = list.filter((s) => gIds.includes(s.groupId));
+    }
+    if (filterGroupId !== "all") {
+      list = list.filter((s) => s.groupId === filterGroupId);
+    }
+    if (filterColor === "danger") list = list.filter((s) => s.health.total < 40);
+    else if (filterColor === "warning") list = list.filter((s) => s.health.total >= 40 && s.health.total < 60);
+    else if (filterColor === "success") list = list.filter((s) => s.health.total >= 60);
+    return list;
+  }
+
+  function renderList() {
+    const filtered = getFiltered();
+    const listEl = box.querySelector("#shList");
+    if (!listEl) return;
+
+    if (!filtered.length) {
+      listEl.innerHTML = `<div style="padding:32px; text-align:center; color:var(--muted);">لا يوجد طلاب يطابقون الفلتر</div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered.map((s) => {
+      const h = s.health;
+      const group = findGroup(groups, s.groupId);
+      const grade = gradeName(grades, group?.gradeId);
+      const color = getHealthColor(h.total);
+      const reasons = [];
+      if (h.attendanceRate < 60) reasons.push(`حضور ${h.attendanceRate}%`);
+      if (h.hasExams && h.examAvg < 50) reasons.push(`درجات ${h.examAvg}%`);
+      if (h.recentActions > 0) reasons.push(`${h.recentActions} إجراء سلوكي`);
+
+      return `
+        <a href="student.html?id=${s.id}" class="ti-student-row ti-student-row--${color}" style="text-decoration:none;">
+          <div style="flex-shrink:0;">${healthScoreHTML(h.total, 40)}</div>
+          <div class="ti-student-row__info">
+            <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
+            <div class="ti-student-row__meta">${grade} · ${group?.name || ""}</div>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0;">
+            ${reasons.length ? `<div style="font-size:11px; color:var(--danger);">${reasons.join(" · ")}</div>` : ""}
+            <div style="width:80px;">${healthBarHTML(h.total, 5)}</div>
+            <div style="font-size:11px; color:var(--muted);">حضور ${h.attendanceRate}%${h.hasExams ? ` · درجات ${h.examAvg}%` : ""} · سلوكي ${h.behaviorScore}/20</div>
+          </div>
+        </a>
+      `;
+    }).join("");
+  }
+
+  box.innerHTML = `
+    <div class="card card-pad" style="border:2px solid var(--danger); border-right:6px solid var(--danger);">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--danger);">${icons.radar} صحة الطلاب — المؤشر الأكاديمي</div>
+      </div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.7;">
+        كل طالب يحصل على درجة من 100 بناءً على: <strong>الحضور (40%)</strong> + <strong>الدرجات (40%)</strong> + <strong>السلوك (20%)</strong>.
+        الطلاب في منطقة الخطر (أقل من 40) معرضون لترك السنتر.
+      </p>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px; padding:6px 12px; border-radius:var(--r-md); background:color-mix(in srgb, var(--danger) 8%, transparent); border:1px solid color-mix(in srgb, var(--danger) 20%, transparent);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--danger);"></span>
+          <strong style="color:var(--danger);">${danger.length}</strong>
+          <span class="text-muted">في الخطر</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px; padding:6px 12px; border-radius:var(--r-md); background:color-mix(in srgb, var(--warning) 8%, transparent); border:1px solid color-mix(in srgb, var(--warning) 20%, transparent);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--warning);"></span>
+          <strong style="color:var(--warning);">${warning.length}</strong>
+          <span class="text-muted">محتاج متابعة</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px; padding:6px 12px; border-radius:var(--r-md); background:color-mix(in srgb, var(--success) 8%, transparent); border:1px solid color-mix(in srgb, var(--success) 20%, transparent);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--success);"></span>
+          <strong style="color:var(--success);">${healthy.length}</strong>
+          <span class="text-muted">صحي</span>
+        </div>
+      </div>
+
+      <div class="ti-filters">
+        <select class="select" id="shGradeFilter" style="max-width:160px;">
+          <option value="all">كل المراحل</option>
+          ${gradeList.map((g) => `<option value="${g.id}">${escapeHTML(g.name)}</option>`).join("")}
+        </select>
+        <select class="select" id="shGroupFilter" style="max-width:160px;">
+          <option value="all">كل المجموعات</option>
+        </select>
+        <select class="select" id="shColorFilter" style="max-width:140px;">
+          <option value="all">كل الألوان</option>
+          <option value="danger">🔴 في الخطر</option>
+          <option value="warning">🟡 محتاج متابعة</option>
+          <option value="success">🟢 صحي</option>
+        </select>
+      </div>
+
+      <div id="shList"></div>
+    </div>
+  `;
+
+  const gradeSelect = box.querySelector("#shGradeFilter");
+  const groupSelect = box.querySelector("#shGroupFilter");
+  const colorSelect = box.querySelector("#shColorFilter");
+
+  gradeSelect.addEventListener("change", () => {
+    filterGradeId = gradeSelect.value;
+    filterGroupId = "all";
+    const gradeGroups = filterGradeId === "all" ? groups : groups.filter((g) => g.gradeId === filterGradeId);
+    groupSelect.innerHTML = `<option value="all">كل المجموعات</option>` + gradeGroups.map((g) => `<option value="${g.id}">${escapeHTML(g.name)}</option>`).join("");
+    renderList();
+  });
+
+  groupSelect.addEventListener("change", () => {
+    filterGroupId = groupSelect.value;
+    renderList();
+  });
+
+  colorSelect.addEventListener("change", () => {
+    filterColor = colorSelect.value;
+    renderList();
+  });
+
+  renderList();
+}
+
+/* ── إنجازات الطلاب ── */
+function renderAchievementsSection(box) {
+  const allAchievements = getAchievements().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const unsent = allAchievements.filter((a) => !a.sent);
+  const sent = allAchievements.filter((a) => a.sent);
+  const students = getStudents();
+  const groups = getGroups();
+  const grades = getGrades();
+  const session = getSession();
+
+  function renderList(filter) {
+    const list = filter === "unsent" ? unsent : sent;
+    const listEl = box.querySelector("#achList");
+    if (!listEl) return;
+
+    if (!list.length) {
+      listEl.innerHTML = `<div style="padding:32px; text-align:center; color:var(--muted);">
+        ${filter === "unsent" ? "لا يوجد إنجازات جديدة — الامتحانات هي اللي بتكتشف الإنجازات تلقائياً" : "لم يتم إرسال أي إنجازات بعد"}
+      </div>`;
+      return;
+    }
+
+    listEl.innerHTML = list.map((a) => {
+      const student = students.find((s) => s.id === a.studentId);
+      const meta = getTypeMeta(a.type);
+      const group = findGroup(groups, a.groupId);
+      const grade = gradeName(grades, group?.gradeId);
+      const msg = generateMessage(a, session?.username || "المستمر");
+      const shortMsg = msg.length > 100 ? msg.slice(0, 100) + "..." : msg;
+
+      return `
+        <div class="ti-student-row" style="border:1px solid var(--border); border-radius:var(--r-md); padding:14px; margin-bottom:10px; display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:24px;">${meta.icon}</span>
+            <div style="flex:1; min-width:0;">
+              <div style="font-weight:700; font-size:14px;">${student ? escapeHTML(student.name) : a.studentId}</div>
+              <div style="font-size:12px; color:var(--muted);">${grade} · ${group?.name || ""} · ${a.examTitle || ""}</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-weight:800; font-size:18px; color:var(--${meta.color});">${a.newPct}%</div>
+              <div style="font-size:11px; color:var(--muted);">${a.oldAvg ? `كان ${a.oldAvg}%` : ""}</div>
+            </div>
+            <span class="badge badge-${meta.color}" style="font-size:11px;">${meta.label}</span>
+          </div>
+          <div style="background:var(--bg); border-radius:var(--r-sm); padding:10px; font-size:12px; line-height:1.7; color:var(--text); white-space:pre-wrap; max-height:80px; overflow-y:auto;">${shortMsg}</div>
+          ${!a.sent ? `
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-success btn-sm ach-send-btn" data-id="${a.id}" data-student-id="${a.studentId}">
+              ${icons.whatsapp} إرسال لولى الأمر
+            </button>
+            <button class="btn btn-outline btn-sm ach-preview-btn" data-id="${a.id}" data-student-id="${a.studentId}">
+              معاينة الرسالة
+            </button>
+          </div>
+          ` : `
+          <div style="font-size:11px; color:var(--success); display:flex; align-items:center; gap:4px;">
+            ${icons.check} تم الإرسال ${a.sentAt ? new Date(a.sentAt).toLocaleDateString("ar-EG") : ""}
+          </div>
+          `}
+        </div>
+      `;
+    }).join("");
+
+    /* أزرار الإرسال */
+    listEl.querySelectorAll(".ach-send-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const achId = btn.dataset.id;
+        const studentId = btn.dataset.studentId;
+        const achievement = allAchievements.find((a) => a.id === achId);
+        const student = students.find((s) => s.id === studentId);
+        if (!achievement || !student) return;
+
+        const message = generateMessage(achievement, session?.username || "المستمر");
+        const phone = student.parentPhone;
+        if (!phone) { toast("لا يوجد هاتف لولى الأمر", "warning"); return; }
+
+        openWhatsApp(phone, message);
+        markAchievementSent(achId);
+        toast("تم الإرسال وتسجيل الإنجاز ✓", "success");
+        render();
+      });
+    });
+
+    listEl.querySelectorAll(".ach-preview-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const achId = btn.dataset.id;
+        const achievement = allAchievements.find((a) => a.id === achId);
+        if (!achievement) return;
+        const message = generateMessage(achievement, session?.username || "المستمر");
+        toast(message, "info", 8000);
+      });
+    });
+  }
+
+  let activeFilter = "unsent";
+
+  box.innerHTML = `
+    <div class="card card-pad">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--success);">${icons.shield} إنجازات الطلاب — صائد التفوق</div>
+      </div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.7;">
+        النظام يكشف الإنجازات تلقائياً عند إدخال درجات الامتحانات. الإنجازات بتولد رسالة واتساب جاهزة لولى الأمر — كل اللي عليك تضغط "إرسال".
+      </p>
+
+      <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+        <button class="btn btn-sm ${activeFilter === "unsent" ? "btn-primary" : "btn-outline"}" data-filter="unsent">📥 جديد (${unsent.length})</button>
+        <button class="btn btn-sm ${activeFilter === "sent" ? "btn-primary" : "btn-outline"}" data-filter="sent">📤 مرسل (${sent.length})</button>
+      </div>
+
+      <div id="achList"></div>
+    </div>
+  `;
+
+  box.querySelectorAll("[data-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeFilter = btn.dataset.filter;
+      box.querySelectorAll("[data-filter]").forEach((b) => {
+        b.className = `btn btn-sm ${b.dataset.filter === activeFilter ? "btn-primary" : "btn-outline"}`;
+      });
+      renderList(activeFilter);
+    });
+  });
+
+  renderList(activeFilter);
+}
+
+/* ── التصعيد ── */
+function renderEscalationSection(box) {
+  const summary = getEscalationSummary();
+  const groups = getGroups();
+  const grades = getGrades();
+  const session = getSession();
+
+  const allEscalated = [
+    ...summary.level3.map((s) => ({ ...s, levelTag: "🔴 قفل — استدعاء", levelBadge: "danger" })),
+    ...summary.level2.map((s) => ({ ...s, levelTag: "🟠 اتصال مطلوب", levelBadge: "warning" })),
+    ...summary.level1.map((s) => ({ ...s, levelTag: "🟡 إنذار أول", levelBadge: "info" })),
+  ];
+
+  box.innerHTML = `
+    <div class="card card-pad">
+      <div class="card__head">
+        <div class="card__title" style="color:var(--danger);">${icons.alert} تصعيد الإنذارات</div>
+        <span class="badge badge-${summary.total ? "danger" : "success"}">${summary.total} طالب متصاعد</span>
+      </div>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.7;">
+        الغياب الأول المتتالي (بدون إذن): رسالة واتساب آلية هادئة · الثاني: اتصال هاتفي مطلوب · الثالث: قفل + استدعاء ولي الأمر
+      </p>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+        ${summary.level3.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--danger);">🔴 ${summary.level3.length} قفل</span>` : ""}
+        ${summary.level2.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--warning);">🟠 ${summary.level2.length} اتصال مطلوب</span>` : ""}
+        ${summary.level1.length ? `<span style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--info);">🟡 ${summary.level1.length} إنذار أول</span>` : ""}
+      </div>
+
+      <div id="escalationList"></div>
+    </div>
+  `;
+
+  const listEl = document.getElementById("escalationList");
+
+  if (!allEscalated.length) {
+    listEl.innerHTML = `<div class="ti-empty">لا يوجد طلاب في حالة تصعيد — الكل طبيعي 👍</div>`;
+    return;
+  }
+
+  listEl.innerHTML = allEscalated.map((s) => {
+    const group = findGroup(groups, s.groupId);
+    const grade = gradeName(grades, group?.gradeId);
+    return `
+      <div class="ti-student-row ti-student-row--${s.levelBadge}">
+        <div class="ti-student-row__avatar">${escapeHTML(s.code || "?")}</div>
+        <div class="ti-student-row__info">
+          <div class="ti-student-row__name">${escapeHTML(s.name)}</div>
+          <div class="ti-student-row__meta">${escapeHTML(group?.name || "")} · ${escapeHTML(grade || "")} · ${s.consecutiveAbsences} غيابات متتالية</div>
+        </div>
+        <span class="badge badge-${s.levelBadge}" style="font-size:11px; white-space:nowrap;">${s.levelTag}</span>
+        <div class="ti-student-row__actions" style="gap:4px;">
+          ${s.escalationLevel === 1 || s.escalationLevel === 2 ? `<button type="button" class="btn btn-success btn-sm escWaBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" data-phone="${escapeHTML(s.parentPhone || "")}" data-level="${s.escalationLevel}">${icons.whatsapp}</button>` : ""}
+          ${s.escalationLevel === 2 ? `<button type="button" class="btn btn-warning btn-sm escCallBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">✓ تم الاتصال</button>` : ""}
+          ${s.escalationLevel === 3 ? `<button type="button" class="btn btn-danger btn-sm escOverrideBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">فتح القفل</button>` : ""}
+          <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".escWaBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const phone = btn.dataset.phone;
+      const name = btn.dataset.name;
+      const level = parseInt(btn.dataset.level);
+      if (!phone) { toast("لا يوجد هاتف لولى الأمر", "warning"); return; }
+      const msg = buildEscalationMessage({ name }, level);
+      if (msg) openWhatsApp(phone, msg);
+    });
+  });
+
+  listEl.querySelectorAll(".escCallBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const studentId = btn.dataset.id;
+      const name = btn.dataset.name;
+      const ok = await confirmDialog({
+        title: `تأكيد اتصال هاتفي`,
+        body: `تم الاتصال بولي أمر الطالب <strong>${name}</strong>؟`,
+        confirmText: "نعم، تم الاتصال",
+        tone: "warning",
+      });
+      if (!ok) return;
+      logPhoneCall(studentId, session?.username || "المستخدم");
+      toast(`تم تسجيل الاتصال بنجاح`, "success");
+      render();
+    });
+  });
+
+  listEl.querySelectorAll(".escOverrideBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const studentId = btn.dataset.id;
+      const name = btn.dataset.name;
+      const note = await prompt(`فتح القفل — ${name}\nملاحظة (اختياري):`);
+      if (note === null) return;
+      overrideEscalation(studentId, session?.username || "المستخدم", note || "فتح استثنائي");
+      toast(`تم فتح القفل على ${name}`, "success");
+      render();
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Styles
    ═══════════════════════════════════════════════════════════ */
 
 const style = document.createElement("style");
