@@ -207,7 +207,7 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
     if (escalationResult && escalationResult.level >= 1) {
       try {
         const phone = student.parentPhone || student.phone;
-        if (phone && escalationResult.level <= 2) {
+        if (phone && escalationResult.level <= 2 && getSettings().waAutoSend !== false) {
           const msg = buildEscalationMessage(student, escalationResult.level);
           if (msg) openWhatsApp(phone, msg);
         }

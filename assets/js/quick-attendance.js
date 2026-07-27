@@ -20,6 +20,7 @@ import {
   saveExtraCharges,
   addWalletDeposit,
   recordCashCollection,
+  getSettings,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, menuDialog, formModal, emptyStateHTML, ensureOverlay } from "./ui.js";
@@ -477,7 +478,7 @@ function bindAbsenceEvents(box) {
 
       recordAttendanceStatus(studentId, "ST-ABSENT", selectedDate);
 
-      if (phone) {
+      if (getSettings().waAutoSend !== false && phone) {
         try {
           openWhatsApp(phone, renderTemplate("absence_without_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }));
         } catch (e) { /* popup blocker */ }
@@ -500,7 +501,7 @@ function bindAbsenceEvents(box) {
 
       recordAttendanceStatus(studentId, "ST-EXCUSED", selectedDate);
 
-      if (phone) {
+      if (getSettings().waAutoSend !== false && phone) {
         try {
           openWhatsApp(phone, renderTemplate("absence_with_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }));
         } catch (e) { /* popup blocker */ }
@@ -977,7 +978,7 @@ function quickMark(studentId, statusId) {
   // إرسال إشعار واتساب تلقائي لولي الأمر (للحضور فقط)
   try {
     const status = getStudentStatuses().find((s) => s.id === statusId);
-    if (status && status.presence === "present" && status.payment) {
+    if (getSettings().waAutoSend !== false && status && status.presence === "present" && status.payment) {
       const notification = sendAttendanceNotification(studentId, statusId, selectedDate, result.financeInfo);
       if (notification) {
         openWhatsApp(notification.phone, notification.message);
@@ -1024,7 +1025,7 @@ async function openEditMenu(studentId) {
   }
 
   // إشعار مكافأة (نجم الحصة)
-  if (result?.rewardResult && status.rewardAmount > 0) {
+  if (getSettings().waAutoSend !== false && result?.rewardResult && status.rewardAmount > 0) {
     sendRewardNotification(studentId, status.rewardAmount, status.name);
     const debtMsg = result.rewardResult.debtCovered > 0 ? ` — تم سداد ${formatMoney(result.rewardResult.debtCovered)} من المتأخرات` : "";
     toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة محفظة ${student?.name || ""}${debtMsg}`, "success");
@@ -1312,7 +1313,7 @@ async function openDepositDialog(studentId) {
   toast(msg, "success");
 
   try {
-    if (student.parentPhone) {
+    if (getSettings().waAutoSend !== false && student.parentPhone) {
       openWhatsApp(student.parentPhone, renderTemplate("wallet_deposit", {
         studentName: student.name,
         amount: formatMoney(amount),

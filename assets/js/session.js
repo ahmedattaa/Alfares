@@ -6,7 +6,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getCurrentShift } from "./storage.js";
+import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getCurrentShift, getSettings } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, debounce, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, formModal } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup, dueAmount } from "./lookups.js";
@@ -827,7 +827,7 @@ function onStatusClick(studentId, statusId, roster) {
   toast(message, result.status.tone === "danger" ? "danger" : "success");
 
   // إرسال إشعار واتساب تلقائي لولي الأمر (للحضور فقط)
-  if (status.presence === "present" && status.payment) {
+  if (getSettings().waAutoSend !== false && status.presence === "present" && status.payment) {
     const notification = sendAttendanceNotification(studentId, statusId, selectedDate, result.financeInfo);
     if (notification) {
       openWhatsApp(notification.phone, notification.message);
@@ -905,7 +905,7 @@ async function onActionClick(studentId, statusId, roster) {
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
 
   // إشعار مكافأة
-  if (status.rewardAmount > 0) {
+  if (getSettings().waAutoSend !== false && status.rewardAmount > 0) {
     sendRewardNotification(studentId, status.rewardAmount, status.name);
     toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة المحفظة`, "success");
   }

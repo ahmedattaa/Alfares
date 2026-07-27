@@ -1092,8 +1092,26 @@ function renderDangerTab(box) {
 function renderWhatsAppTemplatesTab(box) {
   const overrides = getAllOverrides();
   const overriddenCount = Object.keys(overrides).length;
+  const settings = getSettings();
+  const waAutoSend = settings.waAutoSend !== false;
 
   box.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head">
+        <div class="card__title">${icons.whatsapp || "💬"} إعدادات الواتساب</div>
+      </div>
+      <form id="waAutoSendForm">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; padding:12px; background:var(--bg-secondary, #f5f5f5); border-radius:var(--r-md); border:1px solid var(--border);">
+          <input type="checkbox" name="waAutoSend" ${waAutoSend ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary);" />
+          <div>
+            <div style="font-weight:700; font-size:14px;">إرسال تلقائي لرسائل الواتساب</div>
+            <div class="text-muted" style="font-size:12px;">لما مفعّل: الرسائل بتتبعت تلقائياً مع كل عملية حضور/غياب/مكافأة. لما مقفول: الرسائل مش بتتبعت — بس تقدر تبعت يدوياً من الأزرار.</div>
+          </div>
+        </label>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-top:10px;">حفظ</button>
+      </form>
+    </div>
+
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="card__head">
         <div class="card__title">قوالب رسائل الواتساب</div>
@@ -1110,6 +1128,16 @@ function renderWhatsAppTemplatesTab(box) {
   `;
 
   renderWhatsAppTemplatesList();
+
+  const waForm = document.getElementById("waAutoSendForm");
+  if (waForm) {
+    waForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      saveSettings({ ...settings, waAutoSend: data.waAutoSend === "on" });
+      toast(data.waAutoSend === "on" ? "تم تفعيل الإرسال التلقائي" : "تم تعطيل الإرسال التلقائي", "success");
+    });
+  }
 
   const resetAllBtn = document.getElementById("resetAllWaBtn");
   if (resetAllBtn) {

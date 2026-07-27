@@ -2,7 +2,7 @@
 // App — نقطة الإقلاع المشتركة لكل الصفحات الداخلية
 // =========================================================
 
-import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift } from "./storage.js";
+import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift, getSettings } from "./storage.js";
 import { renderShell } from "./ui.js";
 import { canAccessPage, firstAccessiblePage } from "./permissions.js";
 
@@ -30,7 +30,8 @@ export async function initPage(activePage) {
   }
 
   // لو الصفحة تتطلب صندوق مفتوح ومفيش وردية → توجيه لصفحة الصندوق
-  if (SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift()) {
+  const shiftMode = getSettings().shiftMode || "mandatory";
+  if (SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift() && shiftMode !== "disabled") {
     window.location.href = "shift.html";
     return null;
   }
