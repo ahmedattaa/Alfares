@@ -8,8 +8,8 @@ import { getExams, saveExams, getGroups, getStudents, getGrades, getSettings, ge
 import { escapeHTML, initials, formatDateAr, generateId, todayISO } from "./helpers.js";
 import { toast, formModal, emptyStateHTML, whatsappPreviewDialog, confirmDialog } from "./ui.js";
 import { groupName, gradeName, findGroup } from "./lookups.js";
-import { openWhatsApp, openWhatsAppBulk } from "./whatsapp.js";
-import { sendBulkExamResults } from "./whatsapp-notifications.js";
+import { openWhatsApp } from "./whatsapp.js";
+import { sendBulkExamResults, openWhatsAppBulk } from "./whatsapp-notifications.js";
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 import { detectAchievements, saveDetectedAchievements, generateMessage, getTypeMeta } from "./achievement-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
@@ -236,7 +236,7 @@ function renderGradesPanel() {
                     <input class="input scoreInput" style="max-width:100px;" type="number" min="0" max="${exam.maxScore}" name="${s.id}" value="${score != null ? score : ""}" placeholder="-" data-student-id="${s.id}" ${isAbsent ? "disabled" : ""}>
                   </td>
                   <td><input type="checkbox" class="absentCheckbox" data-student-id="${s.id}" ${isAbsent ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;" title="غائب عن الامتحان"></td>
-                  <td>${isAbsent ? `<span class="badge ${ra?.excused ? "badge-primary" : "badge-neutral"}">${ra?.excused ? "📋 غائب بإذن" : "غائب"}</span>` : pct != null ? `<span class="badge ${pct >= 60 ? "badge-success" : pct >= 40 ? "badge-warning" : "badge-danger"}">${pct}%</span>` : `<span class="text-muted">—</span>`}</td>
+                  <td>${isAbsent ? `<span class="badge ${r?.excused ? "badge-primary" : "badge-neutral"}">${r?.excused ? "📋 غائب بإذن" : "غائب"}</span>` : pct != null ? `<span class="badge ${pct >= 60 ? "badge-success" : pct >= 40 ? "badge-warning" : "badge-danger"}">${pct}%</span>` : `<span class="text-muted">—</span>`}</td>
                   <td>
                     ${
                       isAbsent
