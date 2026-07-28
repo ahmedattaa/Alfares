@@ -14,6 +14,7 @@ import { recordActionStatus } from "./attendance-service.js";
 import { computeHealthScore, getHealthColor, getHealthLabel, healthScoreHTML, healthBarHTML } from "./health-score.js";
 import { getTypeMeta } from "./achievement-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("student");
 if (content) render();
@@ -115,7 +116,12 @@ function render() {
       ${statCard("tone-success", icons.check, presentCount, "مرات الحضور")}
       ${statCard("tone-danger", icons.x, absentCount, "مرات الغياب")}
       ${statCard("tone-warning", icons.alert, countByStatus("ST-CALL"), "استدعاءات ولى الأمر")}
-      ${statCard("tone-primary", icons.money, formatMoney(student.lateBalance || 0), "متأخرات مالية")}
+      ${(student.lateBalance || 0) > 0 ? `
+      <div class="stat-card" style="cursor:pointer;" id="collectDebtBtn">
+        <div class="stat-card__icon tone-primary">${icons.money}</div>
+        <div class="stat-card__value">${formatMoney(student.lateBalance || 0)}</div>
+        <div class="stat-card__label">متأخرات مالية — اضغط للتحصيل</div>
+      </div>` : statCard("tone-primary", icons.money, formatMoney(student.lateBalance || 0), "متأخرات مالية")}
       ${(student.walletBalance || 0) > 0 ? statCard("tone-success", icons.wallet, formatMoney(student.walletBalance), "رصيد المحفظة") : ""}
     </div>
 
@@ -223,6 +229,7 @@ function render() {
   document.getElementById("actionBtn").addEventListener("click", () => openActionModal(student));
 
   document.getElementById("addAdvancePermBtn")?.addEventListener("click", () => openAdvancePermForm(student));
+  document.getElementById("collectDebtBtn")?.addEventListener("click", () => openCollectionDialog(student.id, { onClose: render }));
   document.querySelectorAll(".deleteAdvancePermBtn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();

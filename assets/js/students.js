@@ -11,6 +11,7 @@ import { gradeName, groupName, groupsForGrade, statusesByCategory } from "./look
 import { getSession } from "./storage.js";
 import { canPerformSensitiveAction } from "./permissions.js";
 import { recordActionStatus } from "./attendance-service.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("students");
 let searchTerm = "";
@@ -141,7 +142,7 @@ function renderTable() {
               </td>
               <td class="text-muted">${escapeHTML(gradeName(grades, s.gradeId))}</td>
               <td class="text-muted">${escapeHTML(groupName(groups, s.groupId))}</td>
-              <td>${s.lateBalance > 0 ? `<span class="badge badge-warning">${formatMoney(s.lateBalance)}</span>` : `<span class="badge badge-neutral">لا يوجد</span>`}</td>
+              <td>${s.lateBalance > 0 ? `<span class="badge badge-warning" style="cursor:pointer;" data-collect-id="${s.id}">${formatMoney(s.lateBalance)} 💰</span>` : `<span class="badge badge-neutral">لا يوجد</span>`}</td>
               <td>${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : `<span class="text-muted">-</span>`}</td>
               <td>${s.discount > 0 ? `<span class="badge badge-info">${formatMoney(s.discount)}</span>` : `<span class="text-muted">-</span>`}</td>
               <td><span class="badge ${s.status === "active" ? "badge-success" : "badge-neutral"}">${s.status === "active" ? "نشط" : "متوقف"}</span></td>
@@ -181,6 +182,7 @@ function renderTable() {
 
   box.querySelectorAll(".deleteStudentBtn").forEach((btn) => btn.addEventListener("click", () => deleteStudent(btn.dataset.id)));
   box.querySelectorAll(".actionStudentBtn").forEach((btn) => btn.addEventListener("click", () => openActionModal(btn.dataset.id, btn.dataset.name)));
+  box.querySelectorAll("[data-collect-id]").forEach((el) => el.addEventListener("click", () => openCollectionDialog(el.dataset.collectId, { onClose: renderTable })));
 }
 
 async function deleteStudent(id) {

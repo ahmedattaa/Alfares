@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>🧪 Test Data Injection</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Cairo', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .container { max-width: 600px; width: 90%; }
+    h1 { font-size: 22px; margin-bottom: 12px; text-align: center; }
+    .info { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .info div { margin-bottom: 6px; font-size: 14px; }
+    .info strong { color: #38bdf8; }
+    button { width: 100%; padding: 16px; font-size: 18px; font-weight: 800; border: none; border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; transition: transform 0.1s; }
+    button:hover { transform: scale(1.02); }
+    button:active { transform: scale(0.98); }
+    button:disabled { background: #475569; cursor: not-allowed; transform: none; }
+    #log { margin-top: 16px; background: #1e293b; border-radius: 12px; padding: 16px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; display: none; }
+    .success { color: #4ade80; }
+    .error { color: #f87171; }
+    .step { color: #94a3b8; }
+    a { color: #38bdf8; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Test Data Injection</h1>
+    <div class="info">
+      <div>📅 <strong>اليوم (الثلاثاء)</strong></div>
+      <div>🏫 <strong>7 مجموعات</strong> على يوم الثلاثاء</div>
+      <div>👨‍🎓 <strong>52 طالب</strong> فى كل مجموعة = <strong>364 طالب</strong></div>
+      <div>📊 <strong>10 حالات</strong> مختلفة فى كل مجموعة</div>
+    </div>
+    <button id="runBtn" onclick="runInjection()">🚀 اضغط هنا لعمل التست</button>
+    <div id="log"></div>
+    <div style="margin-top:12px; text-align:center; font-size:12px; color:#64748b;">
+      ⚠️ لازم تفتح الملف ده من نفس الـ domain بتاع التطبيق<br>
+     يعني: افتح التطبيق الأول → ثم افتح الملف ده فى تاب جديد
+    </div>
+  </div>
+
+  <script>
+    const logEl = document.getElementById("log");
+    const btn = document.getElementById("runBtn");
+
+    function log(msg, cls = "step") {
+      logEl.style.display = "block";
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = msg + "\n";
+      logEl.appendChild(span);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function runInjection() {
+      btn.disabled = true;
+      btn.textContent = "⏳ جاري التحميل...";
+
+      try {
+        // ── فتح IndexedDB ──
+        log("📂 فتح IndexedDB...");
+        const db = await new Promise((resolve, reject) => {
+          const req = indexedDB.open("center_management_db", 1);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+        log("✅ تم فتح DB", "success");
+
+        function idbGetAll() {
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction("kv_store", "readonly");
+            const store = tx.objectStore("kv_store");
+            const kR = store.getAllKeys();
+            const vR = store.getAll();
+            let keys, vals;
+            kR.onsuccess = () => { keys = kR.result; tryR(); };
+            vR.onsuccess = () => { vals = vR.result; tryR(); };
+            tx.onerror = () => reject(tx.error);
+            function tryR() { if (keys && vals) { const m = {}; keys.forEach((k, i) => m[k] = vals[i]); resolve(m); } }
+          });
+        }
+
+        function idbSet(key, value) {
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction("kv_store", "readwrite");
+            tx.objectStore("kv_store").put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        }
+
+        // ── Helpers ──
+        let _c = 0;
+        const uid = (p) => `${p}-${Date.now().toString(36)}${(++_c).toString(36)}`;
+        const today = new Date().toISOString().split("T")[0];
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+        const firstNames = ["محمد","أحمد","علي","حسن","حسين","عمر","عثمان","إبراهيم","إسماعيل","يوسف","خالد","عبدالله","عبدالرحمن","مصطفى","ياسر","طارق","منصور","كمال","جمال","سعيد","سامي","هاني","وليد","ماجد","ناصر","بلال","رامي","أشرف","هشام","تامر","كريم","شريف","محمود","وائل","باسم","فاطمة","عائشة","مريم","خديجة","نورة","سارة","منى","هدى","رقية","زينب","نادى","ياسمين","سلمى","ريم"];
+        const lastNames = ["محمد","أحمد","علي","حسن","حسين","عبدالله","عبدالرحمن","Saleh","Hassan","Ibrahim","Youssef","Khaled","Mahmoud","Farouk","Nasser","Rashid","Adel","Fathy","Sayed","Mansour","Gamal","Kamal","Reda","Lotfy","Zaki","Nabil","Taha"];
+        const rn = () => `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
+        const rp = () => `01${[1,2,5][Math.floor(Math.random()*3)]}${Math.floor(10000000+Math.random()*90000000)}`;
+
+        // ── Distribution ──
+        const DIST = [
+          { id: "ST-PAID", n: 14 }, { id: "ST-UNPAID", n: 10 }, { id: "ST-EXCUSED", n: 7 },
+          { id: "ST-ABSENT", n: 5 }, { id: "ST-CALL", n: 3 }, { id: "ST-EXPEL", n: 2 },
+          { id: "ST-ACA-WARN", n: 2 }, { id: "ST-SUSPEND", n: 2 }, { id: "ST-CONFISCATE", n: 2 },
+          { id: "ST-ONLINE", n: 2 },
+        ];
+
+        const GROUPS = [
+          { gradeId: "GR1", code: "T1", name: "ثلاثاء أوائل 9:00 ص", time: "09:00", price: 50 },
+          { gradeId: "GR1", code: "T2", name: "ثلاثاء أوائل 10:30 ص", time: "10:30", price: 50 },
+          { gradeId: "GR2", code: "T3", name: "ثلاثاء متوسط 12:00 م", time: "12:00", price: 60 },
+          { gradeId: "GR2", code: "T4", name: "ثلاثاء متوسط 1:30 م", time: "13:30", price: 60 },
+          { gradeId: "GR3", code: "T5", name: "ثلاثاء أعدادي 3:00 م", time: "15:00", price: 70 },
+          { gradeId: "GR3", code: "T6", name: "ثلاثاء أعدادي 4:30 م", time: "16:30", price: 70 },
+          { gradeId: "GR3", code: "T7", name: "ثلاثاء أعدادي 6:00 م", time: "18:00", price: 70 },
+        ];
+
+        // ── Read existing ──
+        log("📖 قراءة البيانات الموجودة...");
+        const all = await idbGetAll();
+        const exGroups = all.center_groups || [];
+        const exStudents = all.center_students || [];
+        const exAtt = all.center_attendance || [];
+        const exPay = all.center_payments || [];
+        const exChg = all.center_extra_charges || [];
+        log(`📦 موجود: ${exGroups.length} مجموعات, ${exStudents.length} طلاب`);
+
+        // ── Check if already injected ──
+        const oldGroupIds = exGroups.filter(g => g.days?.includes("الثلاثاء") && g.name?.includes("ثلاثاء")).map(g => g.id);
+        if (oldGroupIds.length > 0) {
+          log(`⚠️ لقاى ${oldGroupIds.length} مجموعات ثلاثاء قديمة — هحذفها وأعمل جديدة`);
+        }
+
+        // ── Filter out old test data ──
+        const cleanGroups = exGroups.filter(g => !oldGroupIds.includes(g.id));
+        const oldStudentIds = exStudents.filter(s => oldGroupIds.includes(s.groupId)).map(s => s.id);
+        const cleanStudents = exStudents.filter(s => !oldStudentIds.includes(s.id));
+        const cleanAtt = exAtt.filter(a => !oldStudentIds.includes(a.studentId));
+        const cleanPay = exPay.filter(p => !oldStudentIds.includes(p.studentId));
+        const cleanChg = exChg.filter(c => !oldStudentIds.includes(c.studentId));
+
+        // ── Create new data ──
+        log("🔨 إنشاء 7 مجموعات × 52 طالب...");
+        const newGroups = [], newStudents = [], newAtt = [], newPay = [], newChg = [];
+
+        for (const g of GROUPS) {
+          const gid = uid("GRP");
+          newGroups.push({ id: gid, code: g.code, gradeId: g.gradeId, name: g.name, days: ["الثلاثاء"], time: g.time, duration: 60, capacity: 55, sessionPrice: g.price });
+          let si = 0;
+          for (const d of DIST) {
+            for (let i = 0; i < d.n; i++) {
+              si++;
+              const sid = uid("STU");
+              const hasDiscount = Math.random() > 0.7;
+              const discount = hasDiscount ? [5,10,15][Math.floor(Math.random()*3)] : 0;
+              const wallet = Math.random() > 0.8 ? Math.floor(Math.random()*200)+20 : 0;
+              const late = d.id === "ST-UNPAID" && Math.random() > 0.4 ? g.price * Math.floor(Math.random()*4+1) : 0;
+
+              newStudents.push({ id: sid, code: `${g.code}${String(si).padStart(2,"0")}`, name: rn(), gradeId: g.gradeId, groupId: gid, phone: rp(), parentPhone: rp(), fatherJob: "", school: "", joinDate: today, status: "active", discount, lateBalance: late, walletBalance: wallet, locked: d.id === "ST-SUSPEND", lockReason: d.id === "ST-SUSPEND" ? "إيقاف مؤقت" : null, lockDate: d.id === "ST-SUSPEND" ? today : null });
+
+              const isAction = ["ST-CALL","ST-EXPEL","ST-ACA-WARN","ST-SUSPEND","ST-CONFISCATE","ST-ONLINE"].includes(d.id);
+              const att = { id: uid("ATT"), studentId: sid, date: today, time: isAction ? "-" : timeStr, statusId: d.id, category: isAction ? "action" : "attendance", note: "", termId: null, monthId: null };
+              newAtt.push(att);
+
+              if (d.id === "ST-PAID") newPay.push({ id: uid("PAY"), studentId: sid, groupId: gid, attendanceId: att.id, date: today, sessionDate: today, amount: g.price - discount, walletUsed: 0, status: "paid", lateBalanceDelta: late > 0 ? -late : 0, note: "تست", termId: null, monthId: null });
+              if (d.id === "ST-UNPAID") newPay.push({ id: uid("PAY"), studentId: sid, groupId: gid, attendanceId: att.id, date: today, sessionDate: today, amount: g.price, walletUsed: 0, status: "unpaid", lateBalanceDelta: g.price, note: "تست", termId: null, monthId: null });
+              if (Math.random() > 0.85 && ["ST-PAID","ST-UNPAID"].includes(d.id)) newChg.push({ id: uid("CHG"), batchId: uid("B"), studentId: sid, name: ["ملزمة امتحان","قلم رصاص","copie","رسوم نشاط"][Math.floor(Math.random()*4)], amount: [10,15,20,25,30][Math.floor(Math.random()*5)], date: today, status: Math.random() > 0.5 ? "paid" : "unpaid" });
+            }
+          }
+          log(`  ✅ ${g.name} — ${si} طالب`, "success");
+        }
+
+        // ── Save to IndexedDB ──
+        log("💾 حفظ في IndexedDB...");
+        await idbSet("center_groups", [...cleanGroups, ...newGroups]);
+        await idbSet("center_students", [...cleanStudents, ...newStudents]);
+        await idbSet("center_attendance", [...cleanAtt, ...newAtt]);
+        await idbSet("center_payments", [...cleanPay, ...newPay]);
+        await idbSet("center_extra_charges", [...cleanChg, ...newChg]);
+
+        log("", "");
+        log("═══════════════════════════════════════════", "success");
+        log("✅ تم بنجاح! أعد تحميل الصفحة", "success");
+        log("═══════════════════════════════════════════", "success");
+        log(`📅 التاريخ: ${today} (الثلاثاء)`);
+        log(`🏫 مجموعات: ${newGroups.length} جديدة (إجمالى ${cleanGroups.length + newGroups.length})`);
+        log(`👨‍🎓 طلاب: ${newStudents.length} جديد (إجمالى ${cleanStudents.length + newStudents.length})`);
+        log(`📝 حضور: ${newAtt.length} سجل`);
+        log(`💰 مدفوعات: ${newPay.length} سجل`);
+        log(`📋 مستحقات: ${newChg.length} سجل`);
+
+        btn.textContent = "✅ تم! أعد تحميل الصفحة";
+        btn.style.background = "linear-gradient(135deg, #22c55e, #16a34a)";
+
+      } catch (err) {
+        log(`❌ خطأ: ${err.message}`, "error");
+        console.error(err);
+        btn.textContent = "❌ حصل خطأ — شوف Console";
+        btn.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

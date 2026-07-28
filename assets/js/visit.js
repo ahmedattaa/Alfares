@@ -24,6 +24,7 @@ import { openWhatsApp } from "./whatsapp.js";
 import { formatTimeAr, formatDaysAr, WEEKDAY_OPTIONS } from "./schedule.js";
 import { renderTemplate } from "./whatsapp-templates.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("visit");
 let selectedStudentId = null;
@@ -736,6 +737,11 @@ function renderFinanceTab(box, student) {
 
       <div class="vst-master-ledger__actions">
         ${netDue > 0 ? `
+          <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+            <button class="btn btn-outline" id="vstCollectionDialogBtn" style="font-size:13px; padding:10px 16px;">
+              💰 تحصيل تفصيلي
+            </button>
+          </div>
           <div class="vst-master-ledger__pay-row">
             <input type="number" class="input" id="vstSettleAmount" min="0" step="1" value="${netDue}" style="max-width:180px; font-size:18px; font-weight:800; text-align:center;">
             <button class="btn btn-success btn-lg" id="vstSettleAllBtn" style="font-size:16px; padding:14px 28px;">
@@ -763,10 +769,10 @@ function renderFinanceTab(box, student) {
         <div class="vst-finance-box__value">${formatMoney(wallet)}</div>
         <div class="vst-finance-box__label">الرصيد المتاح</div>
       </div>
-      <div class="vst-finance-box vst-finance-box--debt">
+      <div class="vst-finance-box vst-finance-box--debt" style="cursor:${debt > 0 ? "pointer" : "default"}; ${debt > 0 ? "" : "opacity:0.5;"}" ${debt > 0 ? `id="vstDebtBox"` : ""}>
         <div class="vst-finance-box__icon">${icons.money}</div>
         <div class="vst-finance-box__value">${formatMoney(debt)}</div>
-        <div class="vst-finance-box__label">المتأخرات</div>
+        <div class="vst-finance-box__label">المتأخرات${debt > 0 ? " — اضغط للتحصيل" : ""}</div>
       </div>
       <div class="vst-finance-box vst-finance-box--charges">
         <div class="vst-finance-box__icon">${icons.alert}</div>
@@ -870,6 +876,22 @@ function renderFinanceTab(box, student) {
       } catch (e) { /* popup blocker */ }
 
       renderStudentZone();
+    });
+  }
+
+  // ═══ زر التحصيل التفصيلي ═══
+  const collectionBtn = document.getElementById("vstCollectionDialogBtn");
+  if (collectionBtn) {
+    collectionBtn.addEventListener("click", () => {
+      openCollectionDialog(student.id, { onClose: () => renderStudentZone() });
+    });
+  }
+
+  // ═══ صندوق المتأخرات (ضغط للتحصيل) ═══
+  const debtBox = document.getElementById("vstDebtBox");
+  if (debtBox) {
+    debtBox.addEventListener("click", () => {
+      openCollectionDialog(student.id, { onClose: () => renderStudentZone() });
     });
   }
 

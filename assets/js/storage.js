@@ -37,6 +37,11 @@ const KEYS = {
   advancePermissions: "center_advance_permissions",
   termSnapshots: "center_term_snapshots",
   rolloverLogs: "center_rollover_logs",
+  subjects: "center_subjects",
+  topics: "center_topics",
+  questions: "center_questions",
+  examAnswers: "center_exam_answers",
+  users: "center_users",
   seeded: "center_seeded_v12",
 };
 
@@ -135,6 +140,10 @@ async function fetchMock(file) {
 /** تهيئة البيانات لأول مرة فقط من ملفات mock إلى IndexedDB */
 export async function seedIfNeeded() {
   await ensureCacheLoaded();
+
+  // بيانات تجريبية — تتأكد من وجودها دائماً (حتى لو الـ seed شغال قبل كده)
+  seedTestData();
+
   if (readJSON(KEYS.seeded, false) === true) return;
 
   try {
@@ -169,6 +178,131 @@ export async function seedIfNeeded() {
   } catch (e) {
     console.error("فشل تحميل بيانات Mock — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
   }
+}
+
+/** بيانات تجريبية — كل الأيام × 3 سنوات دراسية × 52+ طالب × كل الحالات */
+function seedTestData() {
+  const existingGroups = readJSON(KEYS.groups, []);
+  // لو البيانات اتعملت قبل كده (فى أى يوم) نتخطى
+  if (existingGroups.some((g) => g.days?.length && g.name?.includes("تست"))) return;
+
+  let _c = 0;
+  const uid = (p) => `${p}-t${Date.now().toString(36)}${(++_c).toString(36)}`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // ── أسماء عشوائية ──
+  const fn = ["محمد","أحمد","علي","حسن","حسين","عمر","إبراهيم","إسماعيل","يوسف","خالد","عبدالله","مصطفى","ياسر","طارق","منصور","كمال","سعيد","سامي","هاني","وليد","ماجد","ناصر","بلال","رامي","أشرف","هشام","تامر","كريم","شريف","محمود","فاطمة","عائشة","مريم","خديجة","نورة","سارة","منى","هدى","زينب","ياسمين","سلمى","نادى","ريم"];
+  const ln = ["محمد","أحمد","علي","حسن","حسين","عبدالله","Saleh","Hassan","Ibrahim","Youssef","Khaled","Mahmoud","Farouk","Nasser","Adel","Fathy","Sayed","Mansour","Gamal","Reda","Zaki","Nabil","Taha"];
+  const rn = () => `${fn[~~(Math.random()*fn.length)]} ${ln[~~(Math.random()*ln.length)]}`;
+  const rp = () => `01${[1,2,5][~~(Math.random()*3)]}${~~(1e7+Math.random()*9e7)}`;
+
+  // ── توزيع الحالات (52 طالب) ──
+  const DIST = [
+    { id: "ST-PAID",       n: 14 },
+    { id: "ST-UNPAID",     n: 10 },
+    { id: "ST-EXCUSED",    n: 7  },
+    { id: "ST-ABSENT",     n: 5  },
+    { id: "ST-CALL",       n: 3  },
+    { id: "ST-EXPEL",      n: 2  },
+    { id: "ST-ACA-WARN",   n: 2  },
+    { id: "ST-SUSPEND",    n: 2  },
+    { id: "ST-CONFISCATE", n: 2  },
+    { id: "ST-ONLINE",     n: 2  },
+  ];
+  const ACTIONS = new Set(["ST-CALL","ST-EXPEL","ST-ACA-WARN","ST-SUSPEND","ST-CONFISCATE","ST-ONLINE"]);
+  const CHARGE_NAMES = ["ملزمة امتحان","قلم رصاص","copie","رسوم نشاط","بروشورة"];
+
+  // ── 7 أيام × 3 مجموعات (أولى — تانية — تالتة) ──
+  const DAYS = ["السبت","الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة"];
+  const GRADES = [
+    { gradeId: "GR1", prefix: "أ", price: 50, times: ["09:00","10:30","12:00"] },
+    { gradeId: "GR2", prefix: "ب", price: 60, times: ["09:00","10:30","12:00"] },
+    { gradeId: "GR3", prefix: "ت", price: 70, times: ["09:00","10:30","12:00"] },
+  ];
+  const DAY_CODES = ["Sa","Su","Mo","Tu","We","Th","Fr"];
+
+  const newGroups = [], newStudents = [], newAtt = [], newPay = [], newChg = [];
+  let gIdx = 0;
+
+  for (let di = 0; di < DAYS.length; di++) {
+    const day = DAYS[di];
+    const dc = DAY_CODES[di];
+
+    for (const gr of GRADES) {
+      gIdx++;
+      const gid = uid("GRP");
+      const time = gr.times[di % 3];
+      const code = `${dc}${gr.prefix}`;
+      const timeLabel = time.replace(":",".");
+      newGroups.push({
+        id: gid, code, gradeId: gr.gradeId,
+        name: `${day} ${gr.prefix === "أ" ? "أوائل" : gr.prefix === "ب" ? "متوسط" : "أعدادي"} ${timeLabel} ص — تست`,
+        days: [day], time, duration: 60, capacity: 55, sessionPrice: gr.price,
+      });
+
+      let si = 0;
+      for (const d of DIST) {
+        for (let i = 0; i < d.n; i++) {
+          si++;
+          const sid = uid("STU");
+          const hasDiscount = Math.random() > 0.7;
+          const discount = hasDiscount ? [5,10,15][~~(Math.random()*3)] : 0;
+          const wallet = Math.random() > 0.8 ? ~~(Math.random()*200)+20 : 0;
+          const late = d.id === "ST-UNPAID" && Math.random() > 0.4 ? gr.price * (~~(Math.random()*4)+1) : 0;
+
+          newStudents.push({
+            id: sid, code: `${code}${String(si).padStart(2,"0")}`, name: rn(),
+            gradeId: gr.gradeId, groupId: gid,
+            phone: rp(), parentPhone: rp(), fatherJob: "", school: "",
+            joinDate: today, status: "active", discount, lateBalance: late, walletBalance: wallet,
+            locked: d.id === "ST-SUSPEND", lockReason: d.id === "ST-SUSPEND" ? "إيقاف مؤقت" : null,
+            lockDate: d.id === "ST-SUSPEND" ? today : null,
+          });
+
+          const isAction = ACTIONS.has(d.id);
+          newAtt.push({
+            id: uid("ATT"), studentId: sid, date: today,
+            time: isAction ? "-" : time, statusId: d.id,
+            category: isAction ? "action" : "attendance", note: "", termId: null, monthId: null,
+          });
+
+          if (d.id === "ST-PAID") {
+            newPay.push({
+              id: uid("PAY"), studentId: sid, groupId: gid, attendanceId: uid("ATT"),
+              date: today, sessionDate: today, amount: gr.price - discount,
+              walletUsed: 0, status: "paid", lateBalanceDelta: late > 0 ? -late : 0,
+              note: "تست", termId: null, monthId: null,
+            });
+          }
+          if (d.id === "ST-UNPAID") {
+            newPay.push({
+              id: uid("PAY"), studentId: sid, groupId: gid, attendanceId: uid("ATT"),
+              date: today, sessionDate: today, amount: gr.price,
+              walletUsed: 0, status: "unpaid", lateBalanceDelta: gr.price,
+              note: "تست", termId: null, monthId: null,
+            });
+          }
+          if (Math.random() > 0.85 && (d.id === "ST-PAID" || d.id === "ST-UNPAID")) {
+            newChg.push({
+              id: uid("CHG"), batchId: uid("B"), studentId: sid,
+              name: CHARGE_NAMES[~~(Math.random()*CHARGE_NAMES.length)],
+              amount: [10,15,20,25,30][~~(Math.random()*5)],
+              date: today, status: Math.random() > 0.5 ? "paid" : "unpaid",
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // ── ادمج مع البيانات الموجودة واحفظ ──
+  writeJSON(KEYS.groups,       [...readJSON(KEYS.groups, []), ...newGroups]);
+  writeJSON(KEYS.students,     [...readJSON(KEYS.students, []), ...newStudents]);
+  writeJSON(KEYS.attendance,   [...readJSON(KEYS.attendance, []), ...newAtt]);
+  writeJSON(KEYS.payments,     [...readJSON(KEYS.payments, []), ...newPay]);
+  writeJSON(KEYS.extraCharges, [...readJSON(KEYS.extraCharges, []), ...newChg]);
+
+  console.log(`🧪 Test data: ${newGroups.length} groups, ${newStudents.length} students, ${newAtt.length} attendance, ${newPay.length} payments`);
 }
 
 /* ---------------- Students ---------------- */
@@ -985,3 +1119,283 @@ export function getLastRolloverLog() {
   const logs = getRolloverLogs();
   return logs.length ? logs[logs.length - 1] : null;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   المواد الدراسية (Subjects)
+   ═══════════════════════════════════════════════════════════ */
+
+export const getSubjects = () => readJSON(KEYS.subjects, []);
+export const saveSubjects = (list) => writeJSON(KEYS.subjects, list);
+
+export function addSubject({ name, gradeIds = [], icon = "📚", color = "#6c5ce7" }) {
+  const list = getSubjects();
+  const subject = {
+    id: generateId("SUB"),
+    name,
+    gradeIds,
+    icon,
+    color,
+    active: true,
+    createdAt: todayISO(),
+  };
+  list.push(subject);
+  saveSubjects(list);
+  return subject;
+}
+
+export function updateSubject(id, updates) {
+  const list = getSubjects();
+  const idx = list.findIndex((s) => s.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates };
+  saveSubjects(list);
+  return list[idx];
+}
+
+export function deleteSubject(id) {
+  saveSubjects(getSubjects().filter((s) => s.id !== id));
+}
+
+export function getSubjectsForGrade(gradeId) {
+  return getSubjects().filter((s) => s.active && (s.gradeIds || []).includes(gradeId));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   الدروس / الموضوعات (Topics)
+   ═══════════════════════════════════════════════════════════ */
+
+export const getTopics = () => readJSON(KEYS.topics, []);
+export const saveTopics = (list) => writeJSON(KEYS.topics, list);
+
+export function addTopic({ subjectId, name, order = 0, parentId = null }) {
+  const list = getTopics();
+  const topic = {
+    id: generateId("TPC"),
+    subjectId,
+    name,
+    order,
+    parentId,
+    active: true,
+    createdAt: todayISO(),
+  };
+  list.push(topic);
+  saveTopics(list);
+  return topic;
+}
+
+export function updateTopic(id, updates) {
+  const list = getTopics();
+  const idx = list.findIndex((t) => t.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates };
+  saveTopics(list);
+  return list[idx];
+}
+
+export function deleteTopic(id) {
+  saveTopics(getTopics().filter((t) => t.id !== id));
+}
+
+export function getTopicsForSubject(subjectId) {
+  return getTopics()
+    .filter((t) => t.subjectId === subjectId && t.active)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   بنك الأسئلة (Question Bank)
+   ═══════════════════════════════════════════════════════════ */
+
+export const getQuestions = () => readJSON(KEYS.questions, []);
+export const saveQuestions = (list) => writeJSON(KEYS.questions, list);
+
+/**
+ * أنواع الأسئلة:
+ *  mcq   — اختيار من متعدد
+ *  tf    — صح/خطأ
+ *  essay — مقالي (يحتاج تصحيح يدوي)
+ */
+export function addQuestion({ subjectId, topicId = null, type = "mcq", text, options = [], correctAnswer, difficulty = "medium", marks = 1, explanation = "" }) {
+  const list = getQuestions();
+  const question = {
+    id: generateId("QST"),
+    subjectId,
+    topicId,
+    type,
+    text,
+    options: type === "mcq" ? options : type === "tf" ? ["صح", "خطأ"] : [],
+    correctAnswer,
+    difficulty,
+    marks: Number(marks) || 1,
+    explanation,
+    active: true,
+    createdAt: todayISO(),
+  };
+  list.push(question);
+  saveQuestions(list);
+  return question;
+}
+
+export function updateQuestion(id, updates) {
+  const list = getQuestions();
+  const idx = list.findIndex((q) => q.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates };
+  saveQuestions(list);
+  return list[idx];
+}
+
+export function deleteQuestion(id) {
+  saveQuestions(getQuestions().filter((q) => q.id !== id));
+}
+
+export function getQuestionsForSubject(subjectId) {
+  return getQuestions().filter((q) => q.subjectId === subjectId && q.active);
+}
+
+export function getQuestionsForTopic(topicId) {
+  return getQuestions().filter((q) => q.topicId === topicId && q.active);
+}
+
+export function getQuestionsByDifficulty(subjectId, difficulty) {
+  return getQuestions().filter((q) => q.subjectId === subjectId && q.difficulty === difficulty && q.active);
+}
+
+export function getQuestionStats() {
+  const questions = getQuestions();
+  return {
+    total: questions.length,
+    byType: {
+      mcq: questions.filter((q) => q.type === "mcq").length,
+      tf: questions.filter((q) => q.type === "tf").length,
+      essay: questions.filter((q) => q.type === "essay").length,
+    },
+    byDifficulty: {
+      easy: questions.filter((q) => q.difficulty === "easy").length,
+      medium: questions.filter((q) => q.difficulty === "medium").length,
+      hard: questions.filter((q) => q.difficulty === "hard").length,
+    },
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   نتائج الامتحانات سؤال بسؤال (Exam Answers)
+   ═══════════════════════════════════════════════════════════ */
+
+export const getExamAnswers = () => readJSON(KEYS.examAnswers, []);
+export const saveExamAnswers = (list) => writeJSON(KEYS.examAnswers, list);
+
+export function addExamAnswer({ examId, studentId, questionId, studentAnswer, isCorrect, marksAwarded = 0 }) {
+  const list = getExamAnswers();
+  const answer = {
+    id: generateId("EAN"),
+    examId,
+    studentId,
+    questionId,
+    studentAnswer,
+    isCorrect: !!isCorrect,
+    marksAwarded: Number(marksAwarded) || 0,
+    createdAt: todayISO(),
+  };
+  list.push(answer);
+  saveExamAnswers(list);
+  return answer;
+}
+
+export function getExamAnswersForExam(examId) {
+  return getExamAnswers().filter((a) => a.examId === examId);
+}
+
+export function getExamAnswersForStudent(studentId) {
+  return getExamAnswers().filter((a) => a.studentId === studentId);
+}
+
+export function getExamAnswersForQuestion(questionId) {
+  return getExamAnswers().filter((a) => a.questionId === questionId);
+}
+
+/**
+ * تحليل أداء السؤال — كام طالب حلوا صح وكام غلط
+ */
+export function getQuestionPerformance(questionId) {
+  const answers = getExamAnswers().filter((a) => a.questionId === questionId);
+  const total = answers.length;
+  const correct = answers.filter((a) => a.isCorrect).length;
+  return {
+    questionId,
+    total,
+    correct,
+    incorrect: total - correct,
+    accuracy: total ? Math.round((correct / total) * 100) : 0,
+  };
+}
+
+/**
+ * تحليل أداء الطالب حسب المادة
+ */
+export function getStudentSubjectPerformance(studentId, subjectId) {
+  const questions = getQuestionsForSubject(subjectId);
+  const questionIds = new Set(questions.map((q) => q.id));
+  const answers = getExamAnswers().filter((a) => a.studentId === studentId && questionIds.has(a.questionId));
+
+  if (!answers.length) return null;
+
+  const total = answers.length;
+  const correct = answers.filter((a) => a.isCorrect).length;
+  const totalMarks = answers.reduce((s, a) => s + (questions.find((q) => q.id === a.questionId)?.marks || 1), 0);
+  const earnedMarks = answers.reduce((s, a) => s + a.marksAwarded, 0);
+
+  return {
+    studentId,
+    subjectId,
+    totalQuestions: total,
+    correct,
+    incorrect: total - correct,
+    accuracy: Math.round((correct / total) * 100),
+    totalMarks,
+    earnedMarks,
+  };
+}
+
+/**
+ * أكثر الأسئلة خطأً في مادة معينة
+ */
+export function getMostMissedQuestions(subjectId, limit = 5) {
+  const questions = getQuestionsForSubject(subjectId);
+  return questions
+    .map((q) => ({ ...q, perf: getQuestionPerformance(q.id) }))
+    .filter((q) => q.perf.total > 0)
+    .sort((a, b) => a.perf.accuracy - b.perf.accuracy)
+    .slice(0, limit);
+}
+
+/**
+ * أكثر الدروس صعوبة لطالب معين
+ */
+export function getWeakestTopics(studentId, subjectId, limit = 5) {
+  const topics = getTopicsForSubject(subjectId);
+  return topics
+    .map((t) => {
+      const topicQuestions = getQuestionsForTopic(t.id);
+      const questionIds = new Set(topicQuestions.map((q) => q.id));
+      const answers = getExamAnswers().filter((a) => a.studentId === studentId && questionIds.has(a.questionId));
+      const total = answers.length;
+      const correct = answers.filter((a) => a.isCorrect).length;
+      return {
+        ...t,
+        total,
+        correct,
+        accuracy: total ? Math.round((correct / total) * 100) : 0,
+      };
+    })
+    .filter((t) => t.total > 0)
+    .sort((a, b) => a.accuracy - b.accuracy)
+    .slice(0, limit);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   المستخدمون (لـ Auth)
+   ═══════════════════════════════════════════════════════════ */
+
+export const getUsers = () => readJSON(KEYS.users, []);
+export const saveUsers = (list) => writeJSON(KEYS.users, list);

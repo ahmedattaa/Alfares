@@ -13,7 +13,9 @@ import { openWhatsApp } from "./whatsapp.js";
 import { computeAllHealthScores, getHealthColor, healthScoreHTML, healthBarHTML } from "./health-score.js";
 import { generateMessage, getTypeMeta, getAllUnsent } from "./achievement-engine.js";
 import { getEscalationSummary, overrideEscalation, logPhoneCall, buildEscalationMessage } from "./escalation-engine.js";
+import { renderBellCurve, renderDistributionBar } from "./charts.js";
 import { renderTemplate } from "./whatsapp-templates.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("teacher-insights");
 let activeSection = null;
@@ -468,6 +470,7 @@ function renderLatePayersSection(box) {
             <div class="ti-student-row__meta">${escapeHTML(group?.name || "")} · ${escapeHTML(group?.code || "")}</div>
           </div>
           <div class="ti-student-row__amount">${formatMoney(s.lateBalance || 0)}</div>
+          <button type="button" class="btn btn-outline btn-sm ti-collect-btn" data-id="${s.id}" title="تحصيل المتأخرات" style="color:var(--success); border-color:var(--success);">💰</button>
           <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
           ${s.parentPhone || s.phone ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone || s.phone || "")}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
           <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
@@ -475,6 +478,9 @@ function renderLatePayersSection(box) {
       }).join("")}
     `;
     bindWhatsAppButtons(list);
+    list.querySelectorAll(".ti-collect-btn").forEach((btn) => {
+      btn.addEventListener("click", () => openCollectionDialog(btn.dataset.id, { onClose: renderList }));
+    });
   }
 
   gradeSelect.addEventListener("change", () => { updateGroups(); renderList(); });
@@ -1072,6 +1078,17 @@ function renderExamDetailsPage(groupId) {
             <div class="ti-exam-summary-card__sub">${e.pct}% — ${e.absentCount ? e.absentCount + " غائب" : "الجميع حاضر"}</div>
           </div>
         `).join("")}
+      </div>
+
+      <div class="ch-charts-row" style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px;">
+        ${exams.map((e) => {
+          const scored = e.results.filter((r) => !r.absent && r.score != null).map((r) => r.score);
+          return renderBellCurve(scored, e.maxScore, { title: `المنحنى الجرسي — ${e.title}` });
+        }).join("")}
+      </div>
+
+      <div class="ch-charts-row" style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px;">
+        ${exams.map((e) => renderDistributionBar(e, students, { title: `توزيع الدرجات — ${e.title}` })).join("")}
       </div>
 
       <div style="overflow-x:auto;">

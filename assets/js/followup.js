@@ -10,6 +10,7 @@ import { emptyStateHTML, whatsappPreviewDialog, formModal, toast, confirmDialog 
 import { gradeName, groupName, groupsForGrade } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("followup");
 let searchTerm = "";
@@ -253,6 +254,7 @@ function renderTable() {
               </td>
               <td>${r.s.lateBalance > 0 ? `<span class="badge badge-warning">${formatMoney(r.s.lateBalance)}</span>` : `<span class="badge badge-neutral">لا يوجد</span>`}</td>
               <td style="white-space:nowrap;">
+                ${r.s.lateBalance > 0 ? `<button class="btn btn-outline btn-icon collectDebtBtn" data-id="${r.s.id}" title="تحصيل المتأخرات" style="color:var(--success);border-color:var(--success);">💰</button>` : ""}
                 <button class="btn btn-outline btn-icon addNoteBtn" data-id="${r.s.id}" title="${logTooltip}">${recentDot}${icons.edit}</button>
                 <button class="btn btn-outline btn-icon sendFollowupWaBtn" data-id="${r.s.id}" title="إرسال تقرير متابعة شهرية واتساب">${icons.whatsapp}</button>
                 ${r.s.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(r.s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
@@ -289,6 +291,9 @@ function renderTable() {
   );
   box.querySelectorAll(".addNoteBtn").forEach((btn) =>
     btn.addEventListener("click", () => openAddNoteModal(btn.dataset.id))
+  );
+  box.querySelectorAll(".collectDebtBtn").forEach((btn) =>
+    btn.addEventListener("click", () => openCollectionDialog(btn.dataset.id, { onClose: renderTable }))
   );
 
   // تحديد الكل

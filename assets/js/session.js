@@ -18,6 +18,7 @@ import { getSessionsForDate, nextReadySession } from "./session-overview.js";
 import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk } from "./whatsapp-notifications.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { canPerformSensitiveAction } from "./permissions.js";
+import { renderGauge } from "./charts.js";
 
 const content = await initPage("session");
 
@@ -668,6 +669,8 @@ function renderPager(roster) {
 
 function renderStats(roster) {
   const box = document.getElementById("statsBar");
+  const group = getGroups().find((g) => g.id === selectedGroupId);
+  const capacity = group?.capacity || roster.length;
   const rosterIds = new Set(roster.map((s) => s.id));
   const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance" && rosterIds.has(a.studentId));
   const payments = getPayments().filter((p) => p.date === selectedDate && p.groupId === selectedGroupId);
@@ -679,14 +682,21 @@ function renderStats(roster) {
   const makeupCount = tempMakeupStudents.filter((s) => !roster.some((r) => r.id === s.id || r.isGuest)).length;
 
   box.innerHTML = `
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${roster.length}</span><span class="quick-stats-bar__label">إجمالى الطلاب</span></div>
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${registered}</span><span class="quick-stats-bar__label">تم تسجيلهم</span></div>
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${roster.length - registered}</span><span class="quick-stats-bar__label">متبقى</span></div>
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-PAID")}</span><span class="quick-stats-bar__label">حضر ودفع</span></div>
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-UNPAID")}</span><span class="quick-stats-bar__label">حضر بدون دفع</span></div>
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-EXCUSED") + countStatus("ST-ABSENT")}</span><span class="quick-stats-bar__label">غياب</span></div>
-    ${guestCount ? `<div class="quick-stats-bar__item"><span class="quick-stats-bar__value" style="color:var(--info);">${guestCount}</span><span class="quick-stats-bar__label">🏷️ زوار</span></div>` : ""}
-    <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${formatMoney(collected)}</span><span class="quick-stats-bar__label">إجمالى المحصل</span></div>
+    <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
+      <div style="flex:1; min-width:200px; display:flex; gap:12px; flex-wrap:wrap;">
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${roster.length}</span><span class="quick-stats-bar__label">إجمالى الطلاب</span></div>
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${registered}</span><span class="quick-stats-bar__label">تم تسجيلهم</span></div>
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${roster.length - registered}</span><span class="quick-stats-bar__label">متبقى</span></div>
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-PAID")}</span><span class="quick-stats-bar__label">حضر ودفع</span></div>
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-UNPAID")}</span><span class="quick-stats-bar__label">حضر بدون دفع</span></div>
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${countStatus("ST-EXCUSED") + countStatus("ST-ABSENT")}</span><span class="quick-stats-bar__label">غياب</span></div>
+        ${guestCount ? `<div class="quick-stats-bar__item"><span class="quick-stats-bar__value" style="color:var(--info);">${guestCount}</span><span class="quick-stats-bar__label">🏷️ زوار</span></div>` : ""}
+        <div class="quick-stats-bar__item"><span class="quick-stats-bar__value">${formatMoney(collected)}</span><span class="quick-stats-bar__label">إجمالى المحصل</span></div>
+      </div>
+      <div style="flex-shrink:0;">
+        ${renderGauge(registered, capacity, { title: "السعة الاستيعابية" })}
+      </div>
+    </div>
   `;
 }
 

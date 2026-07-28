@@ -12,6 +12,8 @@ import { formatTimeAr, weekdayArForDate, isScheduledOnDate } from "./schedule.js
 import { getSessionsForDate } from "./session-overview.js";
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 import { computePnL, renderPnLHTML } from "./pnl-report.js";
+import { renderStackedBar } from "./charts.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("finance");
 let activeTab = "daily";
@@ -324,141 +326,11 @@ function renderPaymentsTable() {
 
   box.querySelectorAll(".markPaidBtn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const studentId = btn.dataset.studentId;
-      const paymentId = btn.dataset.paymentId;
-      handleCollectPayment(studentId, paymentId);
+      openCollectionDialog(btn.dataset.studentId, {
+        onClose: () => { renderGroupsBreakdown(); renderPaymentsTable(); },
+      });
     });
   });
-}
-
-async function handleCollectPayment(studentId, currentPaymentId) {
-  const payments = getAllPayments();
-  const students = getStudents();
-  const groups = getGroups();
-  const student = students.find((s) => s.id === studentId);
-  if (!student) return;
-
-  const allUnpaidPayments = payments
-    .filter((p) => p.studentId === studentId && p.status === "unpaid")
-    .sort((a, b) => (a.sessionDate || a.date || "").localeCompare(b.sessionDate || b.date || ""));
-
-  if (allUnpaidPayments.length <= 1) {
-    await markSinglePaid(allUnpaidPayments[0] || payments.find((p) => p.id === currentPaymentId));
-    return;
-  }
-
-  let bodyHTML = `
-    <div style="margin-bottom:12px; font-size:13px; color:var(--muted);">
-      الطالب <strong>${escapeHTML(student.name)}</strong> عليه ${allUnpaidPayments.length} حصص غير مدفوعة:
-    </div>
-    <div id="unpaidSessionsList" style="max-height:400px; overflow-y:auto;">
-  `;
-
-  allUnpaidPayments.forEach((p) => {
-    const group = findGroup(groups, p.groupId);
-    const sessionDate = p.sessionDate || p.date;
-    const weekday = weekdayArForDate(sessionDate);
-    const time = formatTimeAr(group?.time || "");
-    const sessionLabel = `حصة ${weekday} ${time}`;
-    const isCurrent = p.id === currentPaymentId;
-
-    bodyHTML += `
-      <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:6px; border:1px solid var(--border); border-radius:8px; ${isCurrent ? "background:var(--bg-2); border-color:var(--primary);" : ""}">
-        <div style="flex:1; min-width:0;">
-          <div style="font-weight:700; font-size:13px;">${escapeHTML(sessionLabel)}</div>
-          <div style="font-size:11px; color:var(--muted);">بتاريخ ${formatDateAr(sessionDate)} · ${escapeHTML(group?.name || "")}</div>
-        </div>
-        <div style="font-weight:700; font-size:14px; white-space:nowrap;">${formatMoney(p.amount)}</div>
-        <button class="btn btn-primary btn-sm collectSingleBtn" data-payment-id="${p.id}">تحصيل</button>
-      </div>
-    `;
-  });
-
-  bodyHTML += `</div>`;
-
-  const modal = document.createElement("div");
-  modal.className = "modal-overlay";
-  modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;";
-  modal.innerHTML = `
-    <div style="background:var(--bg); border-radius:12px; padding:24px; max-width:500px; width:100%; max-height:90vh; overflow-y:auto;">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-        <div style="font-weight:800; font-size:16px;">تحصيل المبالغ</div>
-        <button class="btn btn-outline btn-sm closeModalBtn" style="padding:4px 8px;">✕</button>
-      </div>
-      ${bodyHTML}
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:12px; border-top:1px solid var(--border);">
-        <div style="font-weight:700;">الإجمالى: <span style="color:var(--danger);">${formatMoney(allUnpaidPayments.reduce((s, p) => s + Number(p.amount || 0), 0))}</span></div>
-        <button class="btn btn-primary btn-sm collectAllBtn">تحصيل الكل</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-
-  modal.querySelector(".closeModalBtn").addEventListener("click", () => modal.remove());
-  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
-
-  modal.querySelectorAll(".collectSingleBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const paymentId = btn.dataset.paymentId;
-      const payment = payments.find((p) => p.id === paymentId);
-      if (!payment) return;
-      await markSinglePaid(payment);
-      modal.remove();
-    });
-  });
-
-  modal.querySelector(".collectAllBtn").addEventListener("click", async () => {
-    for (const p of allUnpaidPayments) {
-      const freshPayments = getAllPayments();
-      const freshPayment = freshPayments.find((pp) => pp.id === p.id && pp.status === "unpaid");
-      if (freshPayment) {
-        freshPayment.status = "paid";
-        savePayments(freshPayments);
-        const freshStudents = getStudents();
-        const freshStudent = freshStudents.find((s) => s.id === freshPayment.studentId);
-        if (freshStudent) {
-          freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - Number(freshPayment.amount || 0));
-          saveStudents(freshStudents);
-        }
-      }
-    }
-    toast(`تم تحصيل ${allUnpaidPayments.length} حصص بنجاح`, "success");
-    modal.remove();
-    renderGroupsBreakdown();
-    renderPaymentsTable();
-  });
-}
-
-async function markSinglePaid(payment) {
-  if (!payment) return;
-
-  const students = getStudents();
-  const student = students.find((s) => s.id === payment.studentId);
-
-  const ok = await confirmDialog({
-    title: "تأكيد التحصيل",
-    body: `هل تم تحصيل مبلغ ${formatMoney(payment.amount)} من الطالب <strong>${escapeHTML(student?.name || "")}</strong>؟`,
-    confirmText: "تم التحصيل",
-    tone: "success",
-  });
-  if (!ok) return;
-
-  const payments = getAllPayments();
-  const freshPayment = payments.find((p) => p.id === payment.id);
-  if (freshPayment) {
-    freshPayment.status = "paid";
-    savePayments(payments);
-  }
-
-  if (student) {
-    student.lateBalance = Math.max(0, (student.lateBalance || 0) - Number(payment.amount || 0));
-    saveStudents(students);
-  }
-
-  toast("تم تسجيل تحصيل المبلغ بنجاح", "success");
-  renderGroupsBreakdown();
-  renderPaymentsTable();
 }
 
 /* ================= التقرير الأسبوعى ================= */
@@ -716,6 +588,11 @@ function renderLateTab(box) {
   const sorted = [...students].sort((a, b) => Number(b.lateBalance || 0) - Number(a.lateBalance || 0));
   const totalLate = sorted.reduce((sum, s) => sum + Number(s.lateBalance || 0), 0);
 
+  // تصفية حسب الفترة الأكاديمية
+  let filteredPayments = payments;
+  if (lateTermFilter) filteredPayments = filteredPayments.filter((p) => p.termId === lateTermFilter);
+  if (lateMonthFilter) filteredPayments = filteredPayments.filter((p) => p.monthId === lateMonthFilter);
+
   // تصنيف حسب المدة
   const buckets = {
     fresh: { label: "أقل من أسبوع", color: "var(--warning)", students: [], total: 0 },
@@ -906,230 +783,14 @@ function renderLateStudentsList() {
   `;
 
   box.querySelectorAll(".latePayBtn").forEach((btn) =>
-    btn.addEventListener("click", () => openLatePayPopup(btn.dataset.id))
+    btn.addEventListener("click", () => {
+      openCollectionDialog(btn.dataset.id, {
+        onClose: () => renderLateStudentsList(),
+      });
+    })
   );
 }
 
-async function openLatePayPopup(studentId) {
-  const student = getStudents().find((s) => s.id === studentId);
-  if (!student) return;
-
-  const group = findGroup(getGroups(), student.groupId);
-  const grades = getGrades();
-  const gr = group ? grades.find((x) => x.id === group.gradeId) : null;
-  const extraCharges = getExtraCharges();
-  const payments = getPayments();
-
-  const lateBalance = Number(student.lateBalance || 0);
-  const items = [];
-
-  // حصص غير مدفوعة (كل واحدة لوحدها)
-  const unpaidPayments = payments
-    .filter((p) => p.studentId === student.id && p.status === "unpaid" && Number(p.lateBalanceDelta || 0) > 0)
-    .sort((a, b) => (a.sessionDate || a.date || "").localeCompare(b.sessionDate || b.date || ""));
-
-  unpaidPayments.forEach((p) => {
-    const sessionAmount = Number(p.lateBalanceDelta || 0);
-    const sessionDate = p.sessionDate || p.date || "";
-    items.push({
-      type: "session",
-      label: `حصة ${sessionDate}`,
-      amount: sessionAmount,
-      id: p.id,
-    });
-  });
-
-  // مستحقات مالية (كل واحدة لوحدها)
-  const unpaidCharges = extraCharges.filter((c) => c.studentId === student.id && c.status === "unpaid");
-  unpaidCharges.forEach((c) => {
-    items.push({ type: "charge", label: c.name, amount: Number(c.amount || 0), id: c.id });
-  });
-
-  // لو فيه متأخرات ومفيش سجلات دفع غير مدفوعة، نعرض كمية واحدة
-  const accountedFor = items.reduce((sum, i) => sum + i.amount, 0);
-  if (lateBalance > 0 && accountedFor < lateBalance) {
-    const remaining = lateBalance - accountedFor;
-    items.unshift({ type: "late", label: "متأخرات عامة", amount: remaining, id: null });
-  }
-
-  if (!items.length) {
-    toast("لا يوجد بنود متأخرة لهذا الطالب", "success");
-    return;
-  }
-
-  showLateCollectionModal(student, gr, group, items);
-}
-
-function showLateCollectionModal(student, gr, group, items) {
-  const totalDue = items.reduce((sum, i) => sum + i.amount, 0);
-  let collectedTotal = 0;
-
-  const existing = document.getElementById("lateCollectionOverlay");
-  if (existing) existing.remove();
-
-  const ov = document.createElement("div");
-  ov.className = "modal-overlay";
-  ov.id = "lateCollectionOverlay";
-  document.body.appendChild(ov);
-  ov.classList.add("is-open");
-
-  function render() {
-    const remaining = totalDue - collectedTotal;
-    const allPaid = remaining <= 0;
-
-    ov.innerHTML = `
-      <div class="modal" style="max-width:520px; max-height:85vh; display:flex; flex-direction:column;">
-        <div class="modal__head">
-          <div class="modal__title">تحصيل — ${escapeHTML(student.name)}</div>
-          <button class="btn btn-outline btn-sm closeModalBtn">✕</button>
-        </div>
-        <div class="modal__body" style="flex:1; overflow-y:auto;">
-          <div style="margin-bottom:14px; padding:12px; background:var(--bg); border-radius:var(--r-md);">
-            <div style="font-size:13px; color:var(--muted);">${escapeHTML(gr?.name || "")} — ${escapeHTML(group?.name || "")}</div>
-            <div style="display:flex; gap:16px; margin-top:8px; flex-wrap:wrap;">
-              <div>
-                <div style="font-size:11px; color:var(--muted);">الإجمالى</div>
-                <div style="font-size:18px; font-weight:800; color:var(--danger);">${formatMoney(totalDue)}</div>
-              </div>
-              <div>
-                <div style="font-size:11px; color:var(--muted);">المتحصّل</div>
-                <div style="font-size:18px; font-weight:800; color:var(--success);">${formatMoney(collectedTotal)}</div>
-              </div>
-              <div>
-                <div style="font-size:11px; color:var(--muted);">المتبقى</div>
-                <div style="font-size:18px; font-weight:800; color:${remaining > 0 ? "var(--danger)" : "var(--success)"};">${formatMoney(remaining)}</div>
-              </div>
-            </div>
-            ${allPaid ? `<div style="margin-top:10px; padding:10px; background:#dcfce7; border-radius:var(--r-sm); color:#166534; font-weight:700; text-align:center;">تم تحصيل كل البنود بنجاح ✓</div>` : ""}
-          </div>
-
-          <div id="lateItemsList" style="display:flex; flex-direction:column; gap:8px;">
-            ${items.map((item, idx) => {
-              const paid = item._paid;
-              return `
-              <div class="lateItemCard" data-idx="${idx}" style="
-                display:flex; align-items:center; justify-content:space-between;
-                padding:12px 14px; border-radius:var(--r-md); border:1px solid ${paid ? "#bbf7d0" : "var(--border)"};
-                background:${paid ? "#f0fdf4" : "var(--bg)"}; opacity:${paid ? "0.7" : "1"};
-                ${paid ? "text-decoration:line-through;" : ""}
-              ">
-                <div style="flex:1; min-width:0;">
-                  <div style="font-weight:700; font-size:14px; ${paid ? "color:var(--success);" : ""}">
-                    ${paid ? "✓ " : ""}${escapeHTML(item.label)}
-                  </div>
-                  <div style="font-size:18px; font-weight:800; color:${paid ? "var(--success)" : "var(--danger)"}; margin-top:2px;">
-                    ${paid ? "تم التحصيل" : formatMoney(item.amount)}
-                  </div>
-                </div>
-                ${paid ? "" : `
-                <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
-                  <select class="select lateMethodSelect" data-idx="${idx}" style="width:100px; padding:4px 8px; font-size:12px;">
-                    <option value="cash">كاش</option>
-                    <option value="wallet" ${Number(student.walletBalance || 0) >= item.amount ? "" : "disabled"}>محفظة ${Number(student.walletBalance || 0) > 0 ? "(" + formatMoney(student.walletBalance) + ")" : ""}</option>
-                  </select>
-                  <button class="btn btn-success btn-sm paySingleBtn" data-idx="${idx}">${icons.money} دفع</button>
-                </div>
-                `}
-              </div>
-            `;}).join("")}
-          </div>
-        </div>
-        <div class="modal__actions">
-          ${allPaid ? `<button class="btn btn-success closeModalBtn">تم ✓</button>` : `<button class="btn btn-outline closeModalBtn">إغلاق</button>`}
-        </div>
-      </div>
-    `;
-
-    ov.querySelectorAll(".closeModalBtn").forEach((b) => b.addEventListener("click", close));
-    ov.querySelectorAll(".paySingleBtn").forEach((btn) => {
-      btn.addEventListener("click", () => payItem(Number(btn.dataset.idx)));
-    });
-  }
-
-  const close = () => { ov.remove(); renderLateStudentsList(); };
-  ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
-
-  async function payItem(idx) {
-    const item = items[idx];
-    if (!item || item._paid || item.amount <= 0) return;
-
-    const methodEl = ov.querySelector(`.lateMethodSelect[data-idx="${idx}"]`);
-    const method = methodEl ? methodEl.value : "cash";
-
-    const ok = await confirmDialog({
-      title: "تأكيد التحصيل",
-      body: `هل تم تحصيل <strong>${formatMoney(item.amount)}</strong> (${item.label}) من <strong>${escapeHTML(student.name)}</strong>؟`,
-      confirmText: "تم التحصيل",
-      tone: "success",
-    });
-    if (!ok) return;
-
-    const freshStudents = getStudents();
-    const freshStudent = freshStudents.find((s) => s.id === student.id);
-    if (method === "wallet") {
-      const deducted = Math.min(item.amount, Number(freshStudent.walletBalance || 0));
-      freshStudent.walletBalance = Math.max(0, Number(freshStudent.walletBalance || 0) - deducted);
-      if (deducted > 0) {
-        const wtxns = getWalletTransactions();
-        wtxns.push({
-          id: generateId("WLT"),
-          studentId: student.id,
-          groupId: student.groupId,
-          amount: deducted,
-          type: "deduction",
-          note: `خصم من المحفظة — تحصيل يدوى`,
-          date: todayISO(),
-        });
-        saveWalletTransactions(wtxns);
-      }
-    }
-
-    if (item.type === "charge") {
-      const charges = getExtraCharges();
-      const chg = charges.find((c) => c.id === item.id);
-      if (chg) {
-        chg.status = "paid";
-        saveExtraCharges(charges);
-      }
-      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
-      // تسجيل التحصيل النقدي في الوردية + دفتر الأستاذ
-      if (method === "cash") {
-        recordCashCollection(student.id, item.amount, "extra_charge", `تحصيل ${chg?.name || "استحقاق"}`, { referenceId: item.id, referenceType: "charge" });
-      } else {
-        recordLedgerOnly(student.id, "wallet_payment", `سداد محفظة — ${chg?.name || "استحقاق"}`, 0, item.amount, { referenceType: "wallet" });
-      }
-    } else if (item.type === "session") {
-      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
-      const payPayments = getAllPayments();
-      const payRecord = payPayments.find((p) => p.id === item.id);
-      if (payRecord) {
-        payRecord.status = "paid";
-        payRecord.amount = item.amount;
-        payRecord.date = todayISO();
-        payRecord.walletUsed = method === "wallet" ? item.amount : 0;
-        payRecord.note = `تحصيل يدوى (${method === "wallet" ? "محفظة" : "كاش"})`;
-      }
-      savePayments(payPayments);
-      // تسجيل التحصيل النقدي في الوردية + دفتر الأستاذ
-      if (method === "cash") {
-        recordCashCollection(student.id, item.amount, "late", `تحصيل يدوى — حصة`, { referenceId: item.id, referenceType: "payment" });
-      } else {
-        recordLedgerOnly(student.id, "wallet_payment", "سداد محفظة — تحصيل يدوى", 0, item.amount, { referenceType: "wallet" });
-      }
-    } else {
-      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
-    }
-
-    saveStudents(freshStudents);
-    item._paid = true;
-    collectedTotal += item.amount;
-    student = freshStudent;
-    toast(`تم تحصيل ${formatMoney(item.amount)} ✓`, "success");
-    render();
-  }
-
-  render();
-}
 
 /* ================= تقرير الإيرادات الشهرية ================= */
 let selectedTermId = "";
@@ -1183,6 +844,20 @@ function renderMonthlyTab(box) {
 
   const grandTotal = sorted.reduce((sum, [, m]) => sum + m.collected + m.walletUsed, 0);
 
+  // حساب الديون الشهرية للمخطط الشريطي
+  const unpaidByMonth = {};
+  payments.filter((p) => p.status === "unpaid").forEach((p) => {
+    const month = (p.sessionDate || p.date || "").slice(0, 7);
+    if (month) unpaidByMonth[month] = (unpaidByMonth[month] || 0) + Number(p.amount || 0) + Number(p.lateBalanceDelta || 0);
+  });
+
+  const stackedData = sorted.map(([ym, m]) => ({
+    label: getMonthLabel(ym),
+    cash: m.collected,
+    wallet: m.walletUsed,
+    debt: unpaidByMonth[ym] || 0,
+  }));
+
   box.innerHTML = `
     <div class="card card-pad" style="margin-bottom:14px;">
       <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
@@ -1216,6 +891,8 @@ function renderMonthlyTab(box) {
         </div>
       </div>
     </div>
+
+    ${renderStackedBar(stackedData, { title: "الإيرادات الشهرية — كاش / محفظة / ديون" })}
 
     ${sorted.length ? sorted.map(([ym, m]) => {
       const total = m.collected + m.walletUsed;

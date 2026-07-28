@@ -32,6 +32,7 @@ import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsA
 import { openWhatsApp } from "./whatsapp.js";
 import { getEscalationLevel, getLevelMeta } from "./escalation-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
+import { openCollectionDialog } from "./collection-dialog.js";
 
 const content = await initPage("quick-attendance");
 
@@ -685,16 +686,28 @@ function renderRoster() {
     .sort((a, b) => (a.code || "").localeCompare(b.code || "", "en", { numeric: true }));
 
   const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance");
-  const payments = getPayments().filter((p) => p.date === selectedDate);
+  const allPaymentsForCheck = getAllPayments();
   const charges = getExtraCharges();
   const statuses = getStudentStatuses();
 
   const studentData = roster.map((s) => {
     const record = attendance.find((a) => a.studentId === s.id);
     const status = record ? statuses.find((st) => st.id === record.statusId) : null;
-    const payment = payments.find((p) => p.studentId === s.id);
     const hasOtherDues = studentHasOtherDues(s, charges);
-    return { student: s, record, status, payment, hasOtherDues };
+
+    let stillUnpaid = false;
+    if (record && status?.payment === "unpaid") {
+      const paid = allPaymentsForCheck.some(
+        (p) => p.studentId === s.id && p.attendanceId === record.id && p.status === "paid"
+      );
+      stillUnpaid = !paid;
+    }
+
+    const hasUnpaidPayments = allPaymentsForCheck.some(
+      (p) => p.studentId === s.id && p.status === "unpaid" && !p.isVoided
+    );
+    const hasCollectionDues = hasUnpaidPayments || Number(s.lateBalance || 0) > 0;
+    return { student: s, record, status, hasOtherDues, stillUnpaid, hasCollectionDues };
   });
 
   let filtered = studentData;
@@ -739,6 +752,7 @@ function renderRoster() {
         <button type="button" class="numpad__toggle" id="numpadToggle" title="البحث بالاسم">أب</button>
       </div>
       <div class="roster-controls__filter" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-info btn-sm" id="guestBtn">${icons.users} طالب زائر</button>
         <select class="select select--roster" id="filterSelect">
           <option value="all" ${currentFilter === "all" ? "selected" : ""}>جميع الطلاب (${totalStudents})</option>
           <option value="paid" ${currentFilter === "paid" ? "selected" : ""}>✓ تم الدفع (${paidCount})</option>
@@ -865,7 +879,10 @@ function renderFilteredStudents() {
       stillUnpaid = !paid;
     }
 
-    const hasCollectionDues = stillUnpaid || Number(s.lateBalance || 0) > 0;
+    const hasUnpaidPayments = payments.some(
+      (p) => p.studentId === s.id && p.status === "unpaid" && !p.isVoided
+    );
+    const hasCollectionDues = hasUnpaidPayments || Number(s.lateBalance || 0) > 0;
 
     return { student: s, record, status, hasOtherDues, stillUnpaid, hasCollectionDues };
   });
@@ -950,8 +967,8 @@ function renderStudentsList(data) {
   box.querySelectorAll(".paidBtn").forEach((btn) => btn.addEventListener("click", () => quickMark(btn.dataset.id, "ST-PAID")));
   box.querySelectorAll(".unpaidBtn").forEach((btn) => btn.addEventListener("click", () => quickMark(btn.dataset.id, "ST-UNPAID")));
   box.querySelectorAll(".editRowBtn").forEach((btn) => btn.addEventListener("click", () => openEditMenu(btn.dataset.id)));
-  box.querySelectorAll(".collectBtn").forEach((btn) => btn.addEventListener("click", () => openCollectDialog(btn.dataset.id)));
-  box.querySelectorAll(".otherDuesBtn").forEach((btn) => btn.addEventListener("click", () => openOtherDuesPopup(btn.dataset.id)));
+  box.querySelectorAll(".collectBtn").forEach((btn) => btn.addEventListener("click", () => openCollectionDialog(btn.dataset.id, { onClose: refreshUI })));
+  box.querySelectorAll(".otherDuesBtn").forEach((btn) => btn.addEventListener("click", () => openCollectionDialog(btn.dataset.id, { onClose: refreshUI })));
   box.querySelectorAll(".unlockBtn").forEach((btn) => btn.addEventListener("click", () => handleUnlock(btn.dataset.id)));
 }
 
@@ -1053,230 +1070,6 @@ async function handleUnlock(studentId) {
   refreshUI();
 }
 
-/**
- * شاشة تحصيل المتأخرات — كل حصة زرار ملون، اضغط للتحصيل
- */
-async function openCollectDialog(studentId) {
-  const student = getStudents().find((s) => s.id === studentId);
-  if (!student) return;
-
-  const group = findGroup(getGroups(), student.groupId);
-  if (!group) return;
-
-  const statuses = getStudentStatuses();
-
-  function getUnpaidItems() {
-    const st = getStudents().find((s) => s.id === studentId);
-    const attendance = getAttendance().filter(
-      (a) => a.studentId === studentId && a.category === "attendance"
-    );
-    const payments = getAllPayments();
-
-    const items = [];
-    attendance.forEach((record) => {
-      const status = statuses.find((s) => s.id === record.statusId);
-      if (status && status.payment === "unpaid") {
-        const alreadyPaid = payments.some(
-          (p) => p.studentId === studentId && p.attendanceId === record.id && p.status === "paid"
-        );
-        if (alreadyPaid) return;
-        items.push({
-          id: record.id,
-          date: record.date,
-          amount: dueAmount(st || student, group),
-          statusId: record.statusId,
-          type: "session",
-        });
-      }
-    });
-
-    if (Number((st || student).lateBalance || 0) > 0) {
-      items.push({
-        id: "late-balance",
-        date: "متأخرات سابقة",
-        amount: (st || student).lateBalance,
-        statusId: null,
-        type: "late",
-      });
-    }
-    return items;
-  }
-
-  let unpaidItems = getUnpaidItems();
-  if (!unpaidItems.length) {
-    toast("لا توجد مستحقات على هذا الطالب", "success");
-    return;
-  }
-
-  const overlay = ensureOverlay();
-
-  function renderList() {
-    unpaidItems = getUnpaidItems();
-    if (!unpaidItems.length) {
-      overlay.innerHTML = `
-        <div class="modal" style="max-width:480px;">
-          <div class="modal__head">
-            <div class="modal__title">تحصيل — ${escapeHTML(student.name)}</div>
-          </div>
-          <div class="modal__body" style="text-align:center; padding:32px;">
-            <div style="font-size:32px; margin-bottom:8px;">✅</div>
-            <div style="font-weight:700; color:var(--success);">تم تحصيل كل المستحقات</div>
-          </div>
-          <div class="modal__actions">
-            <button class="btn btn-primary" id="modalDone">تم</button>
-          </div>
-        </div>`;
-      overlay.querySelector("#modalDone")?.addEventListener("click", () => overlay.classList.remove("is-open"));
-      return;
-    }
-
-    const total = unpaidItems.reduce((sum, i) => sum + i.amount, 0);
-
-    const itemsHTML = unpaidItems.map((item, idx) => {
-      const isLate = item.type === "late";
-      const label = isLate ? item.date : "حصة — " + formatDateAr(item.date);
-      const color = isLate ? "var(--danger)" : "var(--warning)";
-      const bg = isLate ? "rgba(239,68,68,0.08)" : "rgba(245,158,11,0.08)";
-      const border = isLate ? "rgba(239,68,68,0.25)" : "rgba(245,158,11,0.25)";
-
-      return `
-        <button type="button" class="collect-item-btn" data-index="${idx}"
-          style="width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px;
-                 background:${bg}; border:2px solid ${border}; border-radius:var(--r-md);
-                 cursor:pointer; text-align:right; transition:all 0.15s;">
-          <div style="width:40px; height:40px; border-radius:var(--r-sm); background:${color}; color:#fff;
-                      display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">
-            ${icons.money}
-          </div>
-          <div style="flex:1;">
-            <div style="font-weight:700; font-size:14px; color:${color};">${label}</div>
-            <div style="font-size:12px; color:var(--muted);">اضغط للتحصيل</div>
-          </div>
-          <div style="font-weight:800; font-size:16px; color:${color};">${formatMoney(item.amount)}</div>
-        </button>`;
-    }).join("");
-
-    overlay.innerHTML = `
-      <div class="modal" style="max-width:480px;">
-        <div class="modal__head">
-          <div class="modal__title">تحصيل — ${escapeHTML(student.name)}</div>
-        </div>
-        <div class="modal__body">
-          <div style="margin-bottom:12px; padding:10px; background:var(--bg); border-radius:var(--r-sm); font-size:12px; color:var(--muted);">
-            اضغط على الحصة لتأكيد تحصيلها
-          </div>
-          <div style="display:flex; flex-direction:column; gap:8px;">${itemsHTML}</div>
-          <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:700;">الإجمالى المتبقي:</span>
-            <span style="font-weight:800; font-size:18px; color:var(--danger);">${formatMoney(total)}</span>
-          </div>
-        </div>
-        <div class="modal__actions">
-          <button class="btn btn-primary" id="modalDone">تم</button>
-        </div>
-      </div>`;
-
-    overlay.querySelector("#modalDone")?.addEventListener("click", () => overlay.classList.remove("is-open"));
-
-    overlay.querySelectorAll(".collect-item-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const idx = Number(btn.dataset.index);
-        const item = unpaidItems[idx];
-        if (!item) return;
-
-        const label = item.type === "late" ? item.date : "حصة " + formatDateAr(item.date);
-        const ok = await confirmDialog({
-          title: "تأكيد التحصيل",
-          body: `هل تم تحصيل <strong>${formatMoney(item.amount)}</strong> (${label}) من <strong>${escapeHTML(student.name)}</strong>؟`,
-          confirmText: "تم التحصيل",
-          tone: "success",
-        });
-        if (!ok) return;
-
-        if (item.type === "late") {
-          const students = getStudents();
-          const si = students.findIndex((s) => s.id === studentId);
-          if (si >= 0) {
-            students[si].lateBalance = Math.max(0, (students[si].lateBalance || 0) - item.amount);
-            saveStudents(students);
-          }
-          const payments = getAllPayments();
-          payments.push({
-            id: generateId("PAY"),
-            studentId,
-            groupId: student.groupId,
-            attendanceId: null,
-            date: todayISO(),
-            sessionDate: "متأخرات سابقة",
-            amount: item.amount,
-            status: "paid",
-            lateBalanceDelta: -item.amount,
-            note: "تحصيل متأخرات سابقة",
-          });
-          savePayments(payments);
-          recordCashCollection(studentId, item.amount, "late", "تحصيل متأخرات سابقة", { referenceId: payments[payments.length - 1].id, referenceType: "payment" });
-        } else {
-          const payments = getAllPayments();
-          payments.push({
-            id: generateId("PAY"),
-            studentId,
-            groupId: student.groupId,
-            attendanceId: item.id,
-            date: todayISO(),
-            sessionDate: item.date,
-            amount: item.amount,
-            status: "paid",
-            lateBalanceDelta: -item.amount,
-            note: `حصة (${formatDateAr(item.date)})`,
-          });
-          savePayments(payments);
-          recordCashCollection(studentId, item.amount, "session", `حصة (${formatDateAr(item.date)})`, { referenceId: payments[payments.length - 1].id, referenceType: "payment" });
-        }
-
-        toast(`تم تحصيل ${formatMoney(item.amount)} من ${student.name}`, "success");
-        renderList();
-        overlay.classList.add("is-open");
-        refreshUI();
-      });
-    });
-  }
-
-  overlay.classList.add("is-open");
-  renderList();
-}
-
-async function openOtherDuesPopup(studentId) {
-  const student = getStudents().find((s) => s.id === studentId);
-  const charges = getExtraCharges().filter((c) => c.studentId === studentId && c.status === "unpaid");
-
-  const buttons = charges.map((c) => ({ id: `charge:${c.id}`, label: `${c.name} — ${formatMoney(c.amount)}`, tone: "warning" }));
-  if (Number(student?.lateBalance || 0) > 0) {
-    buttons.push({ id: "lateBalance", label: `متأخرات سابقة — ${formatMoney(student.lateBalance)}`, tone: "danger" });
-  }
-
-  if (!buttons.length) {
-    toast("لا توجد مستحقات أخرى على هذا الطالب", "success");
-    return;
-  }
-
-  const chosen = await menuDialog({
-    title: `مستحقات أخرى — ${student?.name || ""}`,
-    bodyHTML: `<div class="field__hint">اضغط على البند لتأكيد تحصيله</div>`,
-    buttons,
-  });
-  if (!chosen) return;
-
-  if (chosen === "lateBalance") {
-    const result = settleLateBalance(studentId);
-    if (result) toast(`تم تحصيل المتأخرات (${formatMoney(result.amount)})`, "success");
-  } else if (chosen.startsWith("charge:")) {
-    const chargeId = chosen.slice(7);
-    const charge = settleExtraCharge(chargeId);
-    if (charge) toast(`تم تحصيل "${charge.name}"`, "success");
-  }
-
-  refreshUI();
-}
 
 async function openDepositDialog(studentId) {
   const student = getStudents().find((s) => s.id === studentId);

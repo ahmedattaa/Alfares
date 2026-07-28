@@ -1385,3 +1385,59 @@ body{ overflow-x:hidden; min-width:0; width:100%; }
 
   .denomination-grid{ grid-template-columns:1fr !important; }
 }
+
+/* =========================================================
+   Collection Dialog v2 — Animations
+   ========================================================= */
+
+@keyframes ucdFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ucdFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes ucdSlideUp {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes ucdPop {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.ucd-pay-btn:hover {
+  background: color-mix(in srgb, var(--success) 85%, #000) !important;
+  transform: scale(1.04);
+  box-shadow: 0 3px 12px rgba(16,185,129,0.35) !important;
+}
+
+.ucd-pay-btn:active {
+  transform: scale(0.96);
+}
+
+.ucd-confirm:hover {
+  box-shadow: 0 6px 24px rgba(16,185,129,0.4) !important;
+  transform: translateY(-1px);
+}
+
+.ucd-confirm:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.ucd-pay-all:hover {
+  background: color-mix(in srgb, var(--success) 85%, #000) !important;
+  box-shadow: 0 3px 12px rgba(16,185,129,0.35) !important;
+}
+
+.ucd-pay-all:active {
+  transform: scale(0.98);
+}
+
+.ucd-item {
+  transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+}
