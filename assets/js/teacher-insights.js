@@ -5,7 +5,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGroups, getGrades, getAttendance, getStudentStatuses, getExams, getSession, getAchievements, markAchievementSent } from "./storage.js";
+import { getStudents, getGroups, getGrades, getAttendance, getStudentStatuses, getExams, getSession, getAchievements, markAchievementSent, getCenterName } from "./storage.js";
 import { formatMoney, escapeHTML, formatDateAr } from "./helpers.js";
 import { toast, confirmDialog } from "./ui.js";
 import { gradeName, findGroup } from "./lookups.js";
@@ -16,6 +16,7 @@ import { getEscalationSummary, overrideEscalation, logPhoneCall, buildEscalation
 import { renderBellCurve, renderDistributionBar } from "./charts.js";
 import { renderTemplate } from "./whatsapp-templates.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { canPerformAction } from "./permissions.js";
 
 const content = await initPage("teacher-insights");
 let activeSection = null;
@@ -470,7 +471,7 @@ function renderLatePayersSection(box) {
             <div class="ti-student-row__meta">${escapeHTML(group?.name || "")} · ${escapeHTML(group?.code || "")}</div>
           </div>
           <div class="ti-student-row__amount">${formatMoney(s.lateBalance || 0)}</div>
-          <button type="button" class="btn btn-outline btn-sm ti-collect-btn" data-id="${s.id}" title="تحصيل المتأخرات" style="color:var(--success); border-color:var(--success);">💰</button>
+          ${canPerformAction(getSession(), "teacher-insights", "collection") ? `<button type="button" class="btn btn-outline btn-sm ti-collect-btn" data-id="${s.id}" title="تحصيل المتأخرات" style="color:var(--success); border-color:var(--success);">💰</button>` : ""}
           <button type="button" class="btn btn-outline btn-sm ti-wa-btn" data-phone="${escapeHTML(s.parentPhone || s.phone || "")}" data-name="${escapeHTML(s.name)}">${icons.whatsapp}</button>
           ${s.parentPhone || s.phone ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone || s.phone || "")}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
           <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
@@ -578,7 +579,7 @@ function renderFollowupEscalation(inner, summary, groups, grades, session) {
           ${s.escalationLevel === 1 || s.escalationLevel === 2 ? `<button type="button" class="btn btn-success btn-sm escWaBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" data-phone="${escapeHTML(s.parentPhone || "")}" data-level="${s.escalationLevel}">${icons.whatsapp}</button>` : ""}
           ${s.escalationLevel === 1 || s.escalationLevel === 2 ? (s.parentPhone ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : "") : ""}
           ${s.escalationLevel === 2 ? `<button type="button" class="btn btn-warning btn-sm escCallBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">✓ تم الاتصال</button>` : ""}
-          ${s.escalationLevel === 3 ? `<button type="button" class="btn btn-danger btn-sm escOverrideBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">فتح القفل</button>` : ""}
+          ${s.escalationLevel === 3 && canPerformAction(getSession(), "teacher-insights", "escalation_override") ? `<button type="button" class="btn btn-danger btn-sm escOverrideBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}">فتح القفل</button>` : ""}
           <a class="btn btn-outline btn-sm" href="student.html?id=${s.id}">${icons.arrowLeft}</a>
         </div>
       </div>
@@ -830,7 +831,7 @@ async function sendBulkDisengagedAlert(data) {
         studentName: s.name,
         groupName,
         reason,
-        centerName: "سنتر الفارس التعليمي",
+        centerName: getCenterName(),
       });
       return { phone, message, studentName: s.name };
     });
@@ -1119,7 +1120,7 @@ function bindWhatsAppButtons(container) {
       const name = btn.dataset.name;
       if (!phone) { toast("لا يوجد رقم هاتف لهذا الطالب", "warning"); return; }
       try {
-        openWhatsApp(phone, renderTemplate("gen_teacher_contact", { studentName: name, centerName: "سنتر الفارس التعليمي" }));
+        openWhatsApp(phone, renderTemplate("gen_teacher_contact", { studentName: name, centerName: getCenterName() }));
       } catch (e) { /* popup blocker */ }
     });
   });

@@ -28,7 +28,7 @@ import {
 import { escapeHTML, generateId } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
 import { suggestGroupCode, gradeName } from "./lookups.js";
-import { PERMISSION_PAGES, canPerformSensitiveAction } from "./permissions.js";
+import { PERMISSION_PAGES, PAGE_ACTIONS, canPerformSensitiveAction, canPerformAction } from "./permissions.js";
 import { WEEKDAY_OPTIONS, formatDaysAr, formatTimeAr } from "./schedule.js";
 import { TEMPLATE_REGISTRY, CATEGORIES, getTemplateBody, saveTemplateOverride, resetTemplate, resetAllTemplates, getAllOverrides } from "./whatsapp-templates.js";
 
@@ -161,6 +161,15 @@ function renderCenterTab(box) {
         </div>
 
         <div class="card card-pad">
+          <div class="card__head"><div class="card__title">${icons.volume || "🔊"} المؤثرات الصوتية</div></div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="soundToggle" ${Sounds.enabled() ? "checked" : ""} style="width:16px;height:16px;">
+            تفعيل المؤثرات الصوتية للأزرار
+          </label>
+          <div class="field__hint">صوت نجاح عند الدفع، صوت إرسال للواتساب، وصوت عند الحفظ والحذف.</div>
+        </div>
+
+        <div class="card card-pad">
           <div class="card__head"><div class="card__title">${icons.wallet || "💰"} وضع الصندوق (الوردية)</div></div>
           <form id="shiftModeForm">
             <div style="display:flex; flex-direction:column; gap:10px;">
@@ -202,6 +211,7 @@ function renderCenterTab(box) {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
     saveSettings({ ...settings, ...data });
+    Sounds.save();
     toast("تم حفظ بيانات السنتر بنجاح", "success");
   });
 
@@ -209,6 +219,7 @@ function renderCenterTab(box) {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
     saveSettings({ ...settings, autoDeductWallet: data.autoDeductWallet === "on", autoDeductMaterials: data.autoDeductMaterials === "on" });
+    Sounds.save();
     toast("تم حفظ إعدادات المحفظة بنجاح", "success");
   });
 
@@ -218,7 +229,13 @@ function renderCenterTab(box) {
     const mode = data.shiftMode || "mandatory";
     saveSettings({ ...settings, shiftMode: mode });
     const labels = { mandatory: "وردية إجبارية", no_custody: "وردية بدون عهدة", disabled: "تعطيل الوردية" };
+    Sounds.save();
     toast(`تم حفظ وضع الصندوق: ${labels[mode]}`, "success");
+  });
+
+  document.getElementById("soundToggle")?.addEventListener("change", (e) => {
+    const on = Sounds.toggle();
+    toast(on ? "تم تفعيل المؤثرات الصوتية" : "تم إيقاف المؤثرات الصوتية", on ? "success" : "info");
   });
 }
 
@@ -332,6 +349,7 @@ async function deleteGrade(id) {
   if (!ok) return;
 
   saveGrades(grades.filter((x) => x.id !== id));
+  Sounds.delete();
   toast("تم حذف السنة الدراسية", "success");
   renderGradesTable();
 }
@@ -344,7 +362,10 @@ function renderGroupsTab(box) {
     <div class="card card-pad">
       <div class="card__head">
         <div class="card__title">المجموعات</div>
-        <button class="btn btn-primary btn-sm" id="addGroupBtn" ${grades.length ? "" : "disabled"}>${icons.plus} إضافة مجموعة</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" id="bulkImportGroupsBtn" style="color:var(--success);border-color:var(--success);">🚀 إدخال سريع لطلبة لمجموعة</button>
+          <button class="btn btn-primary btn-sm" id="addGroupBtn" ${grades.length ? "" : "disabled"}>${icons.plus} إضافة مجموعة</button>
+        </div>
       </div>
       ${!grades.length ? `<div class="field__hint" style="margin-bottom:14px;">أضف سنة دراسية أولًا من تبويب "السنوات الدراسية" قبل إضافة مجموعات.</div>` : ""}
       <div id="groupsTable"></div>
@@ -352,6 +373,7 @@ function renderGroupsTab(box) {
   `;
 
   document.getElementById("addGroupBtn")?.addEventListener("click", () => openGroupForm());
+  document.getElementById("bulkImportGroupsBtn")?.addEventListener("click", () => import("./bulk-import.js").then((m) => m.openBulkImportModal()));
   renderGroupsTable();
 }
 
@@ -367,7 +389,7 @@ function renderGroupsTable() {
   }
 
   box.innerHTML = `
-    <div class="table-wrap">
+    <div class="table-wrap stg-groups-table-wrap">
       <table class="table">
         <thead><tr><th>الكود</th><th>اسم المجموعة</th><th>السنة الدراسية</th><th>المعاد</th><th>سعر الحصة</th><th>عدد الطلاب</th><th></th></tr></thead>
         <tbody>
@@ -392,6 +414,25 @@ function renderGroupsTable() {
             .join("")}
         </tbody>
       </table>
+    </div>
+
+    <div class="stg-card-view">
+      ${groups.map((g) => `
+        <div class="stg-card">
+          <div class="stg-card__header">
+            <span><span class="code-pill">${escapeHTML(g.code)}</span> ${escapeHTML(g.name)}</span>
+          </div>
+          <div class="stg-card__body">
+            <div class="stg-card__row"><span class="text-muted">السنة</span><span>${escapeHTML(gradeName(grades, g.gradeId))}</span></div>
+            <div class="stg-card__row"><span class="text-muted">المعاد</span><span>${escapeHTML(formatDaysAr(g.days))} — ${escapeHTML(formatTimeAr(g.time))}</span></div>
+            <div class="stg-card__row"><span class="text-muted">سعر الحصة</span><span>${g.sessionPrice} ج.م</span></div>
+            <div class="stg-card__row"><span class="text-muted">الطلاب</span><span>${students.filter((s) => s.groupId === g.id).length} / ${g.capacity}</span></div>
+          </div>
+          <div class="stg-card__actions">
+            <button class="btn btn-outline btn-sm editGroupBtn" data-id="${g.id}">📝 تعديل</button>
+            <button class="btn btn-outline btn-sm deleteGroupBtn" data-id="${g.id}" style="color:var(--danger);">🗑️ حذف</button>
+          </div>
+        </div>`).join("")}
     </div>
   `;
 
@@ -425,7 +466,7 @@ async function openGroupForm(editId = null) {
     </div>
     <div class="field">
       <label class="field__label">أيام الحصة (يمكن اختيار أكتر من يوم)</label>
-      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:6px;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(90px,1fr)); gap:8px; margin-top:6px;">
         ${WEEKDAY_OPTIONS.map(
           (w) => `
           <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; font-weight:600; cursor:pointer;">
@@ -505,6 +546,7 @@ async function deleteGroup(id) {
   if (!ok) return;
 
   saveGroups(groups.filter((x) => x.id !== id));
+  Sounds.delete();
   toast("تم حذف المجموعة", "success");
   renderGroupsTable();
 }
@@ -656,6 +698,7 @@ async function deleteStatus(id) {
   if (!ok) return;
 
   saveStudentStatuses(statuses.filter((x) => x.id !== id));
+  Sounds.delete();
   toast("تم حذف الحالة", "success");
   renderStatusesTable();
 }
@@ -811,6 +854,7 @@ async function deleteYear(yearId) {
   saveAcademicMonths(getAcademicMonths().filter((m) => !termIds.includes(m.termId)));
   saveTerms(getTerms().filter((t) => t.yearId !== yearId));
   saveAcademicYears(years.filter((y) => y.id !== yearId));
+  Sounds.delete();
   toast("تم حذف السنة الأكاديمية", "success");
   renderAcademicTree();
 }
@@ -875,6 +919,7 @@ async function deleteTerm(termId) {
 
   saveAcademicMonths(getAcademicMonths().filter((m) => m.termId !== termId));
   saveTerms(terms.filter((t) => t.id !== termId));
+  Sounds.delete();
   toast("تم حذف الترم", "success");
   renderAcademicTree();
 }
@@ -931,6 +976,7 @@ async function deleteMonth(monthId) {
   if (!ok) return;
 
   saveAcademicMonths(months.filter((m) => m.id !== monthId));
+  Sounds.delete();
   toast("تم حذف الشهر", "success");
   renderAcademicTree();
 }
@@ -964,13 +1010,27 @@ function renderTeamTable() {
   }
 
   box.innerHTML = `
-    <div class="table-wrap">
+    <div class="table-wrap stg-team-table-wrap">
       <table class="table">
-        <thead><tr><th>الاسم</th><th>اسم المستخدم</th><th>كلمة المرور</th><th>الصلاحيات</th><th></th></tr></thead>
+        <thead><tr><th>الاسم</th><th>المستخدم</th><th>الكلمة</th><th>الصلاحيات</th><th></th></tr></thead>
         <tbody>
           ${assistants
             .map(
-              (u, idx) => `
+              (u, idx) => {
+                const perms = u.permissions || [];
+                const acts = u.actions || {};
+                const permBadges = perms.length
+                  ? perms.map((p) => {
+                      const page = PERMISSION_PAGES.find((pp) => pp.id === p);
+                      const pageActs = acts[p];
+                      const actsCount = pageActs ? pageActs.length : 0;
+                      const totalActs = (PAGE_ACTIONS[p] || []).length;
+                      const label = page ? `${page.icon} ${page.label}` : p;
+                      const detail = pageActs && actsCount < totalActs ? ` (${actsCount}/${totalActs})` : "";
+                      return `<span class="badge badge-primary" style="font-size:11px;">${label}${detail}</span>`;
+                    }).join("")
+                  : `<span class="badge badge-neutral">بدون صلاحيات</span>`;
+                return `
             <tr>
               <td style="font-weight:700;">${escapeHTML(u.name)}</td>
               <td class="text-muted" style="direction:ltr; text-align:left;">${escapeHTML(u.username)}</td>
@@ -978,26 +1038,57 @@ function renderTeamTable() {
                 <span class="text-muted pwMask" data-idx="${idx}" style="direction:ltr;">••••••</span>
                 <button type="button" class="btn btn-outline btn-icon btn-sm togglePwBtn" data-idx="${idx}" data-pw="${escapeHTML(u.password)}" title="إظهار/إخفاء" style="width:26px;height:26px;">${icons.info}</button>
               </td>
-              <td>
-                <div style="display:flex; flex-wrap:wrap; gap:5px;">
-                  ${
-                    (u.permissions || []).length
-                      ? u.permissions.map((p) => `<span class="badge badge-primary">${escapeHTML(PERMISSION_PAGES.find((pp) => pp.id === p)?.label || p)}</span>`).join("")
-                      : `<span class="badge badge-neutral">بدون صلاحيات</span>`
-                  }
-                </div>
-              </td>
+              <td><div style="display:flex; flex-wrap:wrap; gap:4px;">${permBadges}</div></td>
               <td>
                 <div class="row-actions">
                   <button class="btn btn-outline btn-icon editAssistantBtn" data-username="${escapeHTML(u.username)}" title="تعديل">${icons.edit}</button>
                   <button class="btn btn-outline btn-icon deleteAssistantBtn" data-username="${escapeHTML(u.username)}" title="حذف">${icons.trash}</button>
                 </div>
               </td>
-            </tr>`
+            </tr>`;
+              }
             )
             .join("")}
         </tbody>
       </table>
+    </div>
+
+    <div class="stg-card-view">
+      ${assistants.map((u, idx) => {
+        const perms = u.permissions || [];
+        const acts = u.actions || {};
+        const permBadges = perms.length
+          ? perms.map((p) => {
+              const page = PERMISSION_PAGES.find((pp) => pp.id === p);
+              const pageActs = acts[p];
+              const actsCount = pageActs ? pageActs.length : 0;
+              const totalActs = (PAGE_ACTIONS[p] || []).length;
+              const label = page ? `${page.icon} ${page.label}` : p;
+              const detail = pageActs && actsCount < totalActs ? ` (${actsCount}/${totalActs})` : "";
+              return `<span class="badge badge-primary" style="font-size:11px;">${label}${detail}</span>`;
+            }).join("")
+          : `<span class="badge badge-neutral">بدون صلاحيات</span>`;
+        return `
+        <div class="stg-card">
+          <div class="stg-card__header">
+            <span>${escapeHTML(u.name)}</span>
+            <span class="text-muted" style="direction:ltr; font-size:12px;">${escapeHTML(u.username)}</span>
+          </div>
+          <div class="stg-card__body">
+            <div class="stg-card__row"><span class="text-muted">الكلمة</span>
+              <span>
+                <span class="text-muted pwMask" data-idx="${idx}" style="direction:ltr;">••••••</span>
+                <button type="button" class="btn btn-outline btn-icon btn-sm togglePwBtn" data-idx="${idx}" data-pw="${escapeHTML(u.password)}" title="إظهار/إخفاء" style="width:22px;height:22px;">${icons.info}</button>
+              </span>
+            </div>
+            <div class="stg-card__row"><span class="text-muted">الصلاحيات</span><div style="display:flex;flex-wrap:wrap;gap:4px;">${permBadges}</div></div>
+          </div>
+          <div class="stg-card__actions">
+            <button class="btn btn-outline btn-sm editAssistantBtn" data-username="${escapeHTML(u.username)}">📝 تعديل</button>
+            <button class="btn btn-outline btn-sm deleteAssistantBtn" data-username="${escapeHTML(u.username)}" style="color:var(--danger);">🗑️ حذف</button>
+          </div>
+        </div>`;
+      }).join("")}
     </div>
   `;
 
@@ -1016,56 +1107,225 @@ async function openAssistantForm(editUsername = null) {
   const settings = getSettings();
   const users = settings.users || [];
   const editing = editUsername ? users.find((u) => u.username === editUsername) : null;
+  const editPerms = editing?.permissions || [];
+  const editActions = editing?.actions || {};
 
-  const bodyHTML = `
-    <div class="field">
-      <label class="field__label">الاسم</label>
-      <input class="input" name="name" required value="${editing ? escapeHTML(editing.name) : ""}" placeholder="مثال: أ. أحمد سامي">
-    </div>
-    <div class="form-grid">
-      <div class="field">
-        <label class="field__label">اسم المستخدم</label>
-        <input class="input" name="username" required value="${editing ? escapeHTML(editing.username) : ""}" ${editing ? "disabled" : ""} style="direction:ltr;">
-      </div>
-      <div class="field">
-        <label class="field__label">كلمة المرور</label>
-        <input class="input" name="password" required value="${editing ? escapeHTML(editing.password) : ""}" style="direction:ltr;">
-      </div>
-    </div>
-    <div class="field">
-      <label class="field__label">الصفحات المسموح بالوصول لها</label>
-      <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:6px;">
-        ${PERMISSION_PAGES.map(
-          (p) => `
-          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
-            <input type="checkbox" name="perm_${p.id}" ${editing?.permissions?.includes(p.id) ? "checked" : ""} style="width:16px;height:16px;">
-            ${escapeHTML(p.label)}
-          </label>`
-        ).join("")}
-      </div>
-    </div>
-  `;
+  const existing = document.getElementById("permFormOverlay");
+  if (existing) existing.remove();
 
-  const data = await formModal({ title: editing ? "تعديل مدرس مساعد" : "إضافة مدرس مساعد", bodyHTML, submitText: editing ? "حفظ التعديلات" : "إضافة", wide: true });
-  if (!data) return;
+  const ov = document.createElement("div");
+  ov.id = "permFormOverlay";
+  ov.style.cssText = `position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,0.55);backdrop-filter:blur(6px);animation:ucdFadeIn .2s ease;`;
+  document.body.appendChild(ov);
 
-  const username = editing ? editing.username : data.username.trim();
-  if (!editing && users.some((u) => u.username === username)) {
-    toast("اسم المستخدم ده مستخدم بالفعل، اختر اسم آخر", "danger");
-    return;
+  function render() {
+    ov.innerHTML = `
+      <div style="background:var(--surface,#fff);border-radius:16px;width:100%;max-width:560px;max-height:88vh;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.3);animation:ucdSlideUp .25s cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;">
+        <!-- HEADER -->
+        <div style="flex:0 0 auto;padding:16px 18px;background:linear-gradient(135deg,var(--primary),color-mix(in srgb,var(--primary) 60%,#4338CA));color:#fff;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:20px;">🛡️</span>
+            <div style="flex:1;">
+              <div style="font-size:16px;font-weight:800;">${editing ? "تعديل مدرس مساعد" : "إضافة مدرس مساعد"}</div>
+              <div style="font-size:11px;opacity:.8;">حدد الصفحة ثم الأكشنات المسموحة</div>
+            </div>
+            <button class="pf-close-x" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px;">✕</button>
+          </div>
+        </div>
+
+        <!-- BODY — scrollable -->
+        <div style="flex:1;overflow-y:auto;padding:14px 16px;">
+          <!-- معلومات الحساب -->
+          <div style="margin-bottom:14px;">
+            <div class="field" style="margin-bottom:8px;">
+              <label class="field__label">الاسم</label>
+              <input class="input pf-name" required value="${editing ? escapeHTML(editing.name) : ""}" placeholder="مثال: أ. أحمد سامي">
+            </div>
+            <div class="form-grid" style="gap:8px;">
+              <div class="field" style="margin-bottom:0;">
+                <label class="field__label">المستخدم</label>
+                <input class="input pf-username" required value="${editing ? escapeHTML(editing.username) : ""}" ${editing ? "disabled" : ""} style="direction:ltr;">
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <label class="field__label">كلمة المرور</label>
+                <input class="input pf-password" required value="${editing ? escapeHTML(editing.password) : ""}" style="direction:ltr;">
+              </div>
+            </div>
+          </div>
+
+          <div style="height:1px;background:var(--border,#E4E7EC);margin:10px 0;"></div>
+
+          <!-- الصلاحيات -->
+          <div style="font-size:13px;font-weight:700;color:var(--text,#1B2333);margin-bottom:10px;">الصلاحيات التفصيلية</div>
+
+          ${PERMISSION_PAGES.map((page) => {
+            const pageId = page.id;
+            const isChecked = editPerms.includes(pageId);
+            const actions = PAGE_ACTIONS[pageId] || [];
+            const savedActs = editActions[pageId] || [];
+            const allChecked = actions.every((a) => savedActs.includes(a.id));
+
+            return `
+            <div class="pf-page-section" data-page="${pageId}" style="margin-bottom:8px;border:1.5px solid ${isChecked ? "var(--primary,#2563EB)" : "var(--border,#E4E7EC)"};border-radius:10px;overflow:hidden;transition:border-color .2s;">
+              <!-- Page header -->
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${isChecked ? "var(--primary-light,#EEF2FF)" : "var(--bg,#F8F9FC)"};cursor:pointer;" class="pf-page-toggle" data-page="${pageId}">
+                <input type="checkbox" class="pf-page-cb" data-page="${pageId}" ${isChecked ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;">
+                <span style="font-size:15px;">${page.icon}</span>
+                <span style="flex:1;font-size:13px;font-weight:700;color:var(--text,#1B2333);">${page.label}</span>
+                <span style="font-size:10px;color:var(--muted,#6B7280);">${actions.length} صلاحية</span>
+                <span class="pf-expand-icon" style="font-size:11px;color:var(--muted,#6B7280);transition:transform .2s;${isChecked ? "transform:rotate(180deg);" : ""}">▼</span>
+              </div>
+              <!-- Actions list -->
+              <div class="pf-actions-list" data-page="${pageId}" style="display:${isChecked ? "block" : "none"};padding:6px 12px 8px;background:var(--surface,#fff);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <button type="button" class="pf-select-all" data-page="${pageId}" style="background:none;border:none;color:var(--primary,#2563EB);font-size:11px;font-weight:600;cursor:pointer;padding:2px 0;">تحديد الكل</button>
+                </div>
+                ${actions.map((action) => {
+                  const actChecked = !isChecked ? false : (savedActs.length > 0 ? savedActs.includes(action.id) : true);
+                  return `
+                  <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:600;color:${isChecked ? "var(--text,#1B2333)" : "var(--muted,#6B7280)"};transition:background .15s;${isChecked ? "" : "opacity:.5;pointer-events:none;"}" class="pf-act-label">
+                    <input type="checkbox" name="act_${pageId}_${action.id}" class="pf-act-cb" data-page="${pageId}" ${actChecked ? "checked" : ""} ${isChecked ? "" : "disabled"} style="width:14px;height:14px;cursor:pointer;">
+                    <span style="flex:1;">${action.label}</span>
+                    ${action.sensitive ? '<span style="font-size:10px;background:var(--danger-light,#FEE2E2);color:var(--danger,#E5484D);padding:1px 5px;border-radius:4px;">حساس</span>' : ""}
+                  </label>`;
+                }).join("")}
+              </div>
+            </div>`;
+          }).join("")}
+
+          <!-- تلميح -->
+          <div style="font-size:11px;color:var(--muted,#6B7280);margin-top:8px;text-align:center;">
+            📌 الصفحة без تحديد أكشنات = كل الأكشنات مسموحة
+          </div>
+        </div>
+
+        <!-- FOOTER -->
+        <div style="flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--border,#E4E7EC);display:flex;gap:8px;">
+          <button class="pf-submit" style="flex:1;padding:10px;border-radius:10px;border:none;background:var(--primary,#2563EB);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">
+            ${editing ? "حفظ التعديلات" : "إضافة"}
+          </button>
+          <button class="pf-close" style="padding:10px 16px;border-radius:10px;border:none;background:var(--surface,#fff);color:var(--muted,#6B7280);border:1.5px solid var(--border,#E4E7EC);font-size:13px;font-weight:600;cursor:pointer;">
+            إغلاق
+          </button>
+        </div>
+      </div>
+    `;
+
+    bindEvents();
   }
 
-  const permissions = PERMISSION_PAGES.filter((p) => data[`perm_${p.id}`] === "on").map((p) => p.id);
-  const record = { username, password: data.password, name: data.name, role: "assistant", permissions };
+  function bindEvents() {
+    ov.querySelector(".pf-close-x")?.addEventListener("click", close);
+    ov.querySelector(".pf-close")?.addEventListener("click", close);
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
 
-  if (editing) {
-    Object.assign(editing, record);
-  } else {
-    users.push(record);
+    ov.querySelectorAll(".pf-page-cb").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const pageId = cb.dataset.page;
+        const section = ov.querySelector(`.pf-page-section[data-page="${pageId}"]`);
+        const list = ov.querySelector(`.pf-actions-list[data-page="${pageId}"]`);
+        const expandIcon = section.querySelector(".pf-expand-icon");
+        const isChecked = cb.checked;
+
+        section.style.borderColor = isChecked ? "var(--primary,#2563EB)" : "var(--border,#E4E7EC)";
+        section.querySelector(".pf-page-toggle").style.background = isChecked ? "var(--primary-light,#EEF2FF)" : "var(--bg,#F8F9FC)";
+        list.style.display = isChecked ? "block" : "none";
+        if (expandIcon) expandIcon.style.transform = isChecked ? "rotate(180deg)" : "";
+
+        list.querySelectorAll(".pf-act-cb").forEach((actCb) => {
+          actCb.disabled = !isChecked;
+          if (!isChecked) actCb.checked = false;
+        });
+        list.querySelectorAll(".pf-act-label").forEach((label) => {
+          if (isChecked) {
+            label.style.opacity = "1";
+            label.style.pointerEvents = "";
+            label.style.color = "var(--text,#1B2333)";
+          } else {
+            label.style.opacity = ".5";
+            label.style.pointerEvents = "none";
+            label.style.color = "var(--muted,#6B7280)";
+          }
+        });
+      });
+    });
+
+    ov.querySelectorAll(".pf-page-toggle").forEach((toggle) => {
+      toggle.addEventListener("click", (e) => {
+        if (e.target.tagName === "INPUT") return;
+        const cb = toggle.querySelector(".pf-page-cb");
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+      });
+    });
+
+    ov.querySelectorAll(".pf-select-all").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const pageId = btn.dataset.page;
+        const list = ov.querySelector(`.pf-actions-list[data-page="${pageId}"]`);
+        const cbs = list.querySelectorAll(".pf-act-cb");
+        const allChecked = Array.from(cbs).every((cb) => cb.checked);
+        cbs.forEach((cb) => { cb.checked = !allChecked; });
+      });
+    });
+
+    ov.querySelector(".pf-submit")?.addEventListener("click", submit);
   }
-  saveSettings({ ...settings, users });
-  toast(editing ? "تم تحديث بيانات المدرس المساعد" : "تم إضافة المدرس المساعد بنجاح", "success");
-  renderTeamTable();
+
+  function submit() {
+    const name = ov.querySelector(".pf-name")?.value.trim();
+    const username = ov.querySelector(".pf-username")?.value.trim();
+    const password = ov.querySelector(".pf-password")?.value;
+
+    if (!name || !username || !password) {
+      toast("املأ كل البيانات المطلوبة", "danger");
+      return;
+    }
+
+    if (!editing && users.some((u) => u.username === username)) {
+      toast("اسم المستخدم ده مستخدم بالفعل", "danger");
+      return;
+    }
+
+    const permissions = [];
+    const actions = {};
+
+    PERMISSION_PAGES.forEach((page) => {
+      const cb = ov.querySelector(`.pf-page-cb[data-page="${page.id}"]`);
+      if (!cb?.checked) return;
+
+      permissions.push(page.id);
+      const acts = PAGE_ACTIONS[page.id] || [];
+      const checkedActs = acts.filter((a) => {
+        const actCb = ov.querySelector(`.pf-act-cb[data-page="${page.id}"]`);
+        if (!actCb) return true;
+        return ov.querySelector(`input[name="act_${page.id}_${a.id}"]`)?.checked;
+      });
+
+      if (checkedActs.length > 0 && checkedActs.length < acts.length) {
+        actions[page.id] = checkedActs.map((a) => a.id);
+      }
+    });
+
+    const record = { username, password, name, role: "assistant", permissions, actions };
+
+    if (editing) {
+      Object.assign(editing, record);
+    } else {
+      users.push(record);
+    }
+    saveSettings({ ...settings, users });
+    toast(editing ? "تم تحديث بيانات المدرس المساعد" : "تم إضافة المدرس المساعد بنجاح", "success");
+    close();
+    renderTeamTable();
+  }
+
+  function close() {
+    ov.style.animation = "ucdFadeOut .15s ease forwards";
+    setTimeout(() => ov.remove(), 150);
+  }
+
+  render();
 }
 
 async function deleteAssistant(username) {
@@ -1082,6 +1342,7 @@ async function deleteAssistant(username) {
   if (!ok) return;
 
   saveSettings({ ...settings, users: users.filter((x) => x.username !== username) });
+  Sounds.delete();
   toast("تم حذف المدرس المساعد", "success");
   renderTeamTable();
 }

@@ -4,19 +4,20 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, saveStudents, getGrades, getGroups, getStudentStatuses } from "./storage.js";
-import { escapeHTML, initials, formatMoney, formatDateAr, debounce } from "./helpers.js";
+import { getStudents, saveStudents, getGrades, getGroups, getStudentStatuses, getSession } from "./storage.js";
+import { escapeHTML, initials, formatMoney, debounce } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, skeletonRows } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory } from "./lookups.js";
-import { getSession } from "./storage.js";
-import { canPerformSensitiveAction } from "./permissions.js";
+import { canPerformAction } from "./permissions.js";
 import { recordActionStatus } from "./attendance-service.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 
 const content = await initPage("students");
 let searchTerm = "";
 let gradeFilter = "";
 let groupFilter = "";
+let statusFilter = "";
 let currentPage = 0;
 const PAGE_SIZE = 25;
 
@@ -29,7 +30,12 @@ function render() {
         <div class="page__title">الطلاب</div>
         <div class="page__subtitle">إدارة كاملة لبيانات الطلاب المسجلين</div>
       </div>
-      <a class="btn btn-primary" id="addStudentBtn" href="student-form.html">${icons.plus} إضافة طالب</a>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" id="exportExcelBtn">📊 تصدير Excel</button>
+        <button class="btn btn-outline btn-sm" id="exportPdfBtn">📄 طباعة / PDF</button>
+        <button class="btn btn-outline btn-sm" id="bulkImportStudentsBtn" style="color:var(--success);border-color:var(--success);">🚀 إدخال سريع</button>
+        <a class="btn btn-primary" id="addStudentBtn" href="student-form.html">${icons.plus} إضافة طالب</a>
+      </div>
     </div>
 
     <div class="card card-pad">
@@ -43,6 +49,12 @@ function render() {
         </select>
         <select class="select" id="groupFilterSelect" style="max-width:200px;">
           <option value="">كل المجموعات</option>
+        </select>
+        <select class="select" id="statusFilterSelect" style="max-width:180px;">
+          <option value="">كل الحالات</option>
+          <option value="active">نشط</option>
+          <option value="paused">متوقف</option>
+          <option value="expelled">مطرود</option>
         </select>
       </div>
       <div id="studentsTable">${skeletonRows(5)}</div>
@@ -71,8 +83,17 @@ function render() {
     currentPage = 0;
     renderTable();
   });
+  document.getElementById("statusFilterSelect").addEventListener("change", (e) => {
+    statusFilter = e.target.value;
+    currentPage = 0;
+    renderTable();
+  });
 
   renderTable();
+
+  document.getElementById("exportExcelBtn")?.addEventListener("click", () => exportTableToExcel("#studentsTable table", `الطلاب`));
+  document.getElementById("exportPdfBtn")?.addEventListener("click", () => printTableAsPDF("#studentsTable table", `الطلاب`));
+  document.getElementById("bulkImportStudentsBtn")?.addEventListener("click", () => import("./bulk-import.js").then((m) => m.openBulkImportModal()));
 }
 
 function fillFilterOptions() {
@@ -93,7 +114,7 @@ function renderTable() {
   const box = document.getElementById("studentsTable");
   const grades = getGrades();
   const groups = getGroups();
-  let students = getStudents().filter((s) => s.status !== "expelled" && !s.isGuest);
+  let students = getStudents().filter((s) => !s.isGuest);
 
   if (searchTerm) {
     const term = searchTerm.toLowerCase();
@@ -101,6 +122,7 @@ function renderTable() {
   }
   if (gradeFilter) students = students.filter((s) => s.gradeId === gradeFilter);
   if (groupFilter) students = students.filter((s) => s.groupId === groupFilter);
+  if (statusFilter) students = students.filter((s) => s.status === statusFilter);
 
   if (!students.length) {
     box.innerHTML = emptyStateHTML({ icon: icons.users, title: "لا يوجد طلاب مطابقين", text: "جرب تعديل كلمة البحث أو الفلاتر." });
@@ -145,12 +167,12 @@ function renderTable() {
               <td>${s.lateBalance > 0 ? `<span class="badge badge-warning" style="cursor:pointer;" data-collect-id="${s.id}">${formatMoney(s.lateBalance)} 💰</span>` : `<span class="badge badge-neutral">لا يوجد</span>`}</td>
               <td>${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : `<span class="text-muted">-</span>`}</td>
               <td>${s.discount > 0 ? `<span class="badge badge-info">${formatMoney(s.discount)}</span>` : `<span class="text-muted">-</span>`}</td>
-              <td><span class="badge ${s.status === "active" ? "badge-success" : "badge-neutral"}">${s.status === "active" ? "نشط" : "متوقف"}</span></td>
+              <td><span class="badge ${s.status === "active" ? "badge-success" : s.status === "paused" ? "badge-warning" : "badge-danger"}">${s.status === "active" ? "نشط" : s.status === "paused" ? "متوقف" : s.status === "expelled" ? "مطرود" : s.status || "—"}</span></td>
               <td>
                 <div class="row-actions">
                   <a class="btn btn-outline btn-icon" href="student-form.html?id=${s.id}" title="تعديل">${icons.edit}</a>
-                  ${canPerformSensitiveAction(getSession()) ? `<button class="btn btn-outline btn-icon actionStudentBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" title="إجراء استثنائي" style="border-color:var(--warning);color:var(--warning);">${icons.alert}</button>` : ""}
-                  ${canPerformSensitiveAction(getSession()) ? `<button class="btn btn-outline btn-icon deleteStudentBtn" data-id="${s.id}" title="حذف">${icons.trash}</button>` : ""}
+                  ${canPerformAction(getSession(), "students", "exceptional_action") ? `<button class="btn btn-outline btn-icon actionStudentBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" title="إجراء استثنائي" style="border-color:var(--warning);color:var(--warning);">${icons.alert}</button>` : ""}
+                  ${canPerformAction(getSession(), "students", "delete") ? `<button class="btn btn-outline btn-icon deleteStudentBtn" data-id="${s.id}" title="حذف">${icons.trash}</button>` : ""}
                 </div>
               </td>
             </tr>`
@@ -198,6 +220,7 @@ async function deleteStudent(id) {
   if (!ok) return;
 
   saveStudents(students.filter((x) => x.id !== id));
+  Sounds.delete();
   toast("تم حذف الطالب", "success");
   renderTable();
 }
@@ -211,7 +234,7 @@ function openActionModal(studentId, studentName) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;">
+    <div class="modal">
       <div class="modal__head">
         <div class="modal__title" style="color:var(--warning);">${icons.alert} إجراء استثنائى — ${escapeHTML(studentName)}</div>
       </div>

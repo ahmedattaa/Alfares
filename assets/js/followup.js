@@ -11,6 +11,8 @@ import { gradeName, groupName, groupsForGrade } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { canPerformAction } from "./permissions.js";
+import { getSession } from "./storage.js";
 
 const content = await initPage("followup");
 let searchTerm = "";
@@ -30,7 +32,7 @@ function render() {
         <div class="page__title">متابعة الطلاب</div>
         <div class="page__subtitle">نظرة شاملة على كل حالات الحضور والدفع والإجراءات لكل طالب</div>
       </div>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn btn-outline btn-sm" id="exportExcelBtn">📊 تصدير Excel</button>
         <button class="btn btn-outline btn-sm" id="exportPdfBtn">📄 طباعة / PDF</button>
       </div>
@@ -184,7 +186,7 @@ function renderTable() {
     const hasRecentLog = lastLog ? (now - new Date(lastLog.date)) / 86400000 <= 7 : false;
 
     // مؤشر الخطر المدمج
-    const riskAbsent = Math.min(absentCount, 5); // 3 نقاط لكل غياب (حد أقصى 15)
+    const riskAbsent = Math.min(absentCount, 5); // حد أقصى 5 نقاط
     const riskFail = examAverage !== null && examAverage < 50 ? 2 : 0; // رسوب = 2 نقاط
     const riskLate = (s.lateBalance || 0) >= 200 ? 1 : 0; // متأخرات ضخمة = 1 نقطة
     const riskScore = riskAbsent + riskFail + riskLate;
@@ -209,7 +211,7 @@ function renderTable() {
       <div style="flex:1;"></div>
       <button class="btn btn-sm btn-success" id="bulkSendFollowupBtn">${icons.whatsapp} إرسال التقارير للمحددين</button>
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap fu-table-wrap">
       <table class="table">
         <thead>
           <tr>
@@ -254,7 +256,7 @@ function renderTable() {
               </td>
               <td>${r.s.lateBalance > 0 ? `<span class="badge badge-warning">${formatMoney(r.s.lateBalance)}</span>` : `<span class="badge badge-neutral">لا يوجد</span>`}</td>
               <td style="white-space:nowrap;">
-                ${r.s.lateBalance > 0 ? `<button class="btn btn-outline btn-icon collectDebtBtn" data-id="${r.s.id}" title="تحصيل المتأخرات" style="color:var(--success);border-color:var(--success);">💰</button>` : ""}
+                ${r.s.lateBalance > 0 && canPerformAction(getSession(), "followup", "collection") ? `<button class="btn btn-outline btn-icon collectDebtBtn" data-id="${r.s.id}" title="تحصيل المتأخرات" style="color:var(--success);border-color:var(--success);">💰</button>` : ""}
                 <button class="btn btn-outline btn-icon addNoteBtn" data-id="${r.s.id}" title="${logTooltip}">${recentDot}${icons.edit}</button>
                 <button class="btn btn-outline btn-icon sendFollowupWaBtn" data-id="${r.s.id}" title="إرسال تقرير متابعة شهرية واتساب">${icons.whatsapp}</button>
                 ${r.s.parentPhone ? `<a class="btn btn-outline btn-icon" href="tel:${escapeHTML(r.s.parentPhone)}" title="اتصال بولي الأمر" style="text-decoration:none;">${icons.phone}</a>` : ""}
@@ -264,6 +266,59 @@ function renderTable() {
             .join("")}
         </tbody>
       </table>
+    </div>
+
+    <!-- Mobile card view -->
+    <div class="fu-card-view">
+      ${rows.map((r) => {
+        const lastStatus = r.lastAttendance ? statuses.find((st) => st.id === r.lastAttendance.statusId) : null;
+        const hasPhone = !!(r.s.parentPhone || r.s.phone);
+        return `
+        <div class="fu-card">
+          <div class="fu-card__header">
+            <a href="student.html?id=${r.s.id}" style="text-decoration:none; color:inherit; display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+              <div class="avatar-sm">${initials(r.s.name)}</div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHTML(r.s.name)}</div>
+                <div style="font-size:11px; color:var(--muted);">${escapeHTML(gradeName(grades, r.s.gradeId))} · ${escapeHTML(groupName(groups, r.s.groupId))}</div>
+              </div>
+            </a>
+            <input type="checkbox" class="studentCb" data-id="${r.s.id}" data-has-phone="${hasPhone}" style="width:16px;height:16px;cursor:pointer;">
+          </div>
+          <div class="fu-card__stats">
+            <div class="fu-card__stat">
+              <span class="text-muted" style="font-size:11px;">خطر</span>
+              ${r.riskScore > 0 ? `<span class="badge badge-${r.riskScore >= 5 ? "danger" : r.riskScore >= 3 ? "warning" : "info"}">${r.riskScore}</span>` : `<span class="badge badge-neutral">0</span>`}
+            </div>
+            <div class="fu-card__stat">
+              <span class="text-muted" style="font-size:11px;">غياب</span>
+              <span class="badge badge-danger">${r.absentCount}</span>
+            </div>
+            <div class="fu-card__stat">
+              <span class="text-muted" style="font-size:11px;">استدعاء</span>
+              ${r.callCount > 0 ? `<span class="badge badge-warning">${r.callCount}</span>` : `<span class="badge badge-neutral">0</span>`}
+            </div>
+            <div class="fu-card__stat">
+              <span class="text-muted" style="font-size:11px;">طرد</span>
+              ${r.expelCount > 0 ? `<span class="badge badge-danger">${r.expelCount}</span>` : `<span class="badge badge-neutral">0</span>`}
+            </div>
+            <div class="fu-card__stat">
+              <span class="text-muted" style="font-size:11px;">امتحان</span>
+              ${r.examAverage != null ? `<span class="badge ${r.examAverage >= 50 ? "badge-success" : "badge-danger"}">${r.examAverage}%</span>` : `<span class="text-muted">-</span>`}
+            </div>
+            <div class="fu-card__stat">
+              <span class="text-muted" style="font-size:11px;">متأخرات</span>
+              ${r.s.lateBalance > 0 ? `<span class="badge badge-warning">${formatMoney(r.s.lateBalance)}</span>` : `<span class="badge badge-neutral">-</span>`}
+            </div>
+          </div>
+          <div class="fu-card__actions">
+            ${r.s.lateBalance > 0 && canPerformAction(getSession(), "followup", "collection") ? `<button class="btn btn-outline btn-sm collectDebtBtn" data-id="${r.s.id}" style="color:var(--success);border-color:var(--success);">💰 تحصيل</button>` : ""}
+            <button class="btn btn-outline btn-sm addNoteBtn" data-id="${r.s.id}">📝 ملاحظة</button>
+            <button class="btn btn-outline btn-sm sendFollowupWaBtn" data-id="${r.s.id}">📱 واتساب</button>
+            ${r.s.parentPhone ? `<a class="btn btn-outline btn-sm" href="tel:${escapeHTML(r.s.parentPhone)}" style="text-decoration:none;">📞 اتصال</a>` : ""}
+          </div>
+        </div>`;
+      }).join("")}
     </div>
     ${
       totalPages > 1
@@ -344,7 +399,6 @@ async function bulkSendFollowup() {
   const attendance = getAttendance();
   const exams = getExams();
   const extraCharges = getExtraCharges();
-  const settings = getSettings();
 
   const messages = studentIds
     .map((id) => {
@@ -370,6 +424,7 @@ async function bulkSendFollowup() {
 
   // فتح أول رسالة
   const first = messages[0];
+  Sounds.messageSent();
   openWhatsApp(first.phone, first.message);
 
   if (messages.length === 1) {
@@ -459,14 +514,21 @@ async function sendFollowupWhatsApp(studentId) {
 
   const defaultMessage = buildMonthlyFollowupMessage({ student, attendance, exams, extraCharges });
 
+  const phone = student.parentPhone || student.phone;
+  if (!phone) {
+    toast("لا يوجد رقم هاتف مسجل لهذا الطالب", "warning");
+    return;
+  }
+
   const message = await whatsappPreviewDialog({
     title: "إرسال تقرير متابعة شهرية",
-    recipientLabel: `ولى أمر ${student.name} (${student.parentPhone})`,
+    recipientLabel: `ولى أمر ${student.name} (${phone})`,
     defaultMessage,
   });
   if (!message) return;
 
-  openWhatsApp(student.parentPhone, message);
+  Sounds.messageSent();
+  openWhatsApp(phone, message);
 }
 
 /* ================= تصدير Excel ================= */
@@ -633,7 +695,9 @@ function getFilteredStudents() {
 function buildRowData(students, attendance, statuses, grades, groups, followupLogs) {
   const now = new Date();
   return students.map((s) => {
-    const own = attendance.filter((a) => a.studentId === s.id);
+    let own = attendance.filter((a) => a.studentId === s.id);
+    if (termFilter) own = own.filter((a) => a.termId === termFilter);
+    if (monthFilter) own = own.filter((a) => a.monthId === monthFilter);
     const countByStatus = (statusId) => own.filter((a) => a.statusId === statusId).length;
     const absentCount = countByStatus("ST-ABSENT");
     const callCount = countByStatus("ST-CALL");

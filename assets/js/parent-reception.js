@@ -16,6 +16,7 @@ import {
   getExams,
   getWalletTransactions,
   addWalletDeposit,
+  getCenterName,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr } from "./helpers.js";
 import { toast } from "./ui.js";
@@ -319,7 +320,7 @@ function renderFinanceTab(box, student) {
         studentName: student.name,
         amount: formatMoney(amount),
         newWalletBalance: formatMoney(result.newWalletBalance),
-        centerName: "سنتر الفارس التعليمي",
+        centerName: getCenterName(),
       }));
     } catch (e) { /* popup blocker */ }
     renderStudentZone();
@@ -429,7 +430,7 @@ function renderContactTab(box, student) {
     wallet: formatMoney(wallet),
     debt: formatMoney(debt),
     groupName: findGroup(getGroups(), student.groupId)?.name || "—",
-    centerName: "سنتر الفارس التعليمي",
+    centerName: getCenterName(),
   });
 
   box.innerHTML = `
@@ -453,7 +454,7 @@ function renderContactTab(box, student) {
 
   document.getElementById("waCustomBtn").addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
-    try { openWhatsApp(student.parentPhone, renderTemplate("gen_custom_opener", { studentName: student.name, centerName: "سنتر الفارس التعليمي" })); } catch (e) { /* popup blocker */ }
+    try { openWhatsApp(student.parentPhone, renderTemplate("gen_custom_opener", { studentName: student.name, centerName: getCenterName() })); } catch (e) { /* popup blocker */ }
   });
 }
 

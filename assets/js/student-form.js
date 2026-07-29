@@ -5,7 +5,7 @@
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
 import { getStudents, saveStudents, getGrades, getGroups, flushPendingWrites, applyPendingCharges } from "./storage.js";
-import { escapeHTML, generateId } from "./helpers.js";
+import { escapeHTML, todayISO, generateId } from "./helpers.js";
 import { toast } from "./ui.js";
 import { groupsForGrade, suggestStudentCode, findGroup } from "./lookups.js";
 
@@ -42,6 +42,12 @@ function render() {
         <div class="page__subtitle">${editing ? "عدّل البيانات المطلوبة واحفظ" : "املأ بيانات الطالب خطوة بخطوة"}</div>
       </div>
     </div>
+
+    ${editing?.dataStatus === "minimal" ? `
+      <div class="incomplete-banner" style="margin-bottom:14px;">
+        <span>📝 بيانات الطالب غير مكتملة — تمت إضافته عن طريق الإدخال السريع، يرجى إكمال البيانات لتفعيل التواصل مع ولي الأمر.</span>
+      </div>
+    ` : ""}
 
     <div class="card card-pad" style="max-width:760px;">
       <form id="studentForm">
@@ -83,7 +89,7 @@ function render() {
           </div>
           <div class="field">
             <label class="field__label">هاتف ولى الأمر</label>
-            <input class="input" name="parentPhone" required value="${editing ? escapeHTML(editing.parentPhone) : ""}" style="direction:ltr;">
+            <input class="input" name="parentPhone" ${editing?.dataStatus === "minimal" ? "" : "required"} value="${editing ? escapeHTML(editing.parentPhone) : ""}" style="direction:ltr;">
           </div>
         </div>
 
@@ -105,7 +111,7 @@ function render() {
         <div class="form-grid">
           <div class="field">
             <label class="field__label">تاريخ الانضمام</label>
-            <input class="input" type="date" name="joinDate" required value="${editing ? editing.joinDate : new Date().toISOString().slice(0, 10)}">
+            <input class="input" type="date" name="joinDate" required value="${editing ? editing.joinDate : todayISO()}">
           </div>
           <div class="field">
             <label class="field__label">حالة الاشتراك</label>
@@ -152,6 +158,7 @@ function render() {
 
     if (editing) {
       Object.assign(editing, data);
+      if (editing.dataStatus === "minimal") editing.dataStatus = "complete";
       saveStudents(students);
       toast("تم تحديث بيانات الطالب بنجاح", "success");
     } else {

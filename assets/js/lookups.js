@@ -14,7 +14,7 @@ export function findGroup(groups, groupId) {
 }
 
 /** إيجاد حالة طالب بمعرفها */
-export function findStatus(statuses, statusId) {
+function findStatus(statuses, statusId) {
   return statuses.find((s) => s.id === statusId) || null;
 }
 

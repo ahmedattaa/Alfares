@@ -6,18 +6,17 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getCurrentShift, getSettings, getAdvancePermissionForStudent } from "./storage.js";
+import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getSettings, getAdvancePermissionForStudent } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, debounce, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, formModal } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup, dueAmount } from "./lookups.js";
 import { recordAttendanceStatus, recordActionStatus } from "./attendance-service.js";
 import { formatTimeAr, sessionTimeStatus } from "./schedule.js";
 import { computeFinanceBreakdown, renderFinancePanelHTML } from "./finance-panel.js";
-import { sendRewardNotification } from "./whatsapp-notifications.js";
+import { sendRewardNotification, sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk } from "./whatsapp-notifications.js";
 import { getSessionsForDate, nextReadySession } from "./session-overview.js";
-import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk } from "./whatsapp-notifications.js";
 import { openWhatsApp } from "./whatsapp.js";
-import { canPerformSensitiveAction } from "./permissions.js";
+import { canPerformAction } from "./permissions.js";
 import { renderGauge } from "./charts.js";
 
 const content = await initPage("session");
@@ -159,7 +158,7 @@ function openMakeupModal(group) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
-    <div class="modal" style="max-width:560px;">
+    <div class="modal">
       <div class="modal__head">
         <div class="modal__title">${icons.users} تسجيل طالب تعويض — ${escapeHTML(group.name)}</div>
       </div>
@@ -260,7 +259,7 @@ function openGuestModal(group) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
-    <div class="modal" style="max-width:420px;">
+    <div class="modal">
       <div class="modal__head">
         <div class="modal__title">${icons.users} طالب زائر — ${escapeHTML(group.name)}</div>
       </div>
@@ -728,7 +727,10 @@ function renderStudentZone(roster) {
     <div class="card card-pad">
       <div class="flex-between" style="flex-wrap:wrap; gap:14px;">
         <div>
-          <div style="font-weight:800; font-size:19px;">${escapeHTML(student.name)}</div>
+          <div style="font-weight:800; font-size:19px;">
+            ${escapeHTML(student.name)}
+            ${student.dataStatus === "minimal" ? `<span class="badge-incomplete">🟡 بيانات ناقصة</span>` : ""}
+          </div>
           <div class="text-muted" style="font-size:13.5px; margin-top:4px;">
             ${escapeHTML(gradeName(grades, student.gradeId))} · ${escapeHTML(groupName(groups, student.groupId))} ·
             <span class="code-pill">${escapeHTML(student.code || "-")}</span>
@@ -775,10 +777,18 @@ function renderStudentZone(roster) {
           : ""
       }
 
-      ${canPerformSensitiveAction(getSession()) ? `
+      ${canPerformAction(getSession(), "session", "wallet_deposit") ? `
         <div class="divider"></div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn btn-success btn-sm" id="depositBtn">${icons.wallet} إيداع في المحفظة</button>
+        </div>
+      ` : ""}
+
+      ${student.dataStatus === "minimal" ? `
+        <div class="divider"></div>
+        <div class="incomplete-banner">
+          <span>📝 بيانات الطالب غير مكتملة — أكمل البيانات للتمكن من إرسال واتساب لولي الأمر</span>
+          <button class="btn btn-sm btn-outline" id="completeDataBtn" style="color:#92400e;border-color:#f59e0b;flex-shrink:0;">✏️ أكمل البيانات</button>
         </div>
       ` : ""}
 
@@ -798,9 +808,14 @@ function renderStudentZone(roster) {
     btn.addEventListener("click", () => onActionClick(student.id, btn.dataset.status, roster))
   );
 
-  if (canPerformSensitiveAction(getSession())) {
+  if (canPerformAction(getSession(), "session", "wallet_deposit")) {
     const depositBtnEl = document.getElementById("depositBtn");
     if (depositBtnEl) depositBtnEl.addEventListener("click", () => openDepositDialog(student.id));
+  }
+
+  const completeBtn = document.getElementById("completeDataBtn");
+  if (completeBtn) {
+    completeBtn.addEventListener("click", () => openCompleteDataDialog(student));
   }
 
   const guestPayBtnEl = document.getElementById("guestPayBtn");
@@ -852,6 +867,10 @@ function onStatusClick(studentId, statusId, roster) {
     if (result.financeInfo.remaining > 0) message += `، باقى عليه ${formatMoney(result.financeInfo.remaining)}`;
   }
   toast(message, result.status.tone === "danger" ? "danger" : "success");
+  if (status.payment === "paid") Sounds.cashRegister();
+  else if (status.category === "absent" || status.category === "action") Sounds.warning();
+  else Sounds.success();
+  if (result.student?.dataStatus === "minimal") Sounds.incompleteAlert();
 
   // إرسال إشعار واتساب تلقائي لولي الأمر (للحضور فقط)
   if (getSettings().waAutoSend !== false && status.presence === "present" && status.payment) {
@@ -906,11 +925,57 @@ async function openDepositDialog(studentId) {
   let msg = `تم إيداع ${formatMoney(amount.amount)}`;
   if (result.debtCovered > 0) msg += ` — تغطية متأخرات: ${formatMoney(result.debtCovered)}`;
   if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
+  Sounds.cashRegister();
   toast(msg, "success");
 
   const roster = getRoster();
   renderDailyFinancePanel(roster);
   renderStats(roster);
+  renderStudentZone(roster);
+}
+
+async function openCompleteDataDialog(student) {
+  const bodyHTML = `
+    <div class="form-grid">
+      <div class="field">
+        <label class="field__label">تلفون الطالب</label>
+        <input class="input" name="phone" value="${escapeHTML(student.phone || "")}" placeholder="(اختياري)" style="direction:ltr;">
+      </div>
+      <div class="field">
+        <label class="field__label">تلفون ولي الأمر</label>
+        <input class="input" name="parentPhone" value="${escapeHTML(student.parentPhone || "")}" style="direction:ltr;">
+      </div>
+      <div class="field">
+        <label class="field__label">وظيفة الأب</label>
+        <input class="input" name="fatherJob" value="${escapeHTML(student.fatherJob || "")}" placeholder="(اختياري)">
+      </div>
+      <div class="field">
+        <label class="field__label">اسم المدرسة</label>
+        <input class="input" name="school" value="${escapeHTML(student.school || "")}" placeholder="(اختياري)">
+      </div>
+    </div>
+  `;
+
+  const result = await formModal({
+    title: `✏️ أكمل بيانات — ${student.name}`,
+    bodyHTML,
+    submitText: "حفظ البيانات",
+  });
+  if (!result) return;
+
+  const allStudents = getStudents();
+  const s = allStudents.find((x) => x.id === student.id);
+  if (!s) return;
+  s.phone = result.phone || "";
+  s.parentPhone = result.parentPhone || s.parentPhone;
+  s.fatherJob = result.fatherJob || "";
+  s.school = result.school || "";
+  s.dataStatus = "complete";
+  saveStudents(allStudents);
+  Sounds.save();
+  toast("✓ تم حفظ بيانات الطالب", "success");
+
+  const roster = getRoster();
   renderStudentZone(roster);
 }
 
@@ -929,6 +994,7 @@ async function onActionClick(studentId, statusId, roster) {
   if (!ok) return;
 
   recordActionStatus(studentId, statusId, selectedDate);
+  Sounds.warning();
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
 
   // إشعار مكافأة

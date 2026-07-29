@@ -13,6 +13,8 @@ import { sendBulkExamResults, openWhatsAppBulk } from "./whatsapp-notifications.
 import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 import { detectAchievements, saveDetectedAchievements, generateMessage, getTypeMeta } from "./achievement-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
+import { canPerformAction } from "./permissions.js";
+import { getSession } from "./storage.js";
 
 const content = await initPage("exams");
 let selectedExamId = null;
@@ -124,7 +126,7 @@ function renderExamsList() {
             <span class="badge badge-primary">${e.results.length} نتيجة</span>
             <div class="row-actions" style="opacity:0.6;">
               <button class="btn btn-outline btn-icon editExamBtn" data-id="${e.id}" title="تعديل الامتحان">${icons.edit}</button>
-              <button class="btn btn-outline btn-icon deleteExamBtn" data-id="${e.id}" title="حذف الامتحان">${icons.trash}</button>
+              ${canPerformAction(getSession(), "exams", "delete") ? `<button class="btn btn-outline btn-icon deleteExamBtn" data-id="${e.id}" title="حذف الامتحان">${icons.trash}</button>` : ""}
             </div>
           </div>
         </div>`;
@@ -360,6 +362,7 @@ function renderGradesPanel() {
     }
     exam.results = results;
     saveExams(exams);
+    Sounds.save();
     toast("تم حفظ درجات الامتحان بنجاح", "success");
 
     /* ── كشف الإنجازات ── */
@@ -400,7 +403,7 @@ function buildStatsBar(scores, maxScore) {
   const highPct = Math.round((high / maxScore) * 100);
 
   return `
-    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-bottom:16px;">
       <div style="background:var(--primary-light); border-radius:10px; padding:12px 14px; text-align:center;">
         <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">متوسط المجموعة</div>
         <div style="font-size:22px; font-weight:800; color:var(--primary);">${avg}<span style="font-size:13px; font-weight:400; color:var(--muted);"> / ${maxScore}</span></div>
@@ -441,6 +444,7 @@ async function openBulkExamWhatsApp(examId) {
 
   // فتح أول رسالة
   const first = notifications[0];
+  Sounds.messageSent();
   openWhatsApp(first.phone, first.message);
 
   if (notifications.length === 1) {
@@ -510,6 +514,7 @@ async function sendExamResultWhatsApp(studentId, exam) {
   });
   if (!message) return;
 
+  Sounds.messageSent();
   openWhatsApp(student.parentPhone, message);
 }
 
@@ -533,6 +538,7 @@ async function sendExamAbsentWhatsApp(studentId, exam) {
   });
   if (!message) return;
 
+  Sounds.warning();
   openWhatsApp(student.parentPhone, message);
 }
 
@@ -572,6 +578,7 @@ async function sendBulkExamAbsentWhatsApp(exam) {
   if (!ok) return;
 
   try { openWhatsAppBulk(notifications); } catch (e) { /* popup blocker */ }
+  Sounds.warning();
   toast(`تم فتح واتساب لإرسال ${notifications.length} إشعار غياب`, "success");
 }
 
@@ -631,6 +638,7 @@ async function openExamForm() {
   });
   saveExams(exams);
   selectedExamId = exams[exams.length - 1].id;
+  Sounds.success();
   toast("تم إنشاء الامتحان بنجاح", "success");
   renderExamsFilters();
   renderExamsList();
@@ -692,6 +700,7 @@ async function openEditExamForm(examId) {
   exam.maxScore = Number(result.maxScore);
 
   saveExams(exams);
+  Sounds.success();
   toast("تم تحديث الامتحان بنجاح", "success");
   renderExamsList();
   renderGradesPanel();
@@ -715,6 +724,7 @@ async function deleteExam(examId) {
     selectedExamId = null;
     renderGradesPanel();
   }
+  Sounds.delete();
   toast("تم حذف الامتحان", "success");
   renderExamsList();
 }

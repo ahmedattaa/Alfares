@@ -2,19 +2,9 @@
 // Helpers — دوال مساعدة عامة يستخدمها كل المشروع
 // =========================================================
 
-export const qs = (sel, ctx = document) => ctx.querySelector(sel);
-export const qsa = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
-
 /** ISO date (YYYY-MM-DD) لتاريخ اليوم */
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
-}
-
-/** ISO date لتاريخ الأمس */
-export function yesterdayISO() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
 }
 
 /** تحويل تاريخ ISO لصيغة عربية مقروءة */

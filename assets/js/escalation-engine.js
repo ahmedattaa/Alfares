@@ -125,7 +125,7 @@ export function logPhoneCall(studentId, resolverName, note) {
 }
 
 /* ── جلب جميع الطلاب في حالة تصعيد ── */
-export function getEscalatedStudents() {
+function getEscalatedStudents() {
   const students = getStudents().filter((s) => s.status === "active");
   const result = [];
 

@@ -4,8 +4,7 @@
 // =========================================================
 
 import { getExams, getStudents, addAchievement, getAchievementsForStudent, getAchievements } from "./storage.js";
-import { getSession } from "./storage.js";
-import { escapeHTML } from "./helpers.js";
+import { escapeHTML, todayISO } from "./helpers.js";
 
 /* ── أنواع الإنجازات ── */
 const TYPES = {
@@ -170,7 +169,7 @@ export function saveDetectedAchievements(achievements) {
     addAchievement({
       id: `ACH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       ...a,
-      date: a.examDate || new Date().toISOString().slice(0, 10),
+      date: a.examDate || todayISO(),
       createdAt: new Date().toISOString(),
       sent: false,
       sentAt: null,
@@ -206,7 +205,7 @@ export function generateMessage(achievement, teacherName) {
 }
 
 /* ── توليد رسالة مجمّعة (إنجازات متعددة لطالب واحد) ── */
-export function generateBatchMessage(achievements, teacherName) {
+function generateBatchMessage(achievements, teacherName) {
   if (!achievements.length) return "";
   if (achievements.length === 1) return generateMessage(achievements[0], teacherName);
 
@@ -228,7 +227,7 @@ export function getTypeMeta(type) {
   return TYPES[type] || { label: type, icon: "⭐", color: "primary" };
 }
 
-export function getUnsentForStudent(studentId) {
+function getUnsentForStudent(studentId) {
   return getAchievementsForStudent(studentId).filter((a) => !a.sent);
 }
 

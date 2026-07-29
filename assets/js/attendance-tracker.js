@@ -221,7 +221,7 @@ style.textContent = `
     background: var(--bg);
   }
   .at-table {
-    border-collapse: collapse; width: 100%; min-width: 600px; font-size: 12px;
+    border-collapse: collapse; width: 100%; min-width: 500px; font-size: 12px;
   }
   .at-table th, .at-table td { padding: 6px 4px; text-align: center; border: 1px solid var(--border); }
   .at-th-month {

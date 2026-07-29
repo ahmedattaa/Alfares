@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { todayISO, escapeHTML } from "./helpers.js";
+import { todayISO, escapeHTML, formatHeaderDate } from "./helpers.js";
 import { emptyStateHTML } from "./ui.js";
 import { formatTimeAr } from "./schedule.js";
 import { getSessionsForDate } from "./session-overview.js";
@@ -28,7 +28,7 @@ function render() {
     <div class="page__header">
       <div>
         <div class="page__title">حصص اليوم</div>
-        <div class="page__subtitle">${new Date().toLocaleDateString("ar-EG", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+        <div class="page__subtitle">${formatHeaderDate()}</div>
       </div>
     </div>
 

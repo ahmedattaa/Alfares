@@ -14,25 +14,23 @@ import {
   getAllPayments,
   getExtraCharges,
   getStudentStatuses,
-  saveAttendance,
-  savePayments,
   saveStudents,
-  saveExtraCharges,
-  addWalletDeposit,
-  recordCashCollection,
   getSettings,
+  getCenterName,
   getAdvancePermissionForStudent,
+  getSession,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, menuDialog, formModal, emptyStateHTML, ensureOverlay } from "./ui.js";
 import { findGroup, statusesByCategory, dueAmount } from "./lookups.js";
-import { recordAttendanceStatus, recordActionStatus, settleLateBalance, settleExtraCharge, isStudentLocked, unlockStudent } from "./attendance-service.js";
+import { recordAttendanceStatus, recordActionStatus, isStudentLocked, unlockStudent } from "./attendance-service.js";
 import { getSessionsForDate } from "./session-overview.js";
 import { sendAttendanceNotification, sendBulkAttendanceNotifications, openWhatsAppBulk, sendRewardNotification } from "./whatsapp-notifications.js";
 import { openWhatsApp } from "./whatsapp.js";
 import { getEscalationLevel, getLevelMeta } from "./escalation-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { canPerformAction } from "./permissions.js";
 
 const content = await initPage("quick-attendance");
 
@@ -106,7 +104,7 @@ function renderSessionSummary() {
   const sessionPrice = group.sessionPrice || 0;
 
   let paidCount = 0, unpaidCount = 0, absentCount = 0, excusedCount = 0, calledCount = 0;
-  let guestPaid = 0, guestUnpaid = 0, makeupPaid = 0, makeupUnpaid = 0;
+  let guestPaid = 0, guestUnpaid = 0;
   let collected = 0, expected = 0;
   const breakdownRows = [];
 
@@ -460,7 +458,7 @@ function bindAbsenceEvents(box) {
       if (phone) {
         notifications.push({
           phone,
-          message: renderTemplate("absence_general", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }),
+          message: renderTemplate("absence_general", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: getCenterName() }),
           studentName: name,
         });
       }
@@ -483,7 +481,7 @@ function bindAbsenceEvents(box) {
 
       if (getSettings().waAutoSend !== false && phone) {
         try {
-          openWhatsApp(phone, renderTemplate("absence_without_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }));
+          openWhatsApp(phone, renderTemplate("absence_without_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: getCenterName() }));
         } catch (e) { /* popup blocker */ }
       }
 
@@ -506,7 +504,7 @@ function bindAbsenceEvents(box) {
 
       if (getSettings().waAutoSend !== false && phone) {
         try {
-          openWhatsApp(phone, renderTemplate("absence_with_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" }));
+          openWhatsApp(phone, renderTemplate("absence_with_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: getCenterName() }));
         } catch (e) { /* popup blocker */ }
         toast(`تم إرسال إشعار لولي أمر ${name}`, "success");
       }
@@ -525,7 +523,7 @@ function bindAbsenceEvents(box) {
       const phone = btn.dataset.phone;
       const name = btn.dataset.name;
       if (!phone) { toast("لا يوجد رقم هاتف", "warning"); return; }
-      try { openWhatsApp(phone, renderTemplate("absence_general", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: "سنتر الفارس التعليمي" })); } catch (e) { /* popup blocker */ }
+      try { openWhatsApp(phone, renderTemplate("absence_general", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: getCenterName() })); } catch (e) { /* popup blocker */ }
     });
   });
 }
@@ -592,7 +590,7 @@ function openGuestModal() {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
-    <div class="modal" style="max-width:420px;">
+    <div class="modal">
       <div class="modal__head">
         <div class="modal__title">${icons.users} طالب زائر — ${escapeHTML(group.name)}</div>
       </div>
@@ -604,7 +602,7 @@ function openGuestModal() {
         </div>
         <div class="field">
           <label class="field__label">تليفون ولي الأمر</label>
-          <input class="input" id="guestPhoneInput" placeholder="01xxxxxxxxx" type="tel" autocomplete="off">
+          <input class="input" id="guestPhoneInput" placeholder="01xxxxxxxxx" type="tel" pattern="01[0-9]{9}" maxlength="11" autocomplete="off">
         </div>
       </div>
       <div class="modal__actions">
@@ -629,6 +627,7 @@ function openGuestModal() {
     const phone = phoneInput.value.trim();
     if (!name) { toast("من فضلك اكتب اسم الطالب", "warning"); nameInput.focus(); return; }
     if (!phone) { toast("من فضلك اكتب تليفون ولي الأمر", "warning"); phoneInput.focus(); return; }
+    if (!/^01[0-9]{9}$/.test(phone)) { toast("رقم التليفون يجب أن يبدأ بـ 01 ويكون 11 رقم", "warning"); phoneInput.focus(); return; }
 
     const guest = addGuestStudent(name, phone, group);
     if (!guest) { toast("فشلت إضافة الزائر", "error"); return; }
@@ -752,7 +751,6 @@ function renderRoster() {
         <button type="button" class="numpad__toggle" id="numpadToggle" title="البحث بالاسم">أب</button>
       </div>
       <div class="roster-controls__filter" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-        <button class="btn btn-info btn-sm" id="guestBtn">${icons.users} طالب زائر</button>
         <select class="select select--roster" id="filterSelect">
           <option value="all" ${currentFilter === "all" ? "selected" : ""}>جميع الطلاب (${totalStudents})</option>
           <option value="paid" ${currentFilter === "paid" ? "selected" : ""}>✓ تم الدفع (${paidCount})</option>
@@ -797,8 +795,6 @@ function renderRoster() {
     currentFilter = e.target.value;
     renderRoster();
   });
-
-  document.getElementById("guestBtn")?.addEventListener("click", () => openGuestModal());
 
   document.getElementById("searchInput").addEventListener("input", (e) => {
     searchTerm = e.target.value.trim();
@@ -948,7 +944,7 @@ function renderStudentsList(data) {
               ? `
                 <span class="badge badge-${status?.tone || "neutral"}" style="margin-right:auto;">${escapeHTML(status?.name || "-")}</span>
                 <button type="button" class="btn btn-outline btn-sm editRowBtn" data-id="${s.id}">${icons.edit}</button>
-                ${hasCollectionDues ? `<button type="button" class="btn btn-success btn-sm collectBtn" data-id="${s.id}">${icons.money} تحصيل</button>` : ""}
+                ${hasCollectionDues && canPerformAction(getSession(), "session", "collection") ? `<button type="button" class="btn btn-success btn-sm collectBtn" data-id="${s.id}">${icons.money} تحصيل</button>` : ""}
               `
               : isLocked
               ? `<button type="button" class="btn btn-warning btn-sm unlockBtn" data-id="${s.id}" style="margin-right:auto;">${icons.unlock} فتح القفل</button>`
@@ -957,7 +953,7 @@ function renderStudentsList(data) {
                 <button type="button" class="btn btn-info btn-sm unpaidBtn" data-id="${s.id}">${icons.clock} حضر بدون دفع</button>
               `
           }
-          ${hasOtherDues ? `<button type="button" class="btn btn-warning btn-sm otherDuesBtn" data-id="${s.id}" title="مستحقات أخرى">${icons.money}</button>` : ""}
+          ${hasOtherDues && canPerformAction(getSession(), "session", "collection") ? `<button type="button" class="btn btn-warning btn-sm otherDuesBtn" data-id="${s.id}" title="مستحقات أخرى">${icons.money}</button>` : ""}
         </div>
       `;
     })
@@ -1067,57 +1063,6 @@ async function handleUnlock(studentId) {
 
   unlockStudent(studentId);
   toast(`تم فتح القفل على ${student.name}`, "success");
-  refreshUI();
-}
-
-
-async function openDepositDialog(studentId) {
-  const student = getStudents().find((s) => s.id === studentId);
-  if (!student) return;
-
-  const currentWallet = Number(student.walletBalance || 0);
-  const currentDebt = Number(student.lateBalance || 0);
-
-  const html = `
-    <div style="margin-bottom:12px;">
-      <div style="font-size:13px; color:var(--muted); margin-bottom:4px;">الرصيد الحالي</div>
-      <div style="font-size:18px; font-weight:800; color:var(--success);">${formatMoney(currentWallet)}</div>
-    </div>
-    ${currentDebt > 0 ? `<div style="margin-bottom:12px;"><div style="font-size:13px; color:var(--muted);">المتأخرات: <strong style="color:var(--danger);">${formatMoney(currentDebt)}</strong></div><div class="field__hint">أول حاجة هتتغطى من المتأخرات، والباقي يروح للمحفظة</div></div>` : ""}
-    <label class="field__label">المبلغ المدفوع (ج.م)</label>
-    <input type="number" class="input" name="amount" min="1" step="1" placeholder="0" autofocus required>
-  `;
-
-  const data = await formModal({
-    title: `إيداع — ${student.name}`,
-    bodyHTML: html,
-    submitText: "إيداع",
-  });
-  if (!data) return;
-
-  const amount = Number(data.amount || 0);
-  if (amount <= 0) { toast("أدخل مبلغ صحيح", "warning"); return; }
-
-  const result = addWalletDeposit(studentId, amount);
-  if (!result) { toast("فشلت عملية الإيداع", "error"); return; }
-
-  let msg = `تم إيداع ${formatMoney(amount)}`;
-  if (result.debtCovered > 0) msg += ` — تغطية متأخرات: ${formatMoney(result.debtCovered)}`;
-  if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
-  toast(msg, "success");
-
-  try {
-    if (getSettings().waAutoSend !== false && student.parentPhone) {
-      openWhatsApp(student.parentPhone, renderTemplate("wallet_deposit", {
-        studentName: student.name,
-        amount: formatMoney(amount),
-        debtCovered: result.debtCovered > 0 ? ` (تغطية متأخرات: ${formatMoney(result.debtCovered)})` : "",
-        newWalletBalance: formatMoney(result.newWalletBalance),
-        centerName: "سنتر الفارس التعليمي",
-      }));
-    }
-  } catch (e) { /* popup blocker */ }
-
   refreshUI();
 }
 

@@ -495,6 +495,7 @@ export const saveExams = (list) => writeJSON(KEYS.exams, list);
 /* ---------------- Settings ---------------- */
 export const getSettings = () => readJSON(KEYS.settings, {});
 export const saveSettings = (obj) => writeJSON(KEYS.settings, obj);
+export const getCenterName = () => getSettings().centerName || "سنتر الفارس التعليمي";
 
 /* ---------------- Session / Auth ---------------- */
 export function getSession() {
@@ -512,6 +513,7 @@ export function login(username, password) {
     name: user.name,
     role: user.role || "assistant",
     permissions: user.permissions || [],
+    actions: user.actions || {},
     loggedInAt: Date.now(),
   };
   writeJSON(KEYS.session, session);

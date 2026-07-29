@@ -27,6 +27,8 @@ import { gradeName, groupName, findGroup, dueAmount } from "./lookups.js";
 import { createSnapshot, renderSnapshotSummaryHTML } from "./term-snapshot.js";
 import { renderWalletReconciliationHTML, executeWalletReconciliation } from "./wallet-reconciliation.js";
 import { computePnL, renderPnLHTML } from "./pnl-report.js";
+import { canPerformAction } from "./permissions.js";
+import { getSession } from "./storage.js";
 
 const content = await initPage("rollover");
 let rolloverMode = "year"; // "year" | "term" | "financial"
@@ -42,6 +44,7 @@ function render() {
         <div class="page__title">${icons.calendar} ترحيل الطلاب</div>
         <div class="page__subtitle">نقل الطلاب + تسوية المحافظ + التقارير المالية الختامية</div>
       </div>
+      <button class="btn btn-outline btn-sm" id="bulkImportRolloverBtn" style="color:var(--success);border-color:var(--success);">🚀 إدخال سريع لطلبة لمجموعة</button>
     </div>
 
     <div class="rollover-modes">
@@ -85,6 +88,8 @@ function render() {
       render();
     });
   });
+
+  document.getElementById("bulkImportRolloverBtn")?.addEventListener("click", () => import("./bulk-import.js").then((m) => m.openBulkImportModal()));
 
   renderRolloverContent();
 }
@@ -159,7 +164,7 @@ function renderSnapshotStep(box) {
       <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
         <div>
           <label class="label" style="font-size:12px;">الترم</label>
-          <select class="select" id="snapshotTermSelect" style="min-width:200px;">
+          <select class="select" id="snapshotTermSelect" style="min-width:0; max-width:100%;">
             ${terms.map((t) => `<option value="${t.id}" ${t.id === currentTerm?.id ? "selected" : ""}>${escapeHTML(t.name)} (${t.startDate} → ${t.endDate})</option>`).join("")}
           </select>
         </div>
@@ -206,7 +211,7 @@ function renderPnLStep(box) {
         </div>
         <div>
           <label class="label" style="font-size:12px;">الفترة</label>
-          <select class="select" id="pnlPeriodId" style="min-width:220px;"></select>
+          <select class="select" id="pnlPeriodId" style="min-width:0; max-width:100%;"></select>
         </div>
         <button class="btn btn-primary btn-sm" id="generatePnLBtn">${icons.chart || "📊"} عرض التقرير</button>
       </div>
@@ -249,7 +254,7 @@ function renderExecuteStep(box) {
         <li>📋 ترحيل المديونيات كقيود افتتاحية</li>
         <li>📝 تسجيل العملية في سجل الترحيل</li>
       </ul>
-      <button class="btn btn-success" id="executeFinancialBtn">${icons.check} تنفيذ التسوية المالية</button>
+      ${canPerformAction(getSession(), "rollover", "execute") ? `<button class="btn btn-success" id="executeFinancialBtn">${icons.check} تنفيذ التسوية المالية</button>` : ""}
     </div>
     ${lastLog ? `
       <div class="card card-pad" style="margin-top:16px;">
@@ -340,7 +345,7 @@ function renderYearRollover(box) {
         <div class="card__title">معاينة الترحيل (${rows.length} طالب)</div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-outline btn-sm" id="selectAllBtn">تحديد الكل</button>
-          <button class="btn btn-primary btn-sm" id="executeYearBtn">${icons.check} تنفيذ الترحيل</button>
+          ${canPerformAction(getSession(), "rollover", "execute") ? `<button class="btn btn-primary btn-sm" id="executeYearBtn">${icons.check} تنفيذ الترحيل</button>` : ""}
         </div>
       </div>
       ${totalLate > 0 ? `<div class="field__hint" style="margin-bottom:12px; color:var(--warning);">⚠️ يوجد ${formatMoney(totalLate)} متأخرات سيتم ترحيلها كرصيد افتتاحي</div>` : ""}
@@ -525,7 +530,7 @@ function renderTermRollover(box) {
         <div class="card__title">معاينة الترحيل للترم الثاني (${rows.length} طالب)</div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-outline btn-sm" id="selectAllBtn">تحديد الكل</button>
-          <button class="btn btn-primary btn-sm" id="executeTermBtn">${icons.check} تنفيذ الترحيل</button>
+          ${canPerformAction(getSession(), "rollover", "execute") ? `<button class="btn btn-primary btn-sm" id="executeTermBtn">${icons.check} تنفيذ الترحيل</button>` : ""}
         </div>
       </div>
       <div class="field__hint" style="margin-bottom:12px;">

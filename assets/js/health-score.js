@@ -106,17 +106,17 @@ export function getHealthLabel(score) {
 }
 
 /* ── طلاب في منطقة الخطر (< 40) ── */
-export function getDangerStudents() {
+function getDangerStudents() {
   return computeAllHealthScores().filter((s) => s.health.total < 40);
 }
 
 /* ── طلاب محتاجين متابعة (40–59) ── */
-export function getWarningStudents() {
+function getWarningStudents() {
   return computeAllHealthScores().filter((s) => s.health.total >= 40 && s.health.total < 60);
 }
 
 /* ── طلاب أصحاء (≥ 60) ── */
-export function getHealthyStudents() {
+function getHealthyStudents() {
   return computeAllHealthScores().filter((s) => s.health.total >= 60);
 }
 

@@ -4,7 +4,7 @@
 // =========================================================
 
 import { icons } from "./icons.js";
-import { getStudents, saveStudents, getAllPayments, savePayments, getExtraCharges, saveExtraCharges, recordCashCollection, getGroups } from "./storage.js";
+import { getStudents, saveStudents, getAllPayments, savePayments, getExtraCharges, saveExtraCharges, recordCashCollection, deductFromWallet, getGroups } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
 import { toast } from "./ui.js";
@@ -45,7 +45,7 @@ function buildCollectionItems(student) {
   });
 
   const lateBalance = Number(student.lateBalance || 0);
-  const accountedFor = items.reduce((sum, i) => sum + i.amount, 0);
+  const accountedFor = items.filter((i) => i.type === "session").reduce((sum, i) => sum + i.amount, 0);
   if (lateBalance > accountedFor) {
     items.unshift({
       type: "late",
@@ -74,6 +74,7 @@ export function openCollectionDialog(studentId, options = {}) {
 
   const group = findGroup(getGroups(), student.groupId);
   const totalDue = items.reduce((sum, i) => sum + i.amount, 0);
+  const walletBalance = Number(student.walletBalance || 0);
   let collectedTotal = 0;
   let closed = false;
 
@@ -98,6 +99,7 @@ export function openCollectionDialog(studentId, options = {}) {
 
   function render() {
     const remaining = totalDue - collectedTotal;
+    const currentWallet = Number(student.walletBalance || 0);
 
     ov.innerHTML = `
       <div style="
@@ -118,6 +120,7 @@ export function openCollectionDialog(studentId, options = {}) {
             <div style="flex:1; min-width:0;">
               <div style="font-size:15px; font-weight:800;">${escapeHTML(student.name)}</div>
               <div style="font-size:11px; opacity:0.8; margin-top:1px;">${group ? escapeHTML(group.name) : ""}</div>
+              ${currentWallet > 0 ? `<div style="font-size:10px; opacity:0.9; margin-top:2px;">💳 الرصيد: ${formatMoney(currentWallet)}</div>` : ""}
             </div>
             <div style="text-align:left;">
               <div style="font-size:18px; font-weight:800; color:#fef08a;">${formatMoney(remaining)}</div>
@@ -187,6 +190,12 @@ export function openCollectionDialog(studentId, options = {}) {
                     white-space:nowrap;
                     box-shadow:0 2px 8px rgba(16,185,129,0.25);
                   ">دفع</button>
+                  ${currentWallet > 0 ? `<button class="ucd-wallet-btn" data-idx="${idx}" style="
+                    padding:6px 10px; border-radius:8px; border:none;
+                    background:var(--info, #3B82F6); color:#fff;
+                    font-size:12px; font-weight:700; cursor:pointer;
+                    white-space:nowrap;
+                  ">💳</button>` : ""}
                 ` : ""}
               </div>
             </div>
@@ -202,12 +211,20 @@ export function openCollectionDialog(studentId, options = {}) {
               font-size:14px; font-weight:700; cursor:pointer;
             ">✓ تأكيد التحصيل</button>
           ` : `
-            <button class="ucd-pay-all" style="
-              width:100%; padding:10px; border-radius:10px; border:none;
-              background:var(--success, #1FA37C); color:#fff;
-              font-size:13px; font-weight:700; cursor:pointer;
-              display:flex; align-items:center; justify-content:center; gap:6px;
-            ">${icons.check} دفع الكل — ${formatMoney(remaining)}</button>
+            <div style="display:flex; gap:8px;">
+              <button class="ucd-pay-all" style="
+                flex:1; padding:10px; border-radius:10px; border:none;
+                background:var(--success, #1FA37C); color:#fff;
+                font-size:13px; font-weight:700; cursor:pointer;
+                display:flex; align-items:center; justify-content:center; gap:6px;
+              ">${icons.check} دفع الكل — ${formatMoney(remaining)}</button>
+              <button class="ucd-close-partial" style="
+                padding:10px 14px; border-radius:10px; border:none;
+                background:var(--surface, #fff); color:var(--muted, #6B7280);
+                border:1.5px solid var(--border, #E4E7EC);
+                font-size:13px; font-weight:600; cursor:pointer;
+              ">إغلاق</button>
+            </div>
           `}
         </div>
       </div>
@@ -228,6 +245,13 @@ export function openCollectionDialog(studentId, options = {}) {
       });
     });
 
+    ov.querySelectorAll(".ucd-wallet-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        payItemWallet(Number(btn.dataset.idx));
+      });
+    });
+
     const payAllBtn = ov.querySelector(".ucd-pay-all");
     if (payAllBtn) {
       payAllBtn.addEventListener("click", () => {
@@ -242,6 +266,11 @@ export function openCollectionDialog(studentId, options = {}) {
     if (confirmBtn) {
       confirmBtn.addEventListener("click", close);
     }
+
+    const closePartialBtn = ov.querySelector(".ucd-close-partial");
+    if (closePartialBtn) {
+      closePartialBtn.addEventListener("click", close);
+    }
   }
 
   function payItem(idx, silent = false) {
@@ -253,9 +282,63 @@ export function openCollectionDialog(studentId, options = {}) {
     collectedTotal += item.amount;
 
     if (!silent) {
+      Sounds.cashRegister();
       toast(`✓ ${item.label} — ${formatMoney(item.amount)}`, "success");
       render();
     }
+  }
+
+  function payItemWallet(idx) {
+    const item = items[idx];
+    if (!item || item._paid) return;
+
+    const freshStudents = getStudents();
+    const freshStudent = freshStudents.find((s) => s.id === student.id);
+    if (!freshStudent) return;
+
+    const avail = Number(freshStudent.walletBalance || 0);
+    if (avail <= 0) {
+      toast("رصيد المحفظة غير كافٍ", "error");
+      return;
+    }
+
+    const payAmount = Math.min(item.amount, avail);
+
+    if (item.type !== "charge") {
+      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - payAmount);
+    }
+
+    if (item.type === "session" && item.paymentRef) {
+      const freshPayments = getAllPayments();
+      const payRecord = freshPayments.find((p) => p.id === item.id);
+      if (payRecord) {
+        payRecord.status = "paid";
+        payRecord.amount = payAmount;
+        payRecord.date = todayISO();
+        payRecord.walletUsed = payAmount;
+        payRecord.note = "تحصيل من المحفظة";
+      }
+      savePayments(freshPayments);
+      recordCashCollection(student.id, payAmount, "wallet", `تحصيل محفظة — ${item.label}`, { referenceId: item.id, referenceType: "payment" });
+    } else if (item.type === "charge") {
+      const charges = getExtraCharges();
+      const chg = charges.find((c) => c.id === item.id);
+      if (chg) { chg.status = "paid"; }
+      saveExtraCharges(charges);
+      recordCashCollection(student.id, payAmount, "wallet", `تحصيل محفظة — ${item.label}`, { referenceId: item.id, referenceType: "charge" });
+    } else {
+      recordCashCollection(student.id, payAmount, "wallet", `تحصيل محفظة — ${item.label}`, { referenceType: "general_late" });
+    }
+
+    deductFromWallet(student.id, payAmount, `تحصيل — ${item.label}`);
+    saveStudents(freshStudents);
+
+    item._paid = true;
+    collectedTotal += payAmount;
+
+    Sounds.coinDrop();
+    toast(`✓ ${item.label} — ${formatMoney(payAmount)} من المحفظة`, "success");
+    render();
   }
 
   function processPayment(item) {
@@ -263,7 +346,9 @@ export function openCollectionDialog(studentId, options = {}) {
     const freshStudent = freshStudents.find((s) => s.id === student.id);
     if (!freshStudent) return;
 
-    freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
+    if (item.type !== "charge") {
+      freshStudent.lateBalance = Math.max(0, (freshStudent.lateBalance || 0) - item.amount);
+    }
 
     if (item.type === "session" && item.paymentRef) {
       const freshPayments = getAllPayments();

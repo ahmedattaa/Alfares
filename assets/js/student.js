@@ -15,6 +15,7 @@ import { computeHealthScore, getHealthColor, getHealthLabel, healthScoreHTML, he
 import { getTypeMeta } from "./achievement-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { canPerformAction } from "./permissions.js";
 
 const content = await initPage("student");
 if (content) render();
@@ -82,10 +83,16 @@ function render() {
           <button class="btn btn-outline btn-sm" id="contactParentBtn">${icons.whatsapp} مراسلة ولى الأمر</button>
           <button class="btn btn-success btn-sm" id="monthlyReportBtn">${icons.whatsapp} المتابعة الشهرية</button>
           ${student.parentPhone ? `<a class="btn btn-outline btn-sm" href="tel:${student.parentPhone}" style="text-decoration:none;">${icons.phone} اتصال بولي الأمر</a>` : ""}
-          <button class="btn btn-danger btn-sm" id="actionBtn">${icons.alert} اتخاذ إجراء استثنائى</button>
+          ${canPerformAction(getSession(), "students", "exceptional_action") ? `<button class="btn btn-danger btn-sm" id="actionBtn">${icons.alert} اتخاذ إجراء استثنائى</button>` : ""}
           <span class="badge ${student.status === "active" ? "badge-success" : "badge-neutral"}">${student.status === "active" ? "نشط" : "متوقف"}</span>
         </div>
       </div>
+      ${student.dataStatus === "minimal" ? `
+        <div class="divider"></div>
+        <div class="incomplete-banner">
+          <span>📝 بيانات الطالب غير مكتملة — أضيف عن طريق الإدخال السريع. <a href="student-form.html?id=${id}" style="color:#92400e;font-weight:800;">اضغط هنا لإكمال البيانات</a></span>
+        </div>
+      ` : ""}
       ${renderAdvancePermissions(id)}
       <div class="divider"></div>
       <div class="grid-3">
@@ -116,7 +123,7 @@ function render() {
       ${statCard("tone-success", icons.check, presentCount, "مرات الحضور")}
       ${statCard("tone-danger", icons.x, absentCount, "مرات الغياب")}
       ${statCard("tone-warning", icons.alert, countByStatus("ST-CALL"), "استدعاءات ولى الأمر")}
-      ${(student.lateBalance || 0) > 0 ? `
+      ${(student.lateBalance || 0) > 0 && canPerformAction(getSession(), "students", "collection") ? `
       <div class="stat-card" style="cursor:pointer;" id="collectDebtBtn">
         <div class="stat-card__icon tone-primary">${icons.money}</div>
         <div class="stat-card__value">${formatMoney(student.lateBalance || 0)}</div>
@@ -226,10 +233,14 @@ function render() {
 
   document.getElementById("monthlyReportBtn").addEventListener("click", () => sendMonthlyReport(student, attendance, exams, extraCharges));
   document.getElementById("contactParentBtn").addEventListener("click", () => contactParent(student));
-  document.getElementById("actionBtn").addEventListener("click", () => openActionModal(student));
+  if (canPerformAction(getSession(), "students", "exceptional_action")) {
+    document.getElementById("actionBtn")?.addEventListener("click", () => openActionModal(student));
+  }
 
   document.getElementById("addAdvancePermBtn")?.addEventListener("click", () => openAdvancePermForm(student));
-  document.getElementById("collectDebtBtn")?.addEventListener("click", () => openCollectionDialog(student.id, { onClose: render }));
+  if (canPerformAction(getSession(), "students", "collection")) {
+    document.getElementById("collectDebtBtn")?.addEventListener("click", () => openCollectionDialog(student.id, { onClose: render }));
+  }
   document.querySelectorAll(".deleteAdvancePermBtn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -275,7 +286,7 @@ function renderAdvancePermissions(studentId) {
           <span style="font-weight:700; font-size:14px;">إذن مسبق — غياب مستقبلي</span>
           ${perms.filter((p) => !p.used && p.date >= today).length ? `<span class="badge badge-primary">${perms.filter((p) => !p.used && p.date >= today).length} نشط</span>` : ""}
         </div>
-        <button class="btn btn-outline btn-sm" id="addAdvancePermBtn">${icons.plus} إضافة إذن</button>
+        ${canPerformAction(getSession(), "visit", "advance_permission") ? `<button class="btn btn-outline btn-sm" id="addAdvancePermBtn">${icons.plus} إضافة إذن</button>` : ""}
       </div>
       ${perms.length ? `
         <div style="display:flex; flex-direction:column; gap:6px;">
@@ -320,6 +331,7 @@ async function sendMonthlyReport(student, attendance, exams, extraCharges) {
   });
   if (!message) return;
 
+  Sounds.messageSent();
   openWhatsApp(student.parentPhone, message);
 }
 
@@ -332,6 +344,7 @@ async function contactParent(student) {
   });
   if (!message) return;
 
+  Sounds.messageSent();
   openWhatsApp(student.parentPhone, message);
 }
 
@@ -344,7 +357,7 @@ function openActionModal(student) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;">
+    <div class="modal">
       <div class="modal__head">
         <div class="modal__title" style="color:var(--warning);">${icons.alert} إجراء استثنائى — ${escapeHTML(student.name)}</div>
       </div>

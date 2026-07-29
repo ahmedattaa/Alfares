@@ -10,7 +10,7 @@
 // بيتقفل تلقائيًا ومبيحضرش الحصة الجاية غير لما المستير يفتح القفل.
 // =========================================================
 
-import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, initStudentLedger, getSettings, getAdvancePermissionForStudent, markAdvancePermissionUsed } from "./storage.js";
+import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, getSettings, getAdvancePermissionForStudent, markAdvancePermissionUsed } from "./storage.js";
 import { generateId, todayISO, formatMoney } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
 import { checkEscalation, buildEscalationMessage } from "./escalation-engine.js";
@@ -38,7 +38,7 @@ export function unlockStudent(studentId) {
 }
 
 /** قفل الطالب (منع الحضور للحصة الجاية) */
-export function lockStudent(studentId, reason) {
+function lockStudent(studentId, reason) {
   const students = getStudents();
   const student = students.find((s) => s.id === studentId);
   if (!student) return null;
@@ -300,7 +300,7 @@ export function recordActionStatus(studentId, statusId, date = todayISO(), note 
 }
 
 /** تسوية كل المتأخرات القديمة على الطالب دفعة واحدة (مستقلة عن حصة اليوم) — تُستخدم فى "مستحقات أخرى" */
-export function settleLateBalance(studentId) {
+function settleLateBalance(studentId) {
   const students = getStudents();
   const student = students.find((s) => s.id === studentId);
   if (!student || !(student.lateBalance > 0)) return null;
@@ -341,63 +341,14 @@ export function settleExtraCharge(chargeId) {
   if (!charge || charge.status === "paid") return null;
   charge.status = "paid";
   saveExtraCharges(charges);
-  return charge;
-}
 
-/** سجل حضور اليوم العادى لطالب معين (بدون الإجراءات الاستثنائية) */
-export function todayAttendanceRecord(studentId, date = todayISO()) {
-  return getAttendance().find((a) => a.studentId === studentId && a.date === date && a.category === "attendance");
-}
-
-/** جلب كل الطلاب الغائبين لتاريخ معين (مع أو بدون إذن) */
-export function getAbsentStudents(date = todayISO()) {
-  const attendance = getAttendance();
-  const students = getStudents();
-  const statuses = getStudentStatuses();
-
-  const absentRecords = attendance.filter((a) => a.date === date && a.category === "attendance");
-
-  return absentRecords
-    .map((record) => {
-      const status = statuses.find((s) => s.id === record.statusId);
-      if (!status || status.presence !== "absent") return null;
-      const student = students.find((s) => s.id === record.studentId);
-      if (!student) return null;
-      return { student, record, status };
-    })
-    .filter(Boolean);
-}
-
-/** تغيير حالة الغياب (من بدون إذن إلى بإذن أو العكس) */
-export function changeAbsenceStatus(studentId, newStatusId, date = todayISO()) {
-  const attendance = getAttendance();
-  const students = getStudents();
-  const statuses = getStudentStatuses();
-  const student = students.find((s) => s.id === studentId);
-  const newStatus = statuses.find((s) => s.id === newStatusId);
-
-  if (!student || !newStatus) return null;
-
-  const record = attendance.find((a) => a.studentId === studentId && a.date === date && a.category === "attendance");
-  if (!record) return null;
-
-  record.statusId = newStatusId;
-
-  // تحديث القفل حسب الحالة الجديدة
-  if (newStatusId === "ST-EXCUSED") {
-    // غياب بإذن = فتح القفل
-    student.locked = false;
-    student.lockReason = null;
-    student.lockDate = null;
-  } else if (newStatusId === "ST-ABSENT") {
-    // غياب بدون إذن = قفل
-    student.locked = true;
-    student.lockReason = "غياب بدون إذن";
-    student.lockDate = date;
+  const amount = Number(charge.amount) || 0;
+  if (amount > 0) {
+    recordCashCollection(charge.studentId, amount, "extra-charge", `تحصيل: ${charge.label || "بند إضافي"}`, {
+      referenceId: charge.id,
+      referenceType: "extra-charge",
+    });
   }
 
-  saveAttendance(attendance);
-  saveStudents(students);
-
-  return { record, student, status: newStatus };
+  return charge;
 }

@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, deductFromWallet, getAcademicYears, getTerms, getAcademicMonths, recordCashCollection, recordLedgerOnly } from "./storage.js";
+import { getAttendance, getPayments, getStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, getAcademicYears, getTerms, getAcademicMonths } from "./storage.js";
 import { escapeHTML, initials, formatMoney, todayISO, formatDateAr, addDays, startOfWeek, weekdayNameAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
 import { groupName, gradeName, groupsForGrade, findGroup, dueAmount } from "./lookups.js";
@@ -14,6 +14,9 @@ import { exportTableToExcel, printTableAsPDF } from "./export-utils.js";
 import { computePnL, renderPnLHTML } from "./pnl-report.js";
 import { renderStackedBar } from "./charts.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { openWhatsApp } from "./whatsapp.js";
+import { getCenterName, getSession } from "./storage.js";
+import { canPerformAction } from "./permissions.js";
 
 const content = await initPage("finance");
 let activeTab = "daily";
@@ -69,7 +72,7 @@ function renderDailyTab(box) {
   box.innerHTML = `
     <div class="page__header" style="margin-bottom:14px;">
       <div class="page__subtitle" style="margin:0;">ملخص كل مجموعة على حدة ليوم ${formatDateAr(selectedDate)}</div>
-      <div style="display:flex; gap:8px; align-items:center;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <button class="btn btn-outline btn-sm" id="dailyExportExcelBtn">${icons.download} تصدير Excel</button>
         <button class="btn btn-outline btn-sm" id="dailyExportPdfBtn">${icons.print} طباعة / PDF</button>
         <input class="input" type="date" id="dateFilter" style="max-width:180px;" value="${selectedDate}">
@@ -314,7 +317,7 @@ function renderPaymentsTable() {
                 <td>${formatMoney(p.amount)}</td>
                 <td><span class="badge badge-warning">غير مدفوع</span></td>
                 <td>
-                  <button class="btn btn-outline btn-sm markPaidBtn" data-student-id="${p.studentId}" data-payment-id="${p.id}">تحصيل المبلغ</button>
+                  ${canPerformAction(getSession(), "finance", "collection") ? `<button class="btn btn-outline btn-sm markPaidBtn" data-student-id="${p.studentId}" data-payment-id="${p.id}">تحصيل المبلغ</button>` : ""}
                 </td>
               </tr>`;
             })
@@ -433,7 +436,7 @@ function renderChargesTab(box) {
     <div class="card card-pad" style="margin-bottom:18px;">
       <div class="card__head">
         <div class="card__title">استحقاقات مالية</div>
-        <button class="btn btn-primary btn-sm" id="addChargeBtn">${icons.plus} إضافة استحقاق مالى</button>
+        ${canPerformAction(getSession(), "finance", "add_charge") ? `<button class="btn btn-primary btn-sm" id="addChargeBtn">${icons.plus} إضافة استحقاق مالى</button>` : ""}
       </div>
       <p class="text-muted" style="font-size:13.5px; margin-bottom:0;">
         لأى مبلغ خارج سعر الحصة العادى (زى ملازم أو أوراق امتحان أو مراجعات) — بيُطبَّق على كل طلاب مجموعة معينة،
@@ -505,10 +508,12 @@ async function openChargeForm() {
     return;
   }
 
+  const sortedGrades = grades.slice().sort((a, b) => a.order - b.order);
+
   const bodyHTML = `
     <div class="field">
       <label class="field__label">اسم الاستحقاق</label>
-      <input class="input" name="name" required placeholder="مثال: ملزمة امتحان الشهر">
+      <input class="input" name="name" required placeholder="مثال: ملزمة امتحانات الترم الأول">
     </div>
     <div class="form-grid">
       <div class="field">
@@ -516,29 +521,46 @@ async function openChargeForm() {
         <input class="input" name="amount" type="number" min="1" required value="10">
       </div>
       <div class="field">
-        <label class="field__label">المجموعة</label>
-        <select class="select" name="groupId" required>
-          ${groups.map((g) => `<option value="${g.id}">${escapeHTML(g.name)} (${g.code}) — ${escapeHTML(gradeName(grades, g.gradeId))}</option>`).join("")}
+        <label class="field__label">التطبيق على</label>
+        <select class="select" name="targetId" required>
+          <optgroup label="— سنة دراسية كاملة —">
+            ${sortedGrades.map((gr) => `<option value="GRADE_${gr.id}">كل مجموعات ${escapeHTML(gr.name)}</option>`).join("")}
+          </optgroup>
+          <optgroup label="— مجموعة محددة —">
+            ${groups.map((g) => `<option value="${g.id}">${escapeHTML(g.name)} (${g.code}) — ${escapeHTML(gradeName(grades, g.gradeId))}</option>`).join("")}
+          </optgroup>
         </select>
       </div>
     </div>
-    <div class="field__hint">هيتطبّق المبلغ ده على كل طلاب المجموعة المختارة، وهيظهر لهم منفصل عن سعر الحصة لما يحضروا.</div>
+    <div class="field__hint">اختر سنة دراسية كاملة عشان تطبق الاستحقاق على كل مجموعاتها مرة واحدة، أو اختر مجموعة معينة.</div>
   `;
 
-  const data = await formModal({ title: "إضافة استحقاق مالى جديد", bodyHTML, submitText: "تطبيق على المجموعة", wide: true });
+  const data = await formModal({ title: "إضافة استحقاق مالى جديد", bodyHTML, submitText: "تطبيق", wide: true });
   if (!data) return;
 
-  const group = getGroups().find((g) => g.id === data.groupId);
-  const groupStudents = getStudents().filter((s) => s.groupId === data.groupId);
+  let groupStudents;
+  let groupLabel;
+  if (data.targetId && data.targetId.startsWith("GRADE_")) {
+    const gradeId = data.targetId.slice(6);
+    const grade = grades.find((gr) => gr.id === gradeId);
+    const gradeGroupIds = groups.filter((g) => g.gradeId === gradeId).map((g) => g.id);
+    groupStudents = getStudents().filter((s) => gradeGroupIds.includes(s.groupId) && s.status === "active");
+    groupLabel = `كل مجموعات ${grade?.name || ""}`;
+  } else {
+    const group = getGroups().find((g) => g.id === data.targetId);
+    groupStudents = getStudents().filter((s) => s.groupId === data.targetId);
+    groupLabel = group?.name || "";
+  }
 
   if (!groupStudents.length) {
-    toast("المجموعة دى معندهاش طلاب حاليًا", "warning");
+    toast("مافيش طالب نشط حاليًا عشان يطبق عليه الاستحقاق", "warning");
     return;
   }
 
+  const isGrade = data.targetId && data.targetId.startsWith("GRADE_");
   const ok = await confirmDialog({
     title: "تأكيد التطبيق",
-    body: `هيتم تطبيق "<strong>${escapeHTML(data.name)}</strong>" بمبلغ <strong>${formatMoney(data.amount)}</strong> على <strong>${groupStudents.length}</strong> طالب فى مجموعة "${escapeHTML(group?.name || "")}". متأكد؟`,
+    body: `هيتم تطبيق "<strong>${escapeHTML(data.name)}</strong>" بمبلغ <strong>${formatMoney(data.amount)}</strong> على <strong>${groupStudents.length}</strong> طالب ${isGrade ? `فى ${groupLabel}` : `فى مجموعة "${escapeHTML(groupLabel)}"`}. متأكد؟`,
     confirmText: "تطبيق",
     tone: "success",
   });
@@ -772,7 +794,10 @@ function renderLateStudentsList() {
                 <td class="text-muted">${escapeHTML(g?.name || "—")}</td>
                 <td style="font-weight:800; color:var(--danger);">${formatMoney(s.lateBalance)}</td>
                 <td>
-                  <button class="btn btn-success btn-sm latePayBtn" data-id="${s.id}">${icons.money} تحصيل</button>
+                  <div style="display:flex; gap:6px;">
+                    ${canPerformAction(getSession(), "finance", "collection") ? `<button class="btn btn-success btn-sm latePayBtn" data-id="${s.id}">${icons.money} تحصيل</button>` : ""}
+                    ${s.parentPhone || s.phone ? `<button class="btn btn-outline btn-sm lateWaBtn" data-id="${s.id}" data-name="${escapeHTML(s.name)}" data-phone="${escapeHTML(s.parentPhone || s.phone)}" title="إرسال تذكير واتساب">${icons.whatsapp}</button>` : ""}
+                  </div>
                 </td>
               </tr>
             `;
@@ -787,6 +812,15 @@ function renderLateStudentsList() {
       openCollectionDialog(btn.dataset.id, {
         onClose: () => renderLateStudentsList(),
       });
+    })
+  );
+
+  box.querySelectorAll(".lateWaBtn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.name;
+      const phone = btn.dataset.phone;
+      const msg = `مرحباً، أنا مستر فارس من ${getCenterName()}.\nتذكير: لدى الطالب/ة ${name} مبالغ مستحقة غير مدفوعة.\nيرجى المتابعة والتواصل معنا لتسوية المبلغ.\nشكراً لكم.`;
+      openWhatsApp(phone, msg);
     })
   );
 }

@@ -509,7 +509,7 @@ table.table thead th{
 }
 table.table tbody td{
   padding: 15px 18px; border-bottom:1px solid var(--border-2);
-  font-size:14px; vertical-align:middle;
+  font-size:14px; vertical-align:middle; word-break:break-word; overflow-wrap:break-word;
 }
 table.table tbody tr{ transition: background var(--t-fast) var(--ease); }
 table.table tbody tr:hover{ background: var(--bg); }
@@ -569,7 +569,7 @@ table.table tbody tr:last-child td{ border-bottom:none; }
 .toast-stack{
   position:fixed; bottom:24px; left:24px; z-index:100;
   display:flex; flex-direction:column; gap:10px;
-  max-width:340px;
+  max-width:min(340px, calc(100vw - 48px));
 }
 .toast{
   display:flex; align-items:flex-start; gap:12px;
@@ -604,6 +604,7 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   animation: modal-in .22s var(--ease);
   overflow:hidden;
 }
+.modal--wide{ max-width:560px; }
 @keyframes modal-in{ from{ opacity:0; transform: scale(.96) translateY(6px); } to{ opacity:1; transform:scale(1) translateY(0); } }
 
 .modal__head{ padding: 20px 22px 0; }
@@ -996,26 +997,6 @@ table.table tbody tr:last-child td{ border-bottom:none; }
 }
 .pager__label{ font-weight:700; font-size:13.5px; color: var(--muted); min-width:80px; text-align:center; }
 
-/* ---------- Visible theme picker (dashboard) ---------- */
-.theme-pick-card{
-  position:relative; display:flex; flex-direction:column; align-items:center; gap:8px;
-  padding:14px 18px; border:2px solid var(--border); border-radius: var(--r-md);
-  background: var(--surface); cursor:pointer; font-family:inherit; min-width:110px;
-  transition: border-color .15s, transform .1s;
-}
-.theme-pick-card:hover{ transform: translateY(-2px); }
-.theme-pick-card.is-active{ border-color: var(--primary); box-shadow: var(--shadow-md); }
-.theme-pick-card__swatch{
-  width:36px; height:36px; border-radius:50%;
-  box-shadow: inset 0 0 0 3px rgba(255,255,255,.6), 0 0 0 1px rgba(0,0,0,.05);
-}
-.theme-pick-card__name{ font-size:13px; font-weight:700; color: var(--text); }
-.theme-pick-card__check{
-  position:absolute; top:-6px; left:-6px; width:20px; height:20px; border-radius:50%;
-  background: var(--primary); color:#fff; display:flex; align-items:center; justify-content:center;
-}
-.theme-pick-card__check svg{ width:12px; height:12px; }
-
 /* ---------- New compact theme button (dashboard) ---------- */
 .theme-btn{
   position:relative; display:flex; align-items:center; justify-content:center;
@@ -1023,7 +1004,7 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   background: var(--surface); cursor:pointer; font-family:inherit;
   transition: all .15s;
 }
-.theme-btn:hover{ transform: scale(1.1); border-color: var(--text-muted); }
+.theme-btn:hover{ transform: scale(1.1); border-color: var(--muted); }
 .theme-btn.is-active{ 
   border-color: var(--primary); 
   box-shadow: 0 0 0 3px rgba(var(--primary-rgb, 37, 99, 235), 0.2);
@@ -1150,7 +1131,8 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .quick-stats-bar{ gap:8px; padding:8px 10px; font-size:11px; flex-wrap:wrap; }
   .quick-stats-bar__value{ font-size:13px; }
 
-  .modal{ max-width:calc(100vw - 32px); padding:20px 16px; }
+  .modal,
+  .modal--wide{ max-width:calc(100vw - 32px); padding:20px 16px; }
 
   .pager{ gap:8px; padding:12px 0 0; }
   .pager__label{ font-size:12px; min-width:auto; }
@@ -1182,6 +1164,20 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .page__title{ font-size:16px; }
   .status-btn-grid{ grid-template-columns:1fr; }
   .finance-total-card__grid{ grid-template-columns:1fr; }
+}
+
+/* --- Mobile form inputs: prevent iOS zoom on focus --- */
+@media (max-width: 768px){
+  .input, .select, textarea, input:not([type=checkbox]):not([type=radio]){ font-size:16px !important; }
+}
+
+/* --- Bulk import modal responsive --- */
+.bulk-modal{ max-width:820px; width:100%; }
+@media (max-width: 640px){
+  .bulk-modal{ max-width:calc(100vw - 32px); }
+}
+@media (max-width: 400px){
+  .bulk-modal{ max-width:100%; border-radius:12px; }
 }
 
 /* =========================================================
@@ -1232,7 +1228,7 @@ table.table tbody tr:last-child td{ border-bottom:none; }
   .topbar-logout svg{ margin:0; }
 
   /* Menu toggle */
-  .menu-toggle{ width:34px; height:34px; }
+  .menu-toggle{ width:40px; height:40px; }
   .menu-toggle svg{ width:18px; height:18px; }
 }
 
@@ -1266,7 +1262,8 @@ table.table tbody tr:last-child td{ border-bottom:none; }
 /* --- Modal full width on very small (≤400px) --- */
 @media (max-width: 400px){
   .modal-overlay{ padding:10px; }
-  .modal{ max-width:100%; border-radius:var(--r-md); }
+  .modal,
+  .modal--wide{ max-width:100%; border-radius:var(--r-md); }
 }
 
 /* --- Quick attendance group cards (≤768px) --- */
@@ -1368,10 +1365,10 @@ body{ overflow-x:hidden; min-width:0; width:100%; }
   .badge{ font-size:10px; padding:2px 6px; }
   .btn-sm{ padding:5px 8px; font-size:11px; }
 
-  .btn-xs{ padding:8px 10px; font-size:12px; min-height:36px; }
+  .btn-xs{ padding:8px 10px; font-size:12px; min-height:44px; }
   .btn-xs svg{ width:16px; height:16px; }
 
-  .followup-tab-btn{ padding:8px 10px; font-size:12px; min-height:36px; }
+  .followup-tab-btn{ padding:8px 10px; font-size:12px; min-height:44px; }
 
   .absent-row{ flex-wrap:wrap; gap:6px; padding:10px 8px !important; }
   .absent-row .btn-xs{ flex:1 1 auto; min-width:0; text-align:center; }
@@ -1441,3 +1438,81 @@ body{ overflow-x:hidden; min-width:0; width:100%; }
 .ucd-item {
   transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
 }
+
+/* ─── Mobile card views ─── */
+.fu-card-view,
+.stg-card-view{ display:none; }
+
+@media (max-width:560px) {
+  .fu-table-wrap,
+  .stg-groups-table-wrap,
+  .stg-team-table-wrap{ display:none !important; }
+  .fu-card-view,
+  .stg-card-view{ display:flex; flex-direction:column; gap:10px; }
+}
+
+.fu-card,
+.stg-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:12px;
+  display:flex; flex-direction:column; gap:10px;
+}
+.fu-card__header{ display:flex; align-items:center; gap:8px; }
+.fu-card__stats{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:6px;
+  background:var(--bg); border-radius:var(--r-sm); padding:8px;
+}
+.fu-card__stat{
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.fu-card__actions{
+  display:flex; flex-wrap:wrap; gap:6px;
+  border-top:1px solid var(--border); padding-top:8px;
+}
+.stg-card__header{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-weight:700; font-size:14px;
+}
+.stg-card__body{
+  display:flex; flex-direction:column; gap:6px; font-size:13px;
+}
+.stg-card__row{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+}
+.stg-card__row .text-muted{ font-size:12px; }
+.stg-card__actions{
+  display:flex; flex-wrap:wrap; gap:6px;
+  border-top:1px solid var(--border); padding-top:8px;
+}
+
+/* ─── Bulk import preview table ─── */
+.bi-row-done{ opacity:0.5; }
+.bi-row-done td{ text-decoration:line-through; }
+.bi-add-one{ transition:all .15s var(--ease); }
+.bi-add-one:hover{ background:var(--success); color:#fff !important; border-color:var(--success) !important; }
+
+/* ─── Incomplete data badge ─── */
+.badge-incomplete{
+  display:inline-flex; align-items:center; gap:4px;
+  background:#fbbf24; color:#000; font-size:11px;
+  padding:2px 8px; border-radius:var(--r-full);
+  font-weight:700;
+  animation: pulse-badge 2s ease infinite;
+}
+@keyframes pulse-badge{
+  0%,100%{ opacity:1; }
+  50%{ opacity:0.6; }
+}
+
+/* ─── Incomplete data banner ─── */
+.incomplete-banner{
+  display:flex; align-items:center; gap:10px;
+  background:linear-gradient(135deg,#fef3c7,#fde68a);
+  border:1.5px solid #f59e0b;
+  border-radius:var(--r-md); padding:12px 16px;
+  font-weight:700; font-size:13.5px; color:#92400e;
+}
+.incomplete-banner .btn{ flex-shrink:0; }
+
