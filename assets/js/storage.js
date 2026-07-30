@@ -722,11 +722,22 @@ export function getActiveAcademicYear() {
   return getAcademicYears().find((y) => y.isCurrent) || null;
 }
 
-/** يُرجع الترم النشط حالياً (تاريخ اليوم مقعده بين startDate و endDate) أو null */
+/** يُرجع الترم النشط حالياً:
+ *  1) الترم المُعلّم بـ isCurrent === true داخل السنة النشطة (إن وُجد)
+ *  2) وإلا الترم الذي يقع تاريخ اليوم بين startDate و endDate
+ *  أو null إن لم يُعثَر */
 export function getActiveAcademicTerm() {
   const today = todayISO();
   const years = getAcademicYears();
   const terms = getTerms();
+
+  const activeYear = years.find((y) => y.isCurrent);
+  const currentTerm = terms.find((t) => t.isCurrent && (activeYear ? t.yearId === activeYear.id : true));
+  if (currentTerm) {
+    const year = years.find((y) => y.id === currentTerm.yearId);
+    return { ...currentTerm, yearName: year?.name || "" };
+  }
+
   for (const term of terms) {
     if (today >= term.startDate && today <= term.endDate) {
       const year = years.find((y) => y.id === term.yearId);

@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getGrades, getGroups, getStudentStatuses, getExams, getExtraCharges, getFollowupLogs, addFollowupLog, getLastFollowupLog, getSettings, getAcademicYears, getTerms, getAcademicMonths } from "./storage.js";
+import { getStudents, getAttendance, getGrades, getGroups, getStudentStatuses, getExams, getExtraCharges, getFollowupLogs, addFollowupLog, getLastFollowupLog, getSettings, getAcademicYears, getTerms, getAcademicMonths, getActiveAcademicTerm } from "./storage.js";
 import { escapeHTML, initials, formatMoney, formatDateAr, debounce, todayISO } from "./helpers.js";
 import { emptyStateHTML, whatsappPreviewDialog, formModal, toast, confirmDialog } from "./ui.js";
 import { gradeName, groupName, groupsForGrade } from "./lookups.js";
@@ -18,7 +18,7 @@ const content = await initPage("followup");
 let searchTerm = "";
 let gradeFilter = "";
 let groupFilter = "";
-let termFilter = "";
+let termFilter = getActiveAcademicTerm()?.id || "";
 let monthFilter = "";
 let currentPage = 0;
 const PAGE_SIZE = 25;
@@ -37,6 +37,8 @@ function render() {
         <button class="btn btn-outline btn-sm" id="exportPdfBtn">📄 طباعة / PDF</button>
       </div>
     </div>
+
+    <div id="termInfoBanner" style="display:none; margin-bottom:12px; padding:8px 12px; background:var(--bg-2); border-radius:6px; font-size:13px; align-items:center; gap:8px; flex-wrap:wrap;"></div>
 
     <div class="card card-pad">
       <div class="table-toolbar">
@@ -87,6 +89,7 @@ function render() {
     termFilter = e.target.value;
     monthFilter = "";
     currentPage = 0;
+    updateTermInfoBanner();
     updateMonthFilterOptions();
     renderTable();
   });
@@ -108,17 +111,34 @@ function fillFilterOptions() {
   const select = document.getElementById("gradeFilterSelect");
   grades.forEach((g) => select.insertAdjacentHTML("beforeend", `<option value="${g.id}">${escapeHTML(g.name)}</option>`));
 
-  // ملء قائمة الأترام
+  // ملء قائمة الأترام — تحديد الترم النشط تلقائيًا
   const years = getAcademicYears();
   const allTerms = getTerms();
   const termSelect = document.getElementById("termFilterSelect");
   allTerms.forEach((t) => {
     const year = years.find((y) => y.id === t.yearId);
-    termSelect.insertAdjacentHTML("beforeend", `<option value="${t.id}">${escapeHTML(t.name)} (${escapeHTML(year?.name || "")})</option>`);
+    const selected = t.id === termFilter ? "selected" : "";
+    termSelect.insertAdjacentHTML("beforeend", `<option value="${t.id}" ${selected}>${escapeHTML(t.name)} (${escapeHTML(year?.name || "")})</option>`);
   });
 
+  updateTermInfoBanner();
   updateGroupFilterOptions();
   updateMonthFilterOptions();
+}
+
+function updateTermInfoBanner() {
+  const banner = document.getElementById("termInfoBanner");
+  if (!banner) return;
+  if (!termFilter) { banner.style.display = "none"; return; }
+  const allTerms = getTerms();
+  const years = getAcademicYears();
+  const term = allTerms.find((t) => t.id === termFilter);
+  if (!term) { banner.style.display = "none"; return; }
+  const year = years.find((y) => y.id === term.yearId);
+  banner.style.display = "flex";
+  banner.innerHTML = `<span style="font-weight:700;">${icons.calendar}</span>
+    <span>بيانات <strong>${escapeHTML(term.name)}</strong> من <strong>${term.startDate}</strong> إلى <strong>${term.endDate}</strong></span>
+    <span style="color:var(--muted); font-size:12px;">${escapeHTML(year?.name || "")}</span>`;
 }
 
 function updateGroupFilterOptions() {

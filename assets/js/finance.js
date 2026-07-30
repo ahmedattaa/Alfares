@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getAttendance, getPayments, getStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, getAcademicYears, getTerms, getAcademicMonths } from "./storage.js";
+import { getAttendance, getPayments, getStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, getAcademicYears, getTerms, getAcademicMonths, getActiveAcademicTerm } from "./storage.js";
 import { escapeHTML, initials, formatMoney, todayISO, formatDateAr, addDays, startOfWeek, weekdayNameAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
 import { groupName, gradeName, groupsForGrade, findGroup, dueAmount } from "./lookups.js";
@@ -590,7 +590,7 @@ async function openChargeForm() {
 
 /* ================= تقرير المتأخرات المتكرر ================= */
 let lateBucket = "all";
-let lateTermFilter = "";
+let lateTermFilter = getActiveAcademicTerm()?.id || "";
 let lateMonthFilter = "";
 
 function renderLateTab(box) {
@@ -829,7 +829,7 @@ function renderLateStudentsList() {
 
 
 /* ================= تقرير الإيرادات الشهرية ================= */
-let selectedTermId = "";
+let selectedTermId = getActiveAcademicTerm()?.id || "";
 let selectedMonthId = "";
 
 function renderMonthlyTab(box) {

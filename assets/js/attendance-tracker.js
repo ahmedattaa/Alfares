@@ -5,7 +5,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGroups, getGrades, getAttendance, getStudentStatuses } from "./storage.js";
+import { getStudents, getGroups, getGrades, getAttendance, getStudentStatuses, getActiveAcademicTerm, getAcademicMonths, getTerms, getAcademicYears } from "./storage.js";
 import { escapeHTML, formatMoney, formatDateAr } from "./helpers.js";
 import { toast } from "./ui.js";
 import { findGroup, gradeName } from "./lookups.js";
@@ -29,6 +29,8 @@ function render() {
   const grade = gradeName(getGrades(), group.gradeId);
   const students = getStudents().filter((s) => s.groupId === groupId && s.status === "active").sort((a, b) => (a.code || "").localeCompare(b.code || "", "ar", { numeric: true }));
 
+  const activeTerm = getActiveAcademicTerm();
+
   content.innerHTML = `
     <div class="page__header">
       <div>
@@ -37,6 +39,13 @@ function render() {
       </div>
       <button class="btn btn-outline btn-sm" id="printAttendanceBtn">${icons.print} طباعة</button>
     </div>
+
+    ${activeTerm ? `
+    <div class="at-info-bar" style="margin-bottom:10px; background:var(--primary-light); padding:6px 14px; border-radius:8px; font-size:13px; display:flex; align-items:center; gap:8px;">
+      <span style="font-weight:700;">${icons.calendar}</span>
+      <span><strong>${escapeHTML(activeTerm.name)}</strong> من <strong>${activeTerm.startDate}</strong> إلى <strong>${activeTerm.endDate}</strong></span>
+      <span style="color:var(--muted); font-size:12px;">${escapeHTML(activeTerm.yearName || "")}</span>
+    </div>` : ""}
 
     <div class="at-info-bar">
       <span class="at-info-bar__item">${icons.users} ${students.length} طالب</span>
@@ -171,16 +180,49 @@ function renderGrid(students, group, sortBy) {
 }
 
 function buildMonths(group) {
+  const activeTerm = getActiveAcademicTerm();
+
+  // استخدم الشهور الأكاديمية المخزنة في النظام بدلًا من تقويم اليوم
+  if (activeTerm) {
+    const allAcadMonths = getAcademicMonths();
+    const termMonths = allAcadMonths
+      .filter((m) => m.termId === activeTerm.id)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+    if (termMonths.length) {
+      return termMonths.map((m) => {
+        const dates = [];
+        const startParts = m.startDate.split("-").map(Number);
+        const endParts = m.endDate.split("-").map(Number);
+        const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+        const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const y = d.getFullYear();
+          const mo = String(d.getMonth() + 1).padStart(2, "0");
+          const da = String(d.getDate()).padStart(2, "0");
+          const dateStr = `${y}-${mo}-${da}`;
+          const dayName = weekdayArForDate(dateStr);
+          if ((group.days || []).includes(dayName)) {
+            dates.push(dateStr);
+          }
+        }
+
+        return { label: m.name, dates: dates.slice(0, 8) };
+      }).filter((m) => m.dates.length > 0);
+    }
+  }
+
+  // Fallback: آخر ٥ شهور تقويمية (لما مفيش ترم نشط)
   const today = new Date();
   const months = [];
   const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 4; i >= 0; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
     const year = d.getFullYear();
     const month = d.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-
     const dates = [];
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -189,16 +231,11 @@ function buildMonths(group) {
         dates.push(dateStr);
       }
     }
-
     if (dates.length > 0) {
-      months.push({
-        label: `${monthNames[month]} ${year}`,
-        dates: dates.slice(0, 8),
-      });
+      months.push({ label: `${monthNames[month]} ${year}`, dates: dates.slice(0, 8) });
     }
   }
-
-  return months.reverse();
+  return months;
 }
 
 const style = document.createElement("style");

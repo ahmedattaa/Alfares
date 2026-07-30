@@ -1063,10 +1063,13 @@ function renderAcademicTree() {
           const termMonths = allMonths.filter((m) => m.termId === term.id);
           return `
             <div class="ap-term">
-              <div class="ap-term__header">
+                <div class="ap-term__header">
                 <div class="ap-term__title">
                   ${icons.clipboard}
                   <span>${escapeHTML(term.name)}</span>
+                  ${term.isCurrent
+                    ? `<span class="badge badge-success" style="font-size:10px;">✓ الترم الحالي</span>`
+                    : `<button class="btn btn-sm btn-outline setCurrentTermBtn" data-term-id="${term.id}" style="font-size:10px; padding:1px 6px;">${icons.check} تعيين كترم حالي</button>`}
                   <span class="text-muted" style="font-size:11px; margin-right:auto; margin-left:10px;">${term.startDate} → ${term.endDate}</span>
                 </div>
                 <div class="row-actions">
@@ -1102,8 +1105,20 @@ function renderAcademicTree() {
   box.querySelectorAll(".addMonthBtn").forEach((btn) => btn.addEventListener("click", () => openMonthForm(btn.dataset.termId)));
   box.querySelectorAll(".editTermBtn").forEach((btn) => btn.addEventListener("click", () => openTermForm(null, btn.dataset.termId)));
   box.querySelectorAll(".deleteTermBtn").forEach((btn) => btn.addEventListener("click", () => deleteTerm(btn.dataset.termId)));
+  box.querySelectorAll(".setCurrentTermBtn").forEach((btn) => btn.addEventListener("click", () => setCurrentTerm(btn.dataset.termId)));
   box.querySelectorAll(".editMonthBtn").forEach((btn) => btn.addEventListener("click", () => openMonthForm(null, btn.dataset.monthId)));
   box.querySelectorAll(".deleteMonthBtn").forEach((btn) => btn.addEventListener("click", () => deleteMonth(btn.dataset.monthId)));
+}
+
+function setCurrentTerm(termId) {
+  const terms = getTerms();
+  const term = terms.find((t) => t.id === termId);
+  if (!term) return;
+  terms.forEach((t) => t.isCurrent = t.id === termId);
+  saveTerms(terms);
+  Sounds.save();
+  toast(`تم تعيين "${term.name}" كترم حالي`, "success");
+  renderAcademicTree();
 }
 
 /* ── السنة الأكاديمية ── */
@@ -1196,18 +1211,32 @@ async function openTermForm(yearId, editId = null) {
         <input class="input" name="endDate" type="date" required value="${editing?.endDate || ""}">
       </div>
     </div>
+    <div class="field">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+        <input type="checkbox" name="isCurrent" ${editing?.isCurrent ? "checked" : ""} style="width:16px;height:16px;">
+        ترم حالي (نشط)
+      </label>
+      <div class="field__hint">الترم النشط يُستخدم في تقارير الحضور وبيانات المتابعة.</div>
+    </div>
   `;
 
   const data = await formModal({ title: editing ? "تعديل الترم" : "إضافة ترم جديد", bodyHTML, submitText: editing ? "حفظ التعديلات" : "إضافة" });
   if (!data) return;
+
+  const isCurrent = data.isCurrent === "on";
 
   if (editing) {
     editing.name = data.name;
     editing.order = Number(data.order) || editing.order;
     editing.startDate = data.startDate;
     editing.endDate = data.endDate;
+    editing.isCurrent = isCurrent;
   } else {
-    terms.push({ id: generateId("TR"), yearId: targetYearId, name: data.name, order: Number(data.order) || 1, startDate: data.startDate, endDate: data.endDate });
+    terms.push({ id: generateId("TR"), yearId: targetYearId, name: data.name, order: Number(data.order) || 1, startDate: data.startDate, endDate: data.endDate, isCurrent });
+  }
+
+  if (isCurrent) {
+    terms.forEach((t) => { if (t.id !== (editing?.id || terms[terms.length - 1]?.id) && t.yearId === targetYearId) t.isCurrent = false; });
   }
 
   saveTerms(terms);

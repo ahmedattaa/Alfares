@@ -5,8 +5,8 @@ import { icons } from "./icons.js";
 import { getStudents, saveStudents, getGrades, getGroups, getSettings } from "./storage.js";
 import { escapeHTML, generateId } from "./helpers.js";
 import { toast } from "./ui.js";
+import { suggestStudentCode, findGroup } from "./lookups.js";
 
-/* الوظيفة الرئيسية — بتستقبل groupId */
 export function openBulkImportModal(preselectedGroupId) {
   if (document.getElementById("bulkImportOverlay")) return;
 
@@ -33,7 +33,7 @@ export function openBulkImportModal(preselectedGroupId) {
     const done = parsedRows.filter((r) => addedIds.has(r._key));
 
     ov.innerHTML = `
-      <div class="bulk-modal" style="background:var(--surface,#fff);border-radius:16px;margin-bottom:40px;box-shadow:0 24px 60px rgba(0,0,0,.3);animation:ucdSlideUp .25s cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;">
+      <div class="bulk-modal" style="background:var(--surface,#fff);border-radius:16px;margin-bottom:40px;box-shadow:0 24px 60px rgba(0,0,0,.3);animation:ucdSlideUp .25s cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;max-width:820px;width:100%;">
         <!-- HEADER -->
         <div style="flex:0 0 auto;padding:18px 22px;border-bottom:1px solid var(--border);">
           <div style="display:flex;align-items:center;gap:10px;">
@@ -77,6 +77,12 @@ export function openBulkImportModal(preselectedGroupId) {
               </div>
             </div>
             <div id="biFileInfo" style="display:none;padding:10px;background:var(--bg);border-radius:var(--r-sm);font-size:13px;"></div>
+            <div id="biRawPreview" style="display:none;margin-top:8px;">
+              <details>
+                <summary style="cursor:pointer;font-size:12px;color:var(--muted);">📄 النص المستخرج من الملف</summary>
+                <pre id="biRawText" style="font-size:11px;font-family:monospace;direction:ltr;text-align:left;background:var(--bg);padding:10px;border-radius:8px;max-height:200px;overflow:auto;margin-top:6px;white-space:pre-wrap;"></pre>
+              </details>
+            </div>
           </div>
 
           <!-- STEP 3: Preview -->
@@ -136,14 +142,12 @@ export function openBulkImportModal(preselectedGroupId) {
       </div>
     `;
 
-    /* ─── Event listeners ─── */
     ov.querySelector(".bi-close-x")?.addEventListener("click", close);
     ov.querySelector("#biCloseBtn")?.addEventListener("click", close);
 
     const sel = ov.querySelector("#biGroupSelect");
     if (sel) {
       sel.addEventListener("change", () => {
-        // Update group names in preview if data exists
         updateGroupNames();
         render();
       });
@@ -173,16 +177,21 @@ export function openBulkImportModal(preselectedGroupId) {
     ov.querySelector("#biFileInput")?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
+
       const rows = await parseFile(file, students, groups, grades);
       if (!rows.length) { toast("لم نتمكن من استخراج بيانات من الملف — جرب اللصق المباشر", "warning"); return; }
+
       parsedRows = rows;
       addedIds = new Set();
+
       const info = ov.querySelector("#biFileInfo");
-      if (info) { info.style.display = "block"; info.textContent = `📄 ${file.name} — تم استخراج ${rows.length} طالب`; }
+      if (info) {
+        info.style.display = "block";
+        info.textContent = `📄 ${file.name} — تم استخراج ${rows.length} طالب`;
+      }
       render();
     });
 
-    // Add individual
     ov.querySelectorAll(".bi-add-one").forEach((btn) => {
       btn.addEventListener("click", () => {
         const key = btn.dataset.key;
@@ -196,7 +205,6 @@ export function openBulkImportModal(preselectedGroupId) {
       });
     });
 
-    // Add all
     ov.querySelector("#biAddAllBtn")?.addEventListener("click", () => {
       const pending = parsedRows.filter((r) => !addedIds.has(r._key) && !r._error);
       if (!pending.length) return;
@@ -213,7 +221,6 @@ export function openBulkImportModal(preselectedGroupId) {
   function addStudent(row) {
     const selectedGroupId = ov.querySelector("#biGroupSelect")?.value || defaultGroup?.id || "";
     const grp = groups.find((g) => g.id === selectedGroupId);
-    const settings = getSettings();
     const student = {
       id: row.code || generateId("STU"),
       name: row.name,
@@ -254,13 +261,11 @@ function parseText(text, students, groups, grades) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return [];
 
-  // Detect separator
   let actualSep = "\t";
   if (lines.some((l) => l.includes("\t"))) actualSep = "\t";
   else if (lines.some((l) => l.includes(";"))) actualSep = ";";
-  else if (lines.some((l) => l.match(/\s{3,}/))) actualSep = /\s{3,}/;
+  else if (lines.some((l) => l.match(/\s{2,}/))) actualSep = /\s{2,}/;
 
-  // Detect header
   const startIdx = isHeaderLine(lines[0], actualSep) ? 1 : 0;
 
   const rows = [];
@@ -274,36 +279,42 @@ function parseText(text, students, groups, grades) {
     } else {
       parts = lines[i].split(actualSep).map((p) => p.trim());
     }
-    if (parts.length < 2) continue;
 
-    // Detect if first column looks like a name (Arabic text) → it's not a code
-    const isCode = /^[A-Za-z0-9_-]{3,}$/.test(parts[0]);
-    const name = parts[isCode ? 1 : 0] || "";
-    const code = isCode ? parts[0] : (generateId("STU") + "_" + autoCode++);
-    const phone = parts[isCode ? 2 : 1] || "";
+    parts = parts.filter((p) => p.length > 0);
+    if (parts.length < 1) continue;
 
-    // If phone is the only value and looks like 11 digits, it IS the phone
-    // If phone is empty but parts[2] exists and looks like a phone, use it
-    let finalPhone = phone;
-    if (!finalPhone && parts.length > (isCode ? 2 : 1)) {
-      const maybePhone = parts[isCode ? 2 : 1];
-      if (/^01\d{9}$/.test(maybePhone.replace(/\s/g, ""))) finalPhone = maybePhone;
+    let code, name, phone;
+    const looksLikeCode = /^[A-Za-z0-9_/-]{2,}$/.test(parts[0]);
+
+    const sel = document.getElementById("biGroupSelect");
+    const grpId = sel?.value || groups[0]?.id || "";
+    const grp = findGroup(groups, grpId);
+
+    if (looksLikeCode && parts.length >= 2) {
+      code = parts[0];
+      name = parts[1];
+      phone = parts.length >= 3 ? parts[2] : "";
+    } else if (looksLikeCode && parts.length === 1) {
+      code = parts[0];
+      name = "";
+      phone = "";
+    } else {
+      name = parts[0];
+      const existingCount = getStudents().filter((s) => s.groupId === grpId).length;
+      code = grp ? `${grp.code}${existingCount + autoCode}` : generateId("STU") + "_" + autoCode;
+      autoCode++;
+      phone = parts.length >= 2 ? parts[1] : "";
     }
 
     const errors = [];
     if (!name) errors.push("الاسم فارغ");
     if (usedCodes.has(code)) errors.push("الكود موجود بالفعل");
-    if (finalPhone && !/^01\d{8,9}$/.test(finalPhone.replace(/\s/g, ""))) errors.push("رقم غير صحيح");
-
-    const sel = document.getElementById("biGroupSelect");
-    const grpId = sel?.value || groups[0]?.id || "";
-    const grp = groups.find((g) => g.id === grpId);
 
     rows.push({
       _key: code || `_${i}`,
       code,
       name,
-      phone: finalPhone,
+      phone,
       groupName: grp?.name || "—",
       _error: errors.length ? errors.join("، ") : null,
     });
@@ -352,7 +363,6 @@ function parseExcel(file, students, groups, grades) {
 function parseWord(file, students, groups, grades) {
   return new Promise((resolve) => {
     if (typeof mammoth === "undefined") {
-      // Load mammoth dynamically
       const script = document.createElement("script");
       script.src = "https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js";
       script.onload = () => parseWordWithMammoth(file, students, groups, grades).then(resolve);
@@ -368,33 +378,55 @@ async function parseWordWithMammoth(file, students, groups, grades) {
   try {
     const arrayBuffer = await file.arrayBuffer();
 
-    // Try HTML conversion first — preserves table structure
+    // 1) HTML — preserves table structure with real cell boundaries
     const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
     const html = htmlResult.value;
 
-    // Extract tables from HTML
-    const tableRows = [];
-    const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
-    let tableMatch;
-    while ((tableMatch = tableRegex.exec(html)) !== null) {
-      const trs = tableMatch[1].match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
-      if (trs) {
-        trs.forEach((tr) => {
-          const tds = tr.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
-          const cells = tds.map((td) => td.replace(/<[^>]+>/g, "").trim()).filter((c) => c);
-          if (cells.length >= 1) tableRows.push(cells.join("\t"));
+    // 2) Parse tables via DOM (much more reliable than regex)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const tables = doc.querySelectorAll("table");
+    let tableLines = [];
+
+    if (tables.length) {
+      tables.forEach((table) => {
+        table.querySelectorAll("tr").forEach((tr) => {
+          const cells = [];
+          tr.querySelectorAll("td, th").forEach((td) => {
+            const text = td.textContent.trim();
+            cells.push(text);
+          });
+          if (cells.length >= 1) tableLines.push(cells.join("\t"));
         });
-      }
+      });
     }
 
-    // Fall back to raw text if no table found
-    if (!tableRows.length) {
-      const result = await mammoth.extractRawText({ arrayBuffer });
-      const text = result.value;
-      return parseText(text, students, groups, grades);
+    // 3) If no tables found, fall back to raw text
+    let text;
+    if (tableLines.length) {
+      text = tableLines.join("\n");
+    } else {
+      const rawResult = await mammoth.extractRawText({ arrayBuffer });
+      text = rawResult.value;
     }
 
-    return parseText(tableRows.join("\n"), students, groups, grades);
+    const rows = parseText(text, students, groups, grades);
+
+    // Show extracted text for debugging
+    const rawPreview = document.getElementById("biRawPreview");
+    const rawText = document.getElementById("biRawText");
+    if (rawPreview && rawText) {
+      rawPreview.style.display = "block";
+      rawText.textContent = text;
+    }
+
+    const info = document.getElementById("biFileInfo");
+    if (info) {
+      info.style.display = "block";
+      info.textContent = `📄 ${file.name} — تم استخراج ${rows.length} طالب`;
+    }
+
+    return rows;
   } catch (err) {
     console.error("Word parse error", err);
     return [];
@@ -403,7 +435,7 @@ async function parseWordWithMammoth(file, students, groups, grades) {
 
 function isHeaderLine(line, sep) {
   const lower = line.toLowerCase();
-  const keywords = ["كود", "اسم", "تلفون", "code", "name", "phone", "الطالب", "student", "رقم", "تليفون"];
+  const keywords = ["كود", "اسم", "تلفون", "code", "name", "phone", "الطالب", "student", "رقم", "تليفون", "الصف", "class", "grade"];
   return keywords.some((kw) => lower.includes(kw));
 }
 

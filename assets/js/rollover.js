@@ -20,6 +20,7 @@ import {
   getStudentStatuses,
   addRolloverLog,
   getRolloverLogs,
+  getActiveAcademicTerm,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML } from "./ui.js";
@@ -150,10 +151,7 @@ function renderFinancialReconciliation(box) {
 
 function renderSnapshotStep(box) {
   const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
-  const currentTerm = terms.find((t) => {
-    const today = todayISO();
-    return today >= t.startDate && today <= t.endDate;
-  });
+  const currentTerm = getActiveAcademicTerm();
 
   box.innerHTML = `
     <div style="margin-bottom:12px;">
@@ -279,11 +277,7 @@ function renderExecuteStep(box) {
     });
     if (!ok) return;
 
-    const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
-    const currentTerm = terms.find((t) => {
-      const today = todayISO();
-      return today >= t.startDate && today <= t.endDate;
-    });
+    const currentTerm = getActiveAcademicTerm();
     if (currentTerm) createSnapshot(currentTerm.id);
 
     const result = executeWalletReconciliation({ termId: currentTerm?.id, executedBy: "النظام" });
