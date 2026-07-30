@@ -255,30 +255,45 @@ function parseText(text, students, groups, grades) {
   if (!lines.length) return [];
 
   // Detect separator
-  const first = lines.find((l) => l.includes("\t")) ? "\t" : ",";
-  // If still no clear sep, try split by multiple spaces or semicolon
-  const actualSep = first || "\t";
+  let actualSep = "\t";
+  if (lines.some((l) => l.includes("\t"))) actualSep = "\t";
+  else if (lines.some((l) => l.includes(";"))) actualSep = ";";
+  else if (lines.some((l) => l.match(/\s{3,}/))) actualSep = /\s{3,}/;
 
   // Detect header
   const startIdx = isHeaderLine(lines[0], actualSep) ? 1 : 0;
 
   const rows = [];
   const usedCodes = new Set(students.map((s) => s.code));
+  let autoCode = 1;
 
   for (let i = startIdx; i < lines.length; i++) {
-    const parts = lines[i].split(actualSep).map((p) => p.trim());
+    let parts;
+    if (actualSep instanceof RegExp) {
+      parts = lines[i].split(actualSep).map((p) => p.trim());
+    } else {
+      parts = lines[i].split(actualSep).map((p) => p.trim());
+    }
     if (parts.length < 2) continue;
 
-    const code = parts[0] || "";
-    const name = parts[1] || "";
-    const phone = parts[2] || "";
+    // Detect if first column looks like a name (Arabic text) → it's not a code
+    const isCode = /^[A-Za-z0-9_-]{3,}$/.test(parts[0]);
+    const name = parts[isCode ? 1 : 0] || "";
+    const code = isCode ? parts[0] : (generateId("STU") + "_" + autoCode++);
+    const phone = parts[isCode ? 2 : 1] || "";
+
+    // If phone is the only value and looks like 11 digits, it IS the phone
+    // If phone is empty but parts[2] exists and looks like a phone, use it
+    let finalPhone = phone;
+    if (!finalPhone && parts.length > (isCode ? 2 : 1)) {
+      const maybePhone = parts[isCode ? 2 : 1];
+      if (/^01\d{9}$/.test(maybePhone.replace(/\s/g, ""))) finalPhone = maybePhone;
+    }
 
     const errors = [];
-    if (!code) errors.push("كود فارغ");
-    if (usedCodes.has(code)) errors.push("الكود موجود بالفعل");
     if (!name) errors.push("الاسم فارغ");
-    if (!phone) errors.push("رقم التلفون فارغ");
-    if (phone && !/^01\d{8,9}$/.test(phone.replace(/\s/g, ""))) errors.push("رقم غير صحيح");
+    if (usedCodes.has(code)) errors.push("الكود موجود بالفعل");
+    if (finalPhone && !/^01\d{8,9}$/.test(finalPhone.replace(/\s/g, ""))) errors.push("رقم غير صحيح");
 
     const sel = document.getElementById("biGroupSelect");
     const grpId = sel?.value || groups[0]?.id || "";
@@ -288,7 +303,7 @@ function parseText(text, students, groups, grades) {
       _key: code || `_${i}`,
       code,
       name,
-      phone,
+      phone: finalPhone,
       groupName: grp?.name || "—",
       _error: errors.length ? errors.join("، ") : null,
     });
@@ -352,12 +367,34 @@ function parseWord(file, students, groups, grades) {
 async function parseWordWithMammoth(file, students, groups, grades) {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    const text = result.value;
-    const lines = text.split(/\r?\n/).filter((l) => l.trim());
-    // Try to detect if it looks tabular (has consistent separators)
-    const tabbed = lines.map((l) => l.split(/\s{2,}|,/).map((p) => p.trim()).join("\t")).join("\n");
-    return parseText(tabbed, students, groups, grades);
+
+    // Try HTML conversion first — preserves table structure
+    const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
+    const html = htmlResult.value;
+
+    // Extract tables from HTML
+    const tableRows = [];
+    const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+    let tableMatch;
+    while ((tableMatch = tableRegex.exec(html)) !== null) {
+      const trs = tableMatch[1].match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+      if (trs) {
+        trs.forEach((tr) => {
+          const tds = tr.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
+          const cells = tds.map((td) => td.replace(/<[^>]+>/g, "").trim()).filter((c) => c);
+          if (cells.length >= 1) tableRows.push(cells.join("\t"));
+        });
+      }
+    }
+
+    // Fall back to raw text if no table found
+    if (!tableRows.length) {
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      const text = result.value;
+      return parseText(text, students, groups, grades);
+    }
+
+    return parseText(tableRows.join("\n"), students, groups, grades);
   } catch (err) {
     console.error("Word parse error", err);
     return [];

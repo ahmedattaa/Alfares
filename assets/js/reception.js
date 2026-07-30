@@ -272,6 +272,11 @@ function onStatusClick(studentId, statusId) {
     }
   }
 
+  if (status.payment === "paid") Sounds.cashRegister();
+  else if (status.category === "absent" || status.category === "action") Sounds.warning();
+  else Sounds.success();
+  if (result.student?.dataStatus === "minimal") Sounds.incompleteAlert();
+
   let message = `${result.status.name}: ${result.student.name}`;
   if (result.financeInfo) {
     message += ` — تم تحصيل ${formatMoney(result.financeInfo.collected)}`;
@@ -297,6 +302,8 @@ async function onActionClick(studentId, statusId) {
   if (!ok) return;
 
   const result = recordActionStatus(studentId, statusId);
+  if (status.tone === "danger") Sounds.urgentAlarm();
+  else Sounds.warning();
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
 
   // إشعار مكافأة

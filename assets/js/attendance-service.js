@@ -10,7 +10,7 @@
 // بيتقفل تلقائيًا ومبيحضرش الحصة الجاية غير لما المستير يفتح القفل.
 // =========================================================
 
-import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, getSettings, getAdvancePermissionForStudent, markAdvancePermissionUsed } from "./storage.js";
+import { getAttendance, saveAttendance, getPayments, getAllPayments, savePayments, getStudents, saveStudents, getGroups, getStudentStatuses, getExtraCharges, saveExtraCharges, getWalletTransactions, saveWalletTransactions, addWalletDeposit, findAcademicMonthById, recordCashCollection, recordLedgerOnly, getSettings, getAdvancePermissionForStudent, markAdvancePermissionUsed, getSystemSettings } from "./storage.js";
 import { generateId, todayISO, formatMoney } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
 import { checkEscalation, buildEscalationMessage } from "./escalation-engine.js";
@@ -134,19 +134,29 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
 
       // لو المستخدم محددش مبلغ (التسجيل السريع من إدارة الحصة)، نستخدم المحفظة أولًا لو الإعداد مفعّل
       const settings = getSettings();
+      const sys = getSystemSettings();
       let walletUsed = 0;
+      let walletToDebt = 0;
       if (settings.autoDeductWallet !== false && options.collectedAmount == null && (student.walletBalance || 0) > 0) {
-        walletUsed = Math.min(student.walletBalance, sessionDue);
-        student.walletBalance = Math.max(0, (student.walletBalance || 0) - walletUsed);
-        if (walletUsed > 0) {
+        const wBal = student.walletBalance;
+        if (sys.deductionPriority === "debt_first" && priorBalance > 0) {
+          walletToDebt = Math.min(wBal, priorBalance);
+          walletUsed = Math.min(wBal - walletToDebt, sessionDue);
+        } else {
+          walletUsed = Math.min(wBal, sessionDue);
+          walletToDebt = Math.min(wBal - walletUsed, priorBalance);
+        }
+        student.walletBalance = Math.max(0, wBal - walletUsed - walletToDebt);
+        const totalWalletDeduction = walletUsed + walletToDebt;
+        if (totalWalletDeduction > 0) {
           const wtxns = getWalletTransactions();
           wtxns.push({
             id: generateId("WLT"),
             studentId,
             groupId: student.groupId,
-            amount: walletUsed,
+            amount: totalWalletDeduction,
             type: "deduction",
-            note: "خصم تلقائى — تسجيل حضور",
+            note: walletToDebt > 0 ? `خصم تلقائى — ${formatMoney(walletToDebt)} دين + ${formatMoney(walletUsed)} حصة` : "خصم تلقائى — تسجيل حضور",
             date: todayISO(),
           });
           saveWalletTransactions(wtxns);
@@ -158,7 +168,8 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
       const explicitAmount = options.collectedAmount != null ? Math.max(0, Number(options.collectedAmount)) : 0;
       collected = explicitAmount > 0 ? explicitAmount : sessionDue;
       const effectiveCollected = collected + walletUsed;
-      const newBalance = Math.max(0, totalDue - effectiveCollected);
+      const debtCoveredByWallet = walletToDebt;
+      const newBalance = Math.max(0, totalDue - effectiveCollected - debtCoveredByWallet);
       delta = newBalance - priorBalance;
       note = effectiveCollected > sessionDue && priorBalance > 0 ? `حصة (${formatMoney(sessionDue)}) + مستحقات سابقة` : "قيمة حصة";
       if (walletUsed > 0) note += ` (محفظة: ${formatMoney(walletUsed)})`;
@@ -209,6 +220,16 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
     student.lockDate = null;
   }
 
+  // الحظر المالي التلقائي: لو فُعِّل وتجاوزت الديون الحد المقرر
+  if (student && !student.locked) {
+    const sys = getSystemSettings();
+    if (sys.financialLockEnabled !== false && (student.lateBalance || 0) > Number(sys.financialLockThreshold || 150)) {
+      student.locked = true;
+      student.lockReason = `تجاوز حد الديون (${formatMoney(student.lateBalance)})`;
+      student.lockDate = date;
+    }
+  }
+
   saveAttendance(attendance);
   savePayments(payments);
   saveStudents(students);
@@ -220,7 +241,8 @@ export function recordAttendanceStatus(studentId, statusId, date = todayISO(), o
     if (escalationResult && escalationResult.level >= 1) {
       try {
         const phone = student.parentPhone || student.phone;
-        if (phone && escalationResult.level <= 2 && getSettings().waAutoSend !== false) {
+        const waSettings = getSystemSettings();
+        if (phone && escalationResult.level <= 2 && getSettings().waAutoSend === true && !waSettings.waSilentMode) {
           const msg = buildEscalationMessage(student, escalationResult.level);
           if (msg) openWhatsApp(phone, msg);
         }
@@ -286,7 +308,7 @@ export function recordActionStatus(studentId, statusId, date = todayISO(), note 
 
   // مكافأة: إذا الحالة فيها rewardAmount > 0، نضيف للمحفظة
   let rewardResult = null;
-  if (student && status.rewardAmount > 0) {
+  if (student && status.rewardAmount > 0 && getSystemSettings().rewardEnabled !== false) {
     rewardResult = addWalletDeposit(studentId, status.rewardAmount, `مكافأة: ${status.name}`);
     const updatedStudents = getStudents();
     const updatedStudent = updatedStudents.find((s) => s.id === studentId);

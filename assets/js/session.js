@@ -6,7 +6,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getSettings, getAdvancePermissionForStudent } from "./storage.js";
+import { getStudents, getGrades, getGroups, getStudentStatuses, getAttendance, getPayments, getSession, logSessionOpen, closeSession, getExtraCharges, saveExtraCharges, addWalletDeposit, saveStudents, getWalletTransactions, getSettings, getAdvancePermissionForStudent, isFeatureEnabled, getSystemSettings, getSessionLogs } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, debounce, generateId } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, formModal } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory, findGroup, dueAmount } from "./lookups.js";
@@ -669,7 +669,10 @@ function renderPager(roster) {
 function renderStats(roster) {
   const box = document.getElementById("statsBar");
   const group = getGroups().find((g) => g.id === selectedGroupId);
-  const capacity = group?.capacity || roster.length;
+  const sys = getSystemSettings();
+  const bufferPct = Number(sys.maxCapacityBufferPercent) / 100;
+  const baseCapacity = group?.capacity || roster.length;
+  const capacity = Math.round(baseCapacity * (1 + bufferPct));
   const rosterIds = new Set(roster.map((s) => s.id));
   const attendance = getAttendance().filter((a) => a.date === selectedDate && a.category === "attendance" && rosterIds.has(a.studentId));
   const payments = getPayments().filter((p) => p.date === selectedDate && p.groupId === selectedGroupId);
@@ -777,7 +780,7 @@ function renderStudentZone(roster) {
           : ""
       }
 
-      ${canPerformAction(getSession(), "session", "wallet_deposit") ? `
+      ${isFeatureEnabled("wallet") && canPerformAction(getSession(), "session", "wallet_deposit") ? `
         <div class="divider"></div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn btn-success btn-sm" id="depositBtn">${icons.wallet} إيداع في المحفظة</button>
@@ -795,7 +798,7 @@ function renderStudentZone(roster) {
       ${isGuest ? `
         <div class="divider"></div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn btn-success btn-lg" id="guestPayBtn" style="flex:1;">${icons.money} دفع — ${formatMoney(group?.sessionPrice || 0)}</button>
+          <button class="btn btn-success btn-lg" id="guestPayBtn" style="flex:1;">${icons.money} دفع — ${formatMoney(getSystemSettings().guestStudentFee > 0 ? getSystemSettings().guestStudentFee : (group?.sessionPrice || 0))}</button>
         </div>
       ` : ""}
     </div>
@@ -808,7 +811,7 @@ function renderStudentZone(roster) {
     btn.addEventListener("click", () => onActionClick(student.id, btn.dataset.status, roster))
   );
 
-  if (canPerformAction(getSession(), "session", "wallet_deposit")) {
+  if (isFeatureEnabled("wallet") && canPerformAction(getSession(), "session", "wallet_deposit")) {
     const depositBtnEl = document.getElementById("depositBtn");
     if (depositBtnEl) depositBtnEl.addEventListener("click", () => openDepositDialog(student.id));
   }
@@ -833,6 +836,23 @@ function onStatusClick(studentId, statusId, roster) {
   const statuses = getStudentStatuses();
   const status = statuses.find((s) => s.id === statusId);
   if (!status) return;
+
+  // تجميد الحصة: لو البوابة مقفولة ومنع دخول المتأخرين
+  if (status.presence === "present") {
+    const sys = getSystemSettings();
+    const lockoutMin = Number(sys.sessionLockoutMinutes) || 0;
+    if (lockoutMin > 0) {
+      const logs = getSessionLogs();
+      const sessionLog = logs.find((l) => l.groupId === selectedGroupId && l.date === selectedDate && !l.closed);
+      if (sessionLog) {
+        const elapsed = (Date.now() - sessionLog.openedAt) / 60000;
+        if (elapsed > lockoutMin) {
+          toast(`⛔ تم تجميد الحصة — البوابة مقفولة بعد ${lockoutMin} دقيقة. سجّل الطالب غائب.', 'warning`);
+          return;
+        }
+      }
+    }
+  }
 
   const options = {};
   let collectedForCharges = 0;
@@ -873,7 +893,7 @@ function onStatusClick(studentId, statusId, roster) {
   if (result.student?.dataStatus === "minimal") Sounds.incompleteAlert();
 
   // إرسال إشعار واتساب تلقائي لولي الأمر (للحضور فقط)
-  if (getSettings().waAutoSend !== false && status.presence === "present" && status.payment) {
+  if (getSettings().waAutoSend === true && !getSystemSettings().waSilentMode && status.presence === "present" && status.payment) {
     const notification = sendAttendanceNotification(studentId, statusId, selectedDate, result.financeInfo);
     if (notification) {
       openWhatsApp(notification.phone, notification.message);
@@ -998,7 +1018,7 @@ async function onActionClick(studentId, statusId, roster) {
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
 
   // إشعار مكافأة
-  if (getSettings().waAutoSend !== false && status.rewardAmount > 0) {
+  if (getSettings().waAutoSend === true && !getSystemSettings().waSilentMode && status.rewardAmount > 0) {
     sendRewardNotification(studentId, status.rewardAmount, status.name);
     toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة المحفظة`, "success");
   }

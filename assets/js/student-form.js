@@ -13,7 +13,9 @@ const content = await initPage("students");
 if (content) render();
 
 function render() {
-  const id = new URLSearchParams(window.location.search).get("id");
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("id");
+  const preselectedGroupId = params.get("groupId");
   const students = getStudents();
   const editing = id ? students.find((s) => s.id === id) : null;
   const grades = getGrades().slice().sort((a, b) => a.order - b.order);
@@ -27,9 +29,10 @@ function render() {
     return;
   }
 
-  const defaultGradeId = editing?.gradeId || grades[0].id;
+  const preselectedGroup = preselectedGroupId ? findGroup(groups, preselectedGroupId) : null;
+  const defaultGradeId = editing?.gradeId || preselectedGroup?.gradeId || grades[0].id;
   const groupsForDefaultGrade = groupsForGrade(groups, defaultGradeId);
-  const defaultGroupId = editing?.groupId || groupsForDefaultGrade[0]?.id || "";
+  const defaultGroupId = editing?.groupId || (preselectedGroupId && groupsForDefaultGrade.some((g) => g.id === preselectedGroupId) ? preselectedGroupId : groupsForDefaultGrade[0]?.id) || "";
   const defaultGroup = findGroup(groups, defaultGroupId);
   const suggestedCode = editing ? editing.code : suggestStudentCode(students, defaultGroup);
 
@@ -160,12 +163,14 @@ function render() {
       Object.assign(editing, data);
       if (editing.dataStatus === "minimal") editing.dataStatus = "complete";
       saveStudents(students);
+      Sounds.save();
       toast("تم تحديث بيانات الطالب بنجاح", "success");
     } else {
       const newStudent = { id: generateId("STU"), ...data };
       students.push(newStudent);
       saveStudents(students);
       if (data.groupId) applyPendingCharges(newStudent.id, data.groupId);
+      Sounds.studentAdded();
       toast("تم إضافة الطالب بنجاح", "success");
     }
 

@@ -420,13 +420,21 @@ export function addWalletDeposit(studentId, amount, note = "إيداع ولي أ
 
   const lateBalance = Number(student.lateBalance || 0);
   const walletBalance = Number(student.walletBalance || 0);
+  const sys = getSystemSettings();
 
-  // أول حاجة نغطّى المتأخرات
-  const debtCovered = Math.min(lateBalance, amount);
-  const remaining = amount - debtCovered;
-
-  student.lateBalance = Math.max(0, lateBalance - debtCovered);
-  student.walletBalance = walletBalance + remaining;
+  // حسب أولوية الخصم: debt_first = المتأخرات أولاً، session_first = المحفظة أولاً
+  let debtCovered, remaining;
+  if (sys.deductionPriority === "session_first") {
+    debtCovered = 0;
+    remaining = amount;
+    student.lateBalance = lateBalance;
+    student.walletBalance = walletBalance + amount;
+  } else {
+    debtCovered = Math.min(lateBalance, amount);
+    remaining = amount - debtCovered;
+    student.lateBalance = Math.max(0, lateBalance - debtCovered);
+    student.walletBalance = walletBalance + remaining;
+  }
 
   // تسجيل المعاملة
   const txns = getWalletTransactions();
@@ -495,7 +503,55 @@ export const saveExams = (list) => writeJSON(KEYS.exams, list);
 /* ---------------- Settings ---------------- */
 export const getSettings = () => readJSON(KEYS.settings, {});
 export const saveSettings = (obj) => writeJSON(KEYS.settings, obj);
+
+const SYSTEM_SETTINGS_DEFAULTS = {
+  healthWeightAttendance: 40,
+  healthWeightExams: 40,
+  healthWeightBehavior: 20,
+  healthColorGreen: 60,
+  healthColorYellow: 40,
+  defaultPassPercentage: 50,
+  autoLockThreshold: 3,
+  makeupGracePeriod: 48,
+  financialLockEnabled: true,
+  financialLockThreshold: 150,
+  overdraftLimit: 0,
+  deductionPriority: "session_first",
+  guestStudentFee: 0,
+  strictShiftClosing: false,
+  sessionLockoutMinutes: 15,
+  maxCapacityBufferPercent: 10,
+  gateAudioFeedback: true,
+  waSilentMode: false,
+  waAbsenceBatching: false,
+  waAbsenceBatchTime: "22:00",
+  waReceiptToggle: true,
+  rewardEnabled: true,
+  rewardAmount: 10,
+  eliteBadgeThreshold: 95,
+  eliteBadgeConsecutiveExams: 3,
+};
+
+export const getSystemSettings = () => {
+  const saved = readJSON(KEYS.settings, {});
+  const merged = { ...SYSTEM_SETTINGS_DEFAULTS };
+  const boolKeys = new Set(["financialLockEnabled", "strictShiftClosing", "gateAudioFeedback", "waSilentMode", "waAbsenceBatching", "waReceiptToggle", "rewardEnabled"]);
+  for (const key of Object.keys(SYSTEM_SETTINGS_DEFAULTS)) {
+    if (saved[key] !== undefined) {
+      if (boolKeys.has(key)) merged[key] = saved[key] === true || saved[key] === "true";
+      else merged[key] = saved[key];
+    }
+  }
+  return merged;
+};
 export const getCenterName = () => getSettings().centerName || "سنتر الفارس التعليمي";
+
+export const isFeatureEnabled = (feature) => {
+  const s = getSettings();
+  if (feature === "wallet") return s.enableWallet !== false;
+  if (feature === "extraCharges") return s.enableExtraCharges !== false;
+  return true;
+};
 
 /* ---------------- Session / Auth ---------------- */
 export function getSession() {

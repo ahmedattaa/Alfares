@@ -118,7 +118,7 @@ export function canAccessPage(session, pageId) {
   if (session.role === "admin") return true;
   if (pageId === "dashboard") return true;
   if (pageId === "settings") return false;
-  if (pageId === "student" || pageId === "student-form") return (session.permissions || []).includes("students");
+  if (pageId === "student" || pageId === "student-form" || pageId === "group-students") return (session.permissions || []).includes("students");
   if (pageId === "quick-attendance") return (session.permissions || []).includes("session");
   if (pageId === "attendance-tracker") return (session.permissions || []).includes("teacher-insights") || (session.permissions || []).includes("session");
   return (session.permissions || []).includes(pageId);

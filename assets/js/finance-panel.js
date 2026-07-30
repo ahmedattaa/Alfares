@@ -6,6 +6,7 @@
 
 import { escapeHTML, formatMoney } from "./helpers.js";
 import { dueAmount } from "./lookups.js";
+import { isFeatureEnabled } from "./storage.js";
 
 /** كل الاستحقاقات الإضافية غير المدفوعة لطالب معين (خارج سعر الحصة) */
 export function unpaidExtraCharges(charges, studentId) {
@@ -14,12 +15,15 @@ export function unpaidExtraCharges(charges, studentId) {
 
 /** يحسب كل تفاصيل المطلوب من الطالب فى لحظة معينة */
 export function computeFinanceBreakdown(student, group, extraCharges) {
+  const enableWallet = isFeatureEnabled("wallet");
+  const enableCharges = isFeatureEnabled("extraCharges");
+
   const sessionPrice = group?.sessionPrice || 0;
   const discount = Math.min(sessionPrice, Number(student.discount || 0));
   const sessionDue = dueAmount(student, group);
   const priorBalance = Number(student.lateBalance || 0);
-  const walletBalance = Number(student.walletBalance || 0);
-  const charges = unpaidExtraCharges(extraCharges, student.id);
+  const walletBalance = enableWallet ? Number(student.walletBalance || 0) : 0;
+  const charges = enableCharges ? unpaidExtraCharges(extraCharges, student.id) : [];
   const extraTotal = charges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
   const grandTotal = sessionDue + priorBalance + extraTotal;
 

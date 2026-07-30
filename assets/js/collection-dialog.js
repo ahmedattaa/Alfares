@@ -4,7 +4,7 @@
 // =========================================================
 
 import { icons } from "./icons.js";
-import { getStudents, saveStudents, getAllPayments, savePayments, getExtraCharges, saveExtraCharges, recordCashCollection, deductFromWallet, getGroups } from "./storage.js";
+import { getStudents, saveStudents, getAllPayments, savePayments, getExtraCharges, saveExtraCharges, recordCashCollection, deductFromWallet, getGroups, getSystemSettings } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO } from "./helpers.js";
 import { findGroup, dueAmount } from "./lookups.js";
 import { toast } from "./ui.js";
@@ -100,6 +100,7 @@ export function openCollectionDialog(studentId, options = {}) {
   function render() {
     const remaining = totalDue - collectedTotal;
     const currentWallet = Number(student.walletBalance || 0);
+    const walletAvailable = currentWallet - Number(getSystemSettings().overdraftLimit || 0);
 
     ov.innerHTML = `
       <div style="
@@ -120,7 +121,7 @@ export function openCollectionDialog(studentId, options = {}) {
             <div style="flex:1; min-width:0;">
               <div style="font-size:15px; font-weight:800;">${escapeHTML(student.name)}</div>
               <div style="font-size:11px; opacity:0.8; margin-top:1px;">${group ? escapeHTML(group.name) : ""}</div>
-              ${currentWallet > 0 ? `<div style="font-size:10px; opacity:0.9; margin-top:2px;">💳 الرصيد: ${formatMoney(currentWallet)}</div>` : ""}
+              ${walletAvailable > 0 ? `<div style="font-size:10px; opacity:0.9; margin-top:2px;">💳 الرصيد: ${formatMoney(currentWallet)}</div>` : ""}
             </div>
             <div style="text-align:left;">
               <div style="font-size:18px; font-weight:800; color:#fef08a;">${formatMoney(remaining)}</div>
@@ -190,7 +191,7 @@ export function openCollectionDialog(studentId, options = {}) {
                     white-space:nowrap;
                     box-shadow:0 2px 8px rgba(16,185,129,0.25);
                   ">دفع</button>
-                  ${currentWallet > 0 ? `<button class="ucd-wallet-btn" data-idx="${idx}" style="
+                  ${walletAvailable > 0 ? `<button class="ucd-wallet-btn" data-idx="${idx}" style="
                     padding:6px 10px; border-radius:8px; border:none;
                     background:var(--info, #3B82F6); color:#fff;
                     font-size:12px; font-weight:700; cursor:pointer;
@@ -297,7 +298,8 @@ export function openCollectionDialog(studentId, options = {}) {
     if (!freshStudent) return;
 
     const avail = Number(freshStudent.walletBalance || 0);
-    if (avail <= 0) {
+    const overdraft = Number(getSystemSettings().overdraftLimit || 0);
+    if (avail <= overdraft) {
       toast("رصيد المحفظة غير كافٍ", "error");
       return;
     }

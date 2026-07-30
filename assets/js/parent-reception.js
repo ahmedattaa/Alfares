@@ -17,6 +17,7 @@ import {
   getWalletTransactions,
   addWalletDeposit,
   getCenterName,
+  isFeatureEnabled,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr } from "./helpers.js";
 import { toast } from "./ui.js";
@@ -89,7 +90,7 @@ function onSearch() {
         <div class="pr-search__item-code">${escapeHTML(s.code || "")}</div>
         <div class="pr-search__item-info">
           <div class="pr-search__item-name">${escapeHTML(s.name)}</div>
-          <div class="pr-search__item-meta">${escapeHTML(g?.name || "")} ${wallet > 0 ? `· <span style="color:var(--success);">${formatMoney(wallet)}</span>` : ""}</div>
+          <div class="pr-search__item-meta">${escapeHTML(g?.name || "")} ${isFeatureEnabled("wallet") && wallet > 0 ? `· <span style="color:var(--success);">${formatMoney(wallet)}</span>` : ""}</div>
         </div>
       </div>`;
   }).join("");
@@ -129,7 +130,7 @@ function renderStudentZone() {
           <div class="pr-profile-card__meta">تاريخ الانضمام: ${formatDateAr(student.joinDate)}</div>
         </div>
         <div class="pr-profile-card__badges">
-          ${wallet > 0 ? `<div class="pr-badge pr-badge--success">${icons.wallet} ${formatMoney(wallet)}</div>` : ""}
+          ${isFeatureEnabled("wallet") && wallet > 0 ? `<div class="pr-badge pr-badge--success">${icons.wallet} ${formatMoney(wallet)}</div>` : ""}
           ${debt > 0 ? `<div class="pr-badge pr-badge--danger">${icons.money} ${formatMoney(debt)}</div>` : ""}
           ${isStudentLocked(student) ? `<div class="pr-badge pr-badge--warning">${icons.lock || "🔒"} مقفول</div>` : ""}
         </div>
@@ -233,9 +234,11 @@ function renderProfileTab(box, student) {
    ═══════════════════════════════════════════════════════════ */
 
 function renderFinanceTab(box, student) {
-  const wallet = Number(student.walletBalance || 0);
+  const enableWallet = isFeatureEnabled("wallet");
+  const enableCharges = isFeatureEnabled("extraCharges");
+  const wallet = enableWallet ? Number(student.walletBalance || 0) : 0;
   const debt = Number(student.lateBalance || 0);
-  const charges = getExtraCharges().filter((c) => c.studentId === student.id && c.status === "unpaid");
+  const charges = enableCharges ? getExtraCharges().filter((c) => c.studentId === student.id && c.status === "unpaid") : [];
   const totalCharges = charges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
   const group = findGroup(getGroups(), student.groupId);
   const sessionPrice = group ? dueAmount(student, group) : 0;
@@ -244,21 +247,23 @@ function renderFinanceTab(box, student) {
 
   box.innerHTML = `
     <div class="pr-finance-summary">
+      ${enableWallet ? `
       <div class="pr-finance-box pr-finance-box--wallet">
         <div class="pr-finance-box__icon">${icons.wallet}</div>
         <div class="pr-finance-box__value">${formatMoney(wallet)}</div>
         <div class="pr-finance-box__label">الرصيد المتاح</div>
-      </div>
+      </div>` : ""}
       <div class="pr-finance-box pr-finance-box--debt">
         <div class="pr-finance-box__icon">${icons.money}</div>
         <div class="pr-finance-box__value">${formatMoney(debt)}</div>
         <div class="pr-finance-box__label">المتأخرات</div>
       </div>
+      ${enableCharges ? `
       <div class="pr-finance-box pr-finance-box--charges">
         <div class="pr-finance-box__icon">${icons.alert}</div>
         <div class="pr-finance-box__value">${formatMoney(totalCharges)}</div>
         <div class="pr-finance-box__label">مستحقات أخرى</div>
-      </div>
+      </div>` : ""}
       <div class="pr-finance-box pr-finance-box--session">
         <div class="pr-finance-box__icon">${icons.clipboard}</div>
         <div class="pr-finance-box__value">${formatMoney(sessionPrice)}</div>
@@ -266,6 +271,7 @@ function renderFinanceTab(box, student) {
       </div>
     </div>
 
+    ${enableWallet ? `
     <div class="card card-pad" style="margin-top:16px;">
       <div class="card__head">
         <div class="card__title">إيداع في المحفظة</div>
@@ -275,9 +281,9 @@ function renderFinanceTab(box, student) {
         <button class="btn btn-success" id="depositBtn">${icons.wallet} إيداع</button>
       </div>
       <div class="field__hint" id="depositHint"></div>
-    </div>
+    </div>` : ""}
 
-    ${charges.length ? `
+    ${enableCharges && charges.length ? `
     <div class="card card-pad" style="margin-top:16px;">
       <div class="card__head"><div class="card__title">مستحقات أخرى</div></div>
       ${charges.map((c) => `
@@ -306,11 +312,12 @@ function renderFinanceTab(box, student) {
   `;
 
   // إيداع
-  document.getElementById("depositBtn").addEventListener("click", () => {
+  document.getElementById("depositBtn")?.addEventListener("click", () => {
     const amount = Number(document.getElementById("depositInput").value || 0);
     if (amount <= 0) { toast("أدخل مبلغ صحيح", "warning"); return; }
     const result = addWalletDeposit(student.id, amount);
     if (!result) { toast("فشلت عملية الإيداع", "error"); return; }
+    Sounds.coinDrop();
     let msg = `تم إيداع ${formatMoney(amount)}`;
     if (result.debtCovered > 0) msg += ` — تغطية متأخرات: ${formatMoney(result.debtCovered)}`;
     if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
@@ -330,7 +337,10 @@ function renderFinanceTab(box, student) {
   box.querySelectorAll(".settleChargeBtn").forEach((btn) =>
     btn.addEventListener("click", () => {
       const charge = settleExtraCharge(btn.dataset.id);
-      if (charge) toast(`تم تسوية "${charge.name}"`, "success");
+      if (charge) {
+        Sounds.coinDrop();
+        toast(`تم تسوية "${charge.name}"`, "success");
+      }
       renderStudentZone();
     })
   );
@@ -449,11 +459,13 @@ function renderContactTab(box, student) {
 
   document.getElementById("waSummaryBtn").addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
+    Sounds.messageSent();
     try { openWhatsApp(student.parentPhone, summaryMessage); } catch (e) { /* popup blocker */ }
   });
 
   document.getElementById("waCustomBtn").addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
+    Sounds.messageSent();
     try { openWhatsApp(student.parentPhone, renderTemplate("gen_custom_opener", { studentName: student.name, centerName: getCenterName() })); } catch (e) { /* popup blocker */ }
   });
 }

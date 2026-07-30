@@ -8,6 +8,7 @@ import { icons } from "./icons.js";
 import {
   getSettings,
   saveSettings,
+  getSystemSettings,
   resetAllData,
   getSession,
   getGrades,
@@ -35,11 +36,13 @@ import { TEMPLATE_REGISTRY, CATEGORIES, getTemplateBody, saveTemplateOverride, r
 const TABS = [
   { id: "center", label: "بيانات السنتر", icon: icons.settings },
   { id: "academic", label: "العام الدراسي", icon: icons.calendar },
-  { id: "grades", label: "السنوات الدراسية", icon: icons.clipboard },
+  { id: "grades", label: "سنوات الدراسة", icon: icons.clipboard },
   { id: "groups", label: "المجموعات", icon: icons.users },
   { id: "statuses", label: "حالات الطالب", icon: icons.check },
   { id: "whatsapp", label: "رسائل الواتساب", icon: icons.whatsapp || "💬" },
-  { id: "team", label: "إدارة", icon: icons.shield },
+  { id: "finance", label: "ماليات", icon: icons.wallet },
+  { id: "system", label: "المتابعة", icon: icons.radar },
+  { id: "team", label: "حسابات", icon: icons.shield },
   { id: "danger", label: "منطقة خطرة", icon: icons.alert },
 ];
 
@@ -84,6 +87,8 @@ function renderTabContent() {
   if (activeTab === "groups") return renderGroupsTab(box);
   if (activeTab === "statuses") return renderStatusesTab(box);
   if (activeTab === "academic") return renderAcademicPeriodsTab(box);
+  if (activeTab === "finance") return renderFinanceTab(box);
+  if (activeTab === "system") return renderSystemTab(box);
   if (activeTab === "team") return renderTeamTab(box);
   if (activeTab === "danger") return renderDangerTab(box);
   if (activeTab === "whatsapp") return renderWhatsAppTemplatesTab(box);
@@ -140,28 +145,7 @@ function renderCenterTab(box) {
         </div>
 
         <div class="card card-pad">
-          <div class="card__head"><div class="card__title">${icons.wallet} إعدادات المحفظة (Center Coin)</div></div>
-          <form id="walletForm">
-            <div class="field">
-              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
-                <input type="checkbox" name="autoDeductWallet" ${settings.autoDeductWallet !== false ? "checked" : ""} style="width:16px;height:16px;">
-                خصم تلقائي من المحفظة عند تسجيل الحضور
-              </label>
-              <div class="field__hint">لو مفعّل، النظام بيخصم ثمن الحصة من محفظة الطالب تلقائيًا لما بيتسجل عليه حضور مدفوع.</div>
-            </div>
-            <div class="field">
-              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
-                <input type="checkbox" name="autoDeductMaterials" ${settings.autoDeductMaterials ? "checked" : ""} style="width:16px;height:16px;">
-                خصم تلقائي من المحفظة للملازم والاستحقاقات
-              </label>
-              <div class="field__hint">لو مفعّل، أي ملزمة أو استحقاق إضافي هيتخصم من المحفظة لو فيه رصيد كافي.</div>
-            </div>
-            <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات المحفظة</button>
-          </form>
-        </div>
-
-        <div class="card card-pad">
-          <div class="card__head"><div class="card__title">${icons.volume || "🔊"} المؤثرات الصوتية</div></div>
+          <div class="card__head"><div class="card__title">🔊 المؤثرات الصوتية</div></div>
           <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
             <input type="checkbox" id="soundToggle" ${Sounds.enabled() ? "checked" : ""} style="width:16px;height:16px;">
             تفعيل المؤثرات الصوتية للأزرار
@@ -170,7 +154,84 @@ function renderCenterTab(box) {
         </div>
 
         <div class="card card-pad">
-          <div class="card__head"><div class="card__title">${icons.wallet || "💰"} وضع الصندوق (الوردية)</div></div>
+          <div class="card__head"><div class="card__title">${icons.palette} المظهر والسمة</div></div>
+          <div class="field">
+            <label class="field__label">السمة</label>
+            <select class="select" id="themeSelect" style="max-width:200px;">
+              <option value="default">افتراضي</option>
+              <option value="dark">داكن</option>
+              <option value="light">فاتح</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("centerForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    saveSettings({ ...settings, ...data });
+    Sounds.save();
+    toast("تم حفظ بيانات السنتر بنجاح", "success");
+  });
+
+  document.getElementById("soundToggle")?.addEventListener("change", (e) => {
+    const on = Sounds.toggle();
+    toast(on ? "تم تفعيل المؤثرات الصوتية" : "تم إيقاف المؤثرات الصوتية", on ? "success" : "info");
+  });
+
+  document.getElementById("themeSelect")?.addEventListener("change", (e) => {
+    const theme = e.target.value;
+    try { localStorage.setItem("center_active_theme", theme); document.documentElement.setAttribute("data-theme", theme); } catch {}
+    toast("تم تغيير السمة", "success");
+  });
+}
+
+/* ================= الإدارة المالية ================= */
+function renderFinanceTab(box) {
+  const settings = getSettings();
+  const sys = getSystemSettings();
+
+  box.innerHTML = `
+    <div class="grid-2">
+      <div class="card card-pad">
+        <div class="card__head"><div class="card__title">${icons.wallet} إعدادات المحفظة</div></div>
+        <form id="walletForm">
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+              <input type="checkbox" name="autoDeductWallet" ${settings.autoDeductWallet !== false ? "checked" : ""} style="width:16px;height:16px;">
+              خصم تلقائي من المحفظة عند تسجيل الحضور
+            </label>
+            <div class="field__hint">لو مفعّل، النظام بيخصم ثمن الحصة من محفظة الطالب تلقائيًا لما بيتسجل عليه حضور مدفوع.</div>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+              <input type="checkbox" name="autoDeductMaterials" ${settings.autoDeductMaterials ? "checked" : ""} style="width:16px;height:16px;">
+              خصم تلقائي من المحفظة للملازم والاستحقاقات
+            </label>
+            <div class="field__hint">لو مفعّل، أي ملزمة أو استحقاق إضافي هيتخصم من المحفظة لو فيه رصيد كافي.</div>
+          </div>
+          <div class="field">
+            <label class="field__label">حد السحب على المكشوف (ج.م)</label>
+            <input type="number" name="overdraftLimit" min="-999" max="0" step="5" value="${sys.overdraftLimit}" style="max-width:100px;">
+            <div class="field__hint">صفر = ممنوع السحب على المكشوف. قيم سالبة تسمح بالدخول بالدين حتى هذا الحد.</div>
+          </div>
+          <div class="field">
+            <label class="field__label">أولوية الخصم من المحفظة</label>
+            <select name="deductionPriority" style="max-width:200px;">
+              <option value="session_first" ${sys.deductionPriority === "session_first" ? "selected" : ""}>حصة اليوم أولاً</option>
+              <option value="debt_first" ${sys.deductionPriority === "debt_first" ? "selected" : ""}>الديون القديمة أولاً</option>
+            </select>
+            <div class="field__hint">عند شحن المحفظة، هل يتم خصم قيمة الحصة أولاً أم سداد الديون القديمة؟</div>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات المحفظة</button>
+        </form>
+      </div>
+
+      <div>
+        <div class="card card-pad">
+          <div class="card__head"><div class="card__title">💰 وضع الصندوق (الوردية)</div></div>
           <form id="shiftModeForm">
             <div style="display:flex; flex-direction:column; gap:10px;">
               <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${(settings.shiftMode || "mandatory") === "mandatory" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
@@ -186,7 +247,7 @@ function renderCenterTab(box) {
                 <input type="radio" name="shiftMode" value="no_custody" ${settings.shiftMode === "no_custody" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
                 <div>
                   <div style="font-weight:700; font-size:14px;">🔓 وردية بدون عهدة</div>
-                  <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس يفتح الوردية من غير ما يعدّ فلوس. كل الدفعات بتتسجل والتدقيق شغال — بس مفيش نقطة مرجعية للعهدة الافتتاحية. مناسب لل盜انات اللي مش بتحتفظ بفلوس في الصندوق.</div>
+                  <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس يفتح الوردية من غير ما يعدّ فلوس. كل الدفعات بتتسجل والتدقيق شغال — بس مفيش نقطة مرجعية للعهدة الافتتاحية. مناسب للسناتر اللي مش بتحتفظ بفلوس في الصندوق.</div>
                   <span class="badge badge-primary" style="margin-top:6px; font-size:10px;">✅ آمن + مرن</span>
                 </div>
               </label>
@@ -203,24 +264,58 @@ function renderCenterTab(box) {
             <button class="btn btn-primary btn-sm" type="submit" style="margin-top:12px;">${icons.check} حفظ وضع الصندوق</button>
           </form>
         </div>
+
+        <div class="card card-pad" style="margin-top:16px;">
+          <div class="card__head"><div class="card__title">${icons.settings} تفعيل الميزات المالية</div></div>
+          <form id="featuresForm">
+            <div class="field">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" name="enableWallet" ${settings.enableWallet !== false ? "checked" : ""} style="width:16px;height:16px;">
+                ${icons.wallet} تفعيل المحفظة (Wallet)
+              </label>
+              <div class="field__hint">لو مفعّل، هتظهر محفظة الطالب وخصم تلقائي وإيداع. لو أطفته، هتختفي المحفظة من كل حتة في الموقع.</div>
+            </div>
+            <div class="field">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" name="enableExtraCharges" ${settings.enableExtraCharges !== false ? "checked" : ""} style="width:16px;height:16px;">
+                ${icons.money} تفعيل الاستحقاقات المالية
+              </label>
+              <div class="field__hint">لو مفعّل، تقدر تضيف استحقاقات مالية (ملازم، امتحانات) للطلاب. لو أطفته، مش هيظهر حاجة اسمها استحقاقات في الموقع.</div>
+            </div>
+            <div class="field">
+              <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+                <input type="checkbox" name="strictShiftClosing" ${sys.strictShiftClosing ? "checked" : ""} style="width:16px;height:16px;">
+                🔒 تقفيل إجباري للوردية
+              </label>
+              <div class="field__hint">منع السكرتير من تسجيل الخروج أو إغلاق المتصفح إلا بعد جرد الدرج.</div>
+            </div>
+            <div class="field">
+              <label class="field__label">تسعيرة الطالب الزائر (ج.م)</label>
+              <input type="number" name="guestStudentFee" min="0" step="5" value="${sys.guestStudentFee}" style="max-width:100px;">
+              <div class="field__hint">سعر افتراضي لحصة الطالب الزائر (0 = نفس سعر المجموعة).</div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ الإعدادات</button>
+          </form>
+        </div>
       </div>
     </div>
   `;
 
-  document.getElementById("centerForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
-    saveSettings({ ...settings, ...data });
-    Sounds.save();
-    toast("تم حفظ بيانات السنتر بنجاح", "success");
-  });
-
   document.getElementById("walletForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
-    saveSettings({ ...settings, autoDeductWallet: data.autoDeductWallet === "on", autoDeductMaterials: data.autoDeductMaterials === "on" });
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    const newSettings = {
+      ...settings,
+      ...sys,
+      autoDeductWallet: fd.has("autoDeductWallet"),
+      autoDeductMaterials: fd.has("autoDeductMaterials"),
+      overdraftLimit: Number(data.overdraftLimit),
+      deductionPriority: data.deductionPriority,
+    };
+    saveSettings(newSettings);
     Sounds.save();
-    toast("تم حفظ إعدادات المحفظة بنجاح", "success");
+    toast("تم حفظ إعدادات المحفظة", "success");
   });
 
   document.getElementById("shiftModeForm").addEventListener("submit", (e) => {
@@ -233,9 +328,223 @@ function renderCenterTab(box) {
     toast(`تم حفظ وضع الصندوق: ${labels[mode]}`, "success");
   });
 
-  document.getElementById("soundToggle")?.addEventListener("change", (e) => {
-    const on = Sounds.toggle();
-    toast(on ? "تم تفعيل المؤثرات الصوتية" : "تم إيقاف المؤثرات الصوتية", on ? "success" : "info");
+  document.getElementById("featuresForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    const newSettings = {
+      ...settings,
+      ...sys,
+      enableWallet: fd.has("enableWallet"),
+      enableExtraCharges: fd.has("enableExtraCharges"),
+      strictShiftClosing: fd.has("strictShiftClosing"),
+      guestStudentFee: Number(data.guestStudentFee),
+    };
+    saveSettings(newSettings);
+    Sounds.save();
+    toast("تم حفظ الإعدادات المالية", "success");
+  });
+}
+
+/* ================= إدارة المتابعة ================= */
+function renderSystemTab(box) {
+  const sys = getSystemSettings();
+
+  box.innerHTML = `
+    <div class="grid-2">
+      <!-- 1. مؤشر الصحة -->
+      <div class="card card-pad">
+        <div class="card__head"><div class="card__title">📊 مؤشر الصحة والتقييم الأكاديمي</div></div>
+        <form id="healthScoreForm">
+          <div class="field">
+            <label class="field__label">وزن الحضور (%)</label>
+            <input type="range" name="healthWeightAttendance" min="0" max="100" value="${sys.healthWeightAttendance}" class="slider" data-target="hwaVal">
+            <span id="hwaVal" style="font-weight:700;">${sys.healthWeightAttendance}%</span>
+          </div>
+          <div class="field">
+            <label class="field__label">وزن الامتحانات (%)</label>
+            <input type="range" name="healthWeightExams" min="0" max="100" value="${sys.healthWeightExams}" class="slider" data-target="hweVal">
+            <span id="hweVal" style="font-weight:700;">${sys.healthWeightExams}%</span>
+          </div>
+          <div class="field">
+            <label class="field__label">وزن السلوك (%)</label>
+            <input type="range" name="healthWeightBehavior" min="0" max="100" value="${sys.healthWeightBehavior}" class="slider" data-target="hwbVal">
+            <span id="hwbVal" style="font-weight:700;">${sys.healthWeightBehavior}%</span>
+          </div>
+          <div class="field">
+            <label class="field__label">عتبة اللون الأخضر (≥)</label>
+            <input type="number" name="healthColorGreen" min="1" max="100" value="${sys.healthColorGreen}" style="max-width:100px;">
+          </div>
+          <div class="field">
+            <label class="field__label">عتبة اللون الأصفر (≥)</label>
+            <input type="number" name="healthColorYellow" min="0" max="99" value="${sys.healthColorYellow}" style="max-width:100px;">
+          </div>
+          <div class="field">
+            <label class="field__label">درجة النجاح الافتراضية (%)</label>
+            <input type="number" name="defaultPassPercentage" min="1" max="100" value="${sys.defaultPassPercentage}" style="max-width:100px;">
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ أوزان الصحة</button>
+        </form>
+      </div>
+
+      <!-- 2. محرك التصعيد -->
+      <div class="card card-pad">
+        <div class="card__head"><div class="card__title">🚨 محرك تصعيد الإنذارات</div></div>
+        <form id="escalationForm">
+          <div class="field">
+            <label class="field__label">حد الإيقاف التلقائي — عدد غيابات متتالية</label>
+            <input type="number" name="autoLockThreshold" min="1" max="20" value="${sys.autoLockThreshold}" style="max-width:100px;">
+            <div class="field__hint">بعد كام غياب متتالي يتم قفل حساب الطالب تلقائياً.</div>
+          </div>
+          <div class="field">
+            <label class="field__label">فترة السماح بالتعويض (ساعة)</label>
+            <input type="number" name="makeupGracePeriod" min="0" max="720" value="${sys.makeupGracePeriod}" style="max-width:100px;">
+            <div class="field__hint">السماح للطالب بتعويض الحصة خلال كام ساعة قبل تسجيله غائب نهائياً.</div>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+              <input type="checkbox" name="financialLockEnabled" ${sys.financialLockEnabled ? "checked" : ""} style="width:16px;height:16px;">
+              تفعيل الحظر المالي التلقائي
+            </label>
+            <div class="field__hint">يقفل الطالب تلقائياً إذا تجاوزت ديونه الحد المحدد.</div>
+          </div>
+          <div class="field">
+            <label class="field__label">حد الديون للحظر المالي (ج.م)</label>
+            <input type="number" name="financialLockThreshold" min="0" step="10" value="${sys.financialLockThreshold}" style="max-width:120px;">
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات التصعيد</button>
+        </form>
+      </div>
+
+      <!-- 3. البوابات وإدارة الحصة -->
+      <div class="card card-pad">
+        <div class="card__head"><div class="card__title">🚪 البوابات وإدارة الحصة</div></div>
+        <form id="gateForm">
+          <div class="field">
+            <label class="field__label">تجميد الحصة — إغلاق البوابة بعد (دقيقة)</label>
+            <input type="number" name="sessionLockoutMinutes" min="0" max="120" value="${sys.sessionLockoutMinutes}" style="max-width:100px;">
+            <div class="field__hint">بعد كام دقيقة من بداية الحصة يُمنع دخول الطلاب المتأخرين (0 = تعطيل).</div>
+          </div>
+          <div class="field">
+            <label class="field__label">السعة القصوى للطوارئ (%)</label>
+            <input type="number" name="maxCapacityBufferPercent" min="0" max="50" value="${sys.maxCapacityBufferPercent}" style="max-width:100px;">
+            <div class="field__hint">نسبة زيادة مسموحة عن سعة القاعة لطلاب التعويض.</div>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+              <input type="checkbox" name="gateAudioFeedback" ${sys.gateAudioFeedback ? "checked" : ""} style="width:16px;height:16px;">
+              🔊 صوت البوابة (Beeps)
+            </label>
+            <div class="field__hint">تشغيل صوت عند تسجيل الحضور السريع في بوابة الدخول.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات البوابة</button>
+        </form>
+      </div>
+
+      <!-- 4. التلعيب والمكافآت -->
+      <div class="card card-pad">
+        <div class="card__head"><div class="card__title">🏆 التلعيب والمكافآت</div></div>
+        <form id="gamificationForm">
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+              <input type="checkbox" name="rewardEnabled" ${sys.rewardEnabled !== false ? "checked" : ""} style="width:16px;height:16px;">
+              🎁 مكافآت التفوق المالية
+            </label>
+            <div class="field__hint">إضافة مبلغ لمحفظة الطالب تلقائياً عند حصوله على درجة كاملة في الامتحان الشامل.</div>
+          </div>
+          <div class="field">
+            <label class="field__label">مبلغ المكافأة (ج.م)</label>
+            <input type="number" name="rewardAmount" min="0" step="1" value="${sys.rewardAmount}" style="max-width:100px;">
+          </div>
+          <div class="field">
+            <label class="field__label">عتبة شارة النخبة (%)</label>
+            <input type="number" name="eliteBadgeThreshold" min="50" max="100" value="${sys.eliteBadgeThreshold}" style="max-width:100px;">
+            <div class="field__hint">الحد الأدنى لدرجة الامتحان ليتم اعتباره امتحان نخبة.</div>
+          </div>
+          <div class="field">
+            <label class="field__label">عدد الامتحانات المتتالية للشارة</label>
+            <input type="number" name="eliteBadgeConsecutiveExams" min="1" max="20" value="${sys.eliteBadgeConsecutiveExams}" style="max-width:100px;">
+            <div class="field__hint">كم امتحان متتالي يجب أن يحصل الطالب فيه على درجة النخبة ليحصل على الشارة.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات التلعيب</button>
+        </form>
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:center; margin-top:24px;">
+      <button class="btn btn-danger-outline" id="resetSystemSettingsBtn" style="font-size:13px;">⚠️ إعادة تعيين إعدادات إدارة المتابعة إلى الوضع الافتراضي</button>
+    </div>
+  `;
+
+  // ربط السلايدرز
+  box.querySelectorAll(".slider").forEach((sl) => {
+    sl.addEventListener("input", () => {
+      const target = document.getElementById(sl.dataset.target);
+      if (target) target.textContent = sl.value + "%";
+    });
+  });
+
+  // حفظ الصحة
+  document.getElementById("healthScoreForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    data.healthWeightAttendance = Number(data.healthWeightAttendance);
+    data.healthWeightExams = Number(data.healthWeightExams);
+    data.healthWeightBehavior = Number(data.healthWeightBehavior);
+    data.healthColorGreen = Number(data.healthColorGreen);
+    data.healthColorYellow = Number(data.healthColorYellow);
+    data.defaultPassPercentage = Number(data.defaultPassPercentage);
+    saveSettings({ ...getSettings(), ...data });
+    toast("تم حفظ أوزان مؤشر الصحة", "success");
+  });
+
+  // حفظ التصعيد
+  document.getElementById("escalationForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    data.autoLockThreshold = Number(data.autoLockThreshold);
+    data.makeupGracePeriod = Number(data.makeupGracePeriod);
+    data.financialLockEnabled = fd.has("financialLockEnabled");
+    data.financialLockThreshold = Number(data.financialLockThreshold);
+    saveSettings({ ...getSettings(), ...data });
+    toast("تم حفظ إعدادات التصعيد", "success");
+  });
+
+  // حفظ البوابة
+  document.getElementById("gateForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    data.sessionLockoutMinutes = Number(data.sessionLockoutMinutes);
+    data.maxCapacityBufferPercent = Number(data.maxCapacityBufferPercent);
+    data.gateAudioFeedback = fd.has("gateAudioFeedback");
+    saveSettings({ ...getSettings(), ...data });
+    toast("تم حفظ إعدادات البوابة", "success");
+  });
+
+  // حفظ التلعيب
+  document.getElementById("gamificationForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    data.rewardEnabled = fd.has("rewardEnabled");
+    data.rewardAmount = Number(data.rewardAmount);
+    data.eliteBadgeThreshold = Number(data.eliteBadgeThreshold);
+    data.eliteBadgeConsecutiveExams = Number(data.eliteBadgeConsecutiveExams);
+    saveSettings({ ...getSettings(), ...data });
+    toast("تم حفظ إعدادات التلعيب", "success");
+  });
+
+  // إعادة تعيين إعدادات إدارة المتابعة
+  document.getElementById("resetSystemSettingsBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({ title: "إعادة تعيين الإعدادات", body: "هل أنت متأكد؟ سيتم إعادة كل إعدادات إدارة المتابعة إلى القيم الافتراضية.", confirmText: "تأكيد", tone: "danger" });
+    if (!ok) return;
+    const sysDefaults = { healthWeightAttendance: 40, healthWeightExams: 40, healthWeightBehavior: 20, healthColorGreen: 60, healthColorYellow: 40, defaultPassPercentage: 50, autoLockThreshold: 3, makeupGracePeriod: 48, financialLockEnabled: true, financialLockThreshold: 150, overdraftLimit: 0, deductionPriority: "session_first", guestStudentFee: 0, strictShiftClosing: false, sessionLockoutMinutes: 15, maxCapacityBufferPercent: 10, gateAudioFeedback: true, waSilentMode: false, waAbsenceBatching: false, waAbsenceBatchTime: "22:00", waReceiptToggle: true, rewardEnabled: true, rewardAmount: 10, eliteBadgeThreshold: 95, eliteBadgeConsecutiveExams: 3 };
+    saveSettings({ ...getSettings(), ...sysDefaults });
+    renderSystemTab(document.getElementById("tabContent"));
+    toast("تم إعادة تعيين إعدادات إدارة المتابعة", "success");
   });
 }
 
@@ -405,6 +714,7 @@ function renderGroupsTable() {
               <td class="text-muted">${students.filter((s) => s.groupId === g.id).length} / ${g.capacity}</td>
               <td>
                 <div class="row-actions">
+                  <a class="btn btn-outline btn-icon" href="group-students.html?groupId=${g.id}" title="عرض الطلاب">${icons.users}</a>
                   <button class="btn btn-outline btn-icon editGroupBtn" data-id="${g.id}" title="تعديل">${icons.edit}</button>
                   <button class="btn btn-outline btn-icon deleteGroupBtn" data-id="${g.id}" title="حذف">${icons.trash}</button>
                 </div>
@@ -429,6 +739,7 @@ function renderGroupsTable() {
             <div class="stg-card__row"><span class="text-muted">الطلاب</span><span>${students.filter((s) => s.groupId === g.id).length} / ${g.capacity}</span></div>
           </div>
           <div class="stg-card__actions">
+            <a class="btn btn-outline btn-sm" href="group-students.html?groupId=${g.id}">${icons.users} الطلاب</a>
             <button class="btn btn-outline btn-sm editGroupBtn" data-id="${g.id}">📝 تعديل</button>
             <button class="btn btn-outline btn-sm deleteGroupBtn" data-id="${g.id}" style="color:var(--danger);">🗑️ حذف</button>
           </div>
@@ -981,7 +1292,7 @@ async function deleteMonth(monthId) {
   renderAcademicTree();
 }
 
-/* ================= إدارة (المدرسون المساعدون والصلاحيات) ================= */
+/* ================= إدارة الحسابات (المدرسون المساعدون والصلاحيات) ================= */
 function renderTeamTab(box) {
   box.innerHTML = `
     <div class="card card-pad">
@@ -1398,7 +1709,8 @@ function renderWhatsAppTemplatesTab(box) {
   const overrides = getAllOverrides();
   const overriddenCount = Object.keys(overrides).length;
   const settings = getSettings();
-  const waAutoSend = settings.waAutoSend !== false;
+  const sys = getSystemSettings();
+  const waAutoSend = settings.waAutoSend === true;
 
   box.innerHTML = `
     <div class="card card-pad" style="margin-bottom:16px;">
@@ -1414,6 +1726,38 @@ function renderWhatsAppTemplatesTab(box) {
           </div>
         </label>
         <button type="submit" class="btn btn-primary btn-sm" style="margin-top:10px;">حفظ</button>
+      </form>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">💬 أتمتة الإرسال</div></div>
+      <form id="whatsappAutoForm">
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" name="waSilentMode" ${sys.waSilentMode ? "checked" : ""} style="width:16px;height:16px;">
+            🔇 وضع الصامت — تعطيل الإرسال الآلي
+          </label>
+          <div class="field__hint">إيقاف إرسال رسائل الواتساب التلقائية مؤقتاً (مفيد عند ضعف الإنترنت).</div>
+        </div>
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" name="waAbsenceBatching" ${sys.waAbsenceBatching ? "checked" : ""} style="width:16px;height:16px;">
+            📦 تجميع رسائل الغياب
+          </label>
+          <div class="field__hint">إرسال رسائل الغياب مجمعة في وقت محدد بدلاً من الإرسال الفوري.</div>
+        </div>
+        <div class="field">
+          <label class="field__label">موعد الإرسال المجمع</label>
+          <input type="time" name="waAbsenceBatchTime" value="${sys.waAbsenceBatchTime}" style="max-width:120px;">
+        </div>
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" name="waReceiptToggle" ${sys.waReceiptToggle ? "checked" : ""} style="width:16px;height:16px;">
+            🧾 إرسال إيصال الدفع
+          </label>
+          <div class="field__hint">إرسال إيصال إلكتروني على الواتساب عند كل عملية دفع أو شحن محفظة.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" type="submit">${icons.check} حفظ إعدادات الأتمتة</button>
       </form>
     </div>
 
@@ -1457,6 +1801,20 @@ function renderWhatsAppTemplatesTab(box) {
       resetAllTemplates();
       toast("تم إعادة كل القوالب للافتراضى", "success");
       renderWhatsAppTemplatesTab(box);
+    });
+  }
+
+  const waAutoForm = document.getElementById("whatsappAutoForm");
+  if (waAutoForm) {
+    waAutoForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const data = Object.fromEntries(fd.entries());
+      data.waSilentMode = fd.has("waSilentMode");
+      data.waAbsenceBatching = fd.has("waAbsenceBatching");
+      data.waReceiptToggle = fd.has("waReceiptToggle");
+      saveSettings({ ...getSettings(), ...data, waAutoSend: data.waSilentMode ? false : getSettings().waAutoSend });
+      toast("تم حفظ إعدادات أتمتة الواتساب", "success");
     });
   }
 }

@@ -3,43 +3,19 @@
 // يكشف التحسن الأكاديمي ويولّد رسائل واتساب جاهزة لولى الأمر
 // =========================================================
 
-import { getExams, getStudents, addAchievement, getAchievementsForStudent, getAchievements } from "./storage.js";
+import { getExams, getStudents, addAchievement, getAchievementsForStudent, getAchievements, getSystemSettings } from "./storage.js";
 import { escapeHTML, todayISO } from "./helpers.js";
 
-/* ── أنواع الإنجازات ── */
-const TYPES = {
-  academic_jump: {
-    label: "قفزة أكاديمية",
-    icon: "🚀",
-    color: "primary",
-    threshold: 25,
-  },
-  excellence: {
-    label: "تميّز",
-    icon: "⭐",
-    color: "success",
-    minScore: 85,
-    minImprovement: 15,
-  },
-  recovery: {
-    label: "تعافي",
-    icon: "💪",
-    color: "warning",
-    wasBelow: 50,
-    nowAbove: 70,
-  },
-  perfect: {
-    label: "درجة كاملة",
-    icon: "🏆",
-    color: "success",
-  },
-  consistent: {
-    label: "تحسن مستمر",
-    icon: "📈",
-    color: "primary",
-    minExams: 3,
-  },
-};
+function getTypes() {
+  const sys = getSystemSettings();
+  return {
+    academic_jump: { label: "قفزة أكاديمية", icon: "🚀", color: "primary", threshold: 25 },
+    excellence: { label: "تميّز", icon: "⭐", color: "success", minScore: Number(sys.eliteBadgeThreshold) || 85, minImprovement: 15 },
+    recovery: { label: "تعافي", icon: "💪", color: "warning", wasBelow: 50, nowAbove: 70 },
+    perfect: { label: "درجة كاملة", icon: "🏆", color: "success" },
+    consistent: { label: "تحسن مستمر", icon: "📈", color: "primary", minExams: Number(sys.eliteBadgeConsecutiveExams) || 3 },
+  };
+}
 
 /* ── كشف الإنجازات لطالب بعد امتحان جديد ── */
 export function detectAchievements(studentId, examId, newScore, maxScore) {
@@ -87,6 +63,8 @@ export function detectAchievements(studentId, examId, newScore, maxScore) {
   /* حساب المتوسط السابق */
   const prevAvg = Math.round(previousResults.reduce((s, r) => s + r.pct, 0) / previousResults.length);
   const improvement = newPct - prevAvg;
+
+  const TYPES = getTypes();
 
   /* ── 2. قفزة أكاديمية (تحسن 25% أو أكتر) ── */
   if (improvement >= TYPES.academic_jump.threshold && !existingExamTypes.has("academic_jump")) {
@@ -214,6 +192,7 @@ function generateBatchMessage(achievements, teacherName) {
   const t = teacherName || "المستمر";
 
   let msg = `🎉 إنجازات ${studentName} الأخيرة:\n\n`;
+  const TYPES = getTypes();
   achievements.forEach((a) => {
     const meta = TYPES[a.type] || {};
     msg += `${meta.icon || "⭐"} ${meta.label || "إنجاز"}: "${a.examTitle}" — ${a.newPct}%\n`;
@@ -224,6 +203,7 @@ function generateBatchMessage(achievements, teacherName) {
 
 /* ── Helpers ── */
 export function getTypeMeta(type) {
+  const TYPES = getTypes();
   return TYPES[type] || { label: type, icon: "⭐", color: "primary" };
 }
 

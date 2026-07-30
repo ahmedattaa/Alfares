@@ -19,6 +19,8 @@ import {
   getCenterName,
   getAdvancePermissionForStudent,
   getSession,
+  isFeatureEnabled,
+  getSystemSettings,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, menuDialog, formModal, emptyStateHTML, ensureOverlay } from "./ui.js";
@@ -465,6 +467,7 @@ function bindAbsenceEvents(box) {
     });
     if (notifications.length) {
       try { openWhatsAppBulk(notifications); } catch (e) { /* popup blocker */ }
+      Sounds.messageSent();
       toast(`تم فتح واتساب لإرسال ${notifications.length} إشعار`, "success");
     } else {
       toast("لا أرقام هواتف متاحة", "warning");
@@ -479,12 +482,13 @@ function bindAbsenceEvents(box) {
 
       recordAttendanceStatus(studentId, "ST-ABSENT", selectedDate);
 
-      if (getSettings().waAutoSend !== false && phone) {
+      if (getSettings().waAutoSend === true && !getSystemSettings().waSilentMode && phone) {
         try {
           openWhatsApp(phone, renderTemplate("absence_without_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: getCenterName() }));
         } catch (e) { /* popup blocker */ }
       }
 
+      Sounds.warning();
       toast(`تم تسجيل غياب ${name} بدون إذن`, "warning");
       const row = btn.closest(".absent-row");
       const groupList = row?.closest("#absenceGroupList");
@@ -502,7 +506,8 @@ function bindAbsenceEvents(box) {
 
       recordAttendanceStatus(studentId, "ST-EXCUSED", selectedDate);
 
-      if (getSettings().waAutoSend !== false && phone) {
+      Sounds.success();
+      if (getSettings().waAutoSend === true && !getSystemSettings().waSilentMode && phone) {
         try {
           openWhatsApp(phone, renderTemplate("absence_with_permission", { studentName: name, dateStr: formatDateAr(selectedDate), centerName: getCenterName() }));
         } catch (e) { /* popup blocker */ }
@@ -576,6 +581,7 @@ async function onBulkNotify() {
   try {
     const result = openWhatsAppBulk(notifications);
     if (result) {
+      Sounds.messageSent();
       toast(`تم فتح واتساب لإرسال ${result.total} إشعار (أول إشعار: ${result.first})`, "success");
     }
   } catch (e) { /* popup blocker */ }
@@ -632,6 +638,7 @@ function openGuestModal() {
     const guest = addGuestStudent(name, phone, group);
     if (!guest) { toast("فشلت إضافة الزائر", "error"); return; }
 
+    Sounds.studentAdded();
     toast(`تم تسجيل الزائر: ${name}`, "success");
     close();
     refreshUI();
@@ -936,7 +943,7 @@ function renderStudentsList(data) {
         <div class="qa-row ${hasRecord ? "is-processed" : ""} ${isPaid ? "is-paid" : ""} ${isUnpaid ? "is-unpaid" : ""} ${isAbsent ? "is-absent" : ""} ${isExcused ? "is-excused" : ""} ${isLocked ? "is-locked" : ""} ${s.isGuest ? "is-guest" : ""}" data-student-id="${s.id}">
           <span class="code-pill">${escapeHTML(s.code || "-")}</span>
           <span class="qa-row__name">${escapeHTML(s.name)}${s.isGuest ? ` <span class="badge badge-info" style="font-size:9px; padding:1px 5px;">زائر</span>` : ""}${getAdvancePermissionForStudent(s.id, selectedDate) ? ` <span class="badge badge-primary" style="font-size:9px; padding:1px 5px;">📋 إذن مسبق</span>` : ""}</span>
-          ${(s.walletBalance || 0) > 0 ? `<span class="badge badge-success" style="font-size:10px;">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : ""}
+          ${isFeatureEnabled("wallet") && (s.walletBalance || 0) > 0 ? `<span class="badge badge-success" style="font-size:10px;">${icons.wallet} ${formatMoney(s.walletBalance)}</span>` : ""}
           ${escLevel > 0 ? `<span class="badge badge-${escMeta.color}" style="font-size:10px;">${escMeta.icon} تصعيد ${escLevel}</span>` : ""}
           ${isLocked ? `<span class="badge badge-danger" style="margin-right:auto;">مقفول: ${escapeHTML(s.lockReason || "")}</span>` : ""}
           ${
@@ -989,10 +996,19 @@ function quickMark(studentId, statusId) {
   if (result.financeInfo) message += ` — ${formatMoney(result.financeInfo.collected)}`;
   toast(message, "success");
 
+  // صوت حسب نوع العملية
+  const st = getStudentStatuses().find((s) => s.id === statusId);
+  if (st) {
+    if (st.payment === "paid") Sounds.cashRegister();
+    else if (st.category === "absent" || st.category === "action") Sounds.warning();
+    else Sounds.success();
+  }
+  if (result.student?.dataStatus === "minimal") Sounds.incompleteAlert();
+
   // إرسال إشعار واتساب تلقائي لولي الأمر (للحضور فقط)
   try {
     const status = getStudentStatuses().find((s) => s.id === statusId);
-    if (getSettings().waAutoSend !== false && status && status.presence === "present" && status.payment) {
+    if (getSettings().waAutoSend === true && !getSystemSettings().waSilentMode && status && status.presence === "present" && status.payment) {
       const notification = sendAttendanceNotification(studentId, statusId, selectedDate, result.financeInfo);
       if (notification) {
         openWhatsApp(notification.phone, notification.message);
@@ -1039,12 +1055,18 @@ async function openEditMenu(studentId) {
   }
 
   // إشعار مكافأة (نجم الحصة)
-  if (getSettings().waAutoSend !== false && result?.rewardResult && status.rewardAmount > 0) {
+  if (getSettings().waAutoSend === true && !getSystemSettings().waSilentMode && result?.rewardResult && status.rewardAmount > 0) {
     sendRewardNotification(studentId, status.rewardAmount, status.name);
     const debtMsg = result.rewardResult.debtCovered > 0 ? ` — تم سداد ${formatMoney(result.rewardResult.debtCovered)} من المتأخرات` : "";
     toast(`مكافأة ${formatMoney(status.rewardAmount)} تمت إضافة محفظة ${student?.name || ""}${debtMsg}`, "success");
   }
 
+  // صوت حسب الحالة المختارة
+  if (status) {
+    if (status.payment === "paid") Sounds.cashRegister();
+    else if (status.category === "absent" || status.category === "action") Sounds.warning();
+    else Sounds.success();
+  }
   toast(`تم تحديث حالة ${student?.name || ""}`, "success");
   refreshUI();
 }
@@ -1062,6 +1084,7 @@ async function handleUnlock(studentId) {
   if (!ok) return;
 
   unlockStudent(studentId);
+  Sounds.success();
   toast(`تم فتح القفل على ${student.name}`, "success");
   refreshUI();
 }

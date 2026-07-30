@@ -5,7 +5,7 @@
 // الغياب الثالث المتتالي: قفل + استدعاء ولي الأمر
 // =========================================================
 
-import { getStudents, getAttendance, getStudentStatuses, getSettings, getEscalationLog, addEscalationEntry, saveStudents, saveEscalationLog } from "./storage.js";
+import { getStudents, getAttendance, getStudentStatuses, getSettings, getEscalationLog, addEscalationEntry, saveStudents, saveEscalationLog, getSystemSettings } from "./storage.js";
 import { findGroup } from "./lookups.js";
 import { formatDateAr } from "./helpers.js";
 import { renderTemplate } from "./whatsapp-templates.js";
@@ -40,9 +40,11 @@ export function getConsecutiveAbsences(studentId) {
 
 /* ── حساب مستوى التصعيد الحالي ── */
 export function getEscalationLevel(studentId) {
+  const sys = getSystemSettings();
+  const threshold = Number(sys.autoLockThreshold) || 3;
   const consecutive = getConsecutiveAbsences(studentId);
-  if (consecutive >= 3) return 3;
-  if (consecutive >= 2) return 2;
+  if (consecutive >= threshold) return 3;
+  if (consecutive >= Math.max(1, threshold - 1)) return 2;
   if (consecutive >= 1) return 1;
   return 0;
 }

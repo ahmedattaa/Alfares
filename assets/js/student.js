@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession } from "./storage.js";
+import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession, isFeatureEnabled } from "./storage.js";
 import { escapeHTML, initials, formatMoney, formatDateAr, todayISO, generateId } from "./helpers.js";
 import { emptyStateHTML, toast, whatsappPreviewDialog, formModal, confirmDialog } from "./ui.js";
 import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
@@ -211,6 +211,7 @@ function render() {
       `;
     })()}
 
+    ${isFeatureEnabled("extraCharges") ? `
     <div class="card card-pad" style="margin-top:18px;">
       <div class="card__head"><div class="card__title">استحقاقات مالية إضافية (خارج سعر الحصة)</div></div>
       ${
@@ -226,7 +227,7 @@ function render() {
             )
           : emptyStateHTML({ title: "لا توجد استحقاقات مالية إضافية" })
       }
-    </div>
+    </div>` : ""}
 
     ${renderStudentLedger(student)}
   `;

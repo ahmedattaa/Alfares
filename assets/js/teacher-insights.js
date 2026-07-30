@@ -592,6 +592,7 @@ function renderFollowupEscalation(inner, summary, groups, grades, session) {
       const name = btn.dataset.name;
       const level = parseInt(btn.dataset.level);
       if (!phone) { toast("لا يوجد هاتف لولى الأمر", "warning"); return; }
+      Sounds.messageSent();
       const msg = buildEscalationMessage({ name }, level);
       if (msg) openWhatsApp(phone, msg);
     });
@@ -609,6 +610,7 @@ function renderFollowupEscalation(inner, summary, groups, grades, session) {
       });
       if (!ok) return;
       logPhoneCall(studentId, session?.username || "المستخدم");
+      Sounds.success();
       toast(`تم تسجيل الاتصال بنجاح`, "success");
       render();
     });
@@ -621,6 +623,7 @@ function renderFollowupEscalation(inner, summary, groups, grades, session) {
       const note = await prompt(`فتح القفل — ${name}\nملاحظة (اختياري):`);
       if (note === null) return;
       overrideEscalation(studentId, session?.username || "المستخدم", note || "فتح استثنائي");
+      Sounds.success();
       toast(`تم فتح القفل على ${name}`, "success");
       render();
     });
@@ -686,6 +689,7 @@ function renderFollowupDisengaged(inner, students, attendance, statuses, groups,
   renderInner();
 
   document.getElementById("bulkDisengagedAlert")?.addEventListener("click", () => {
+    Sounds.messageSent();
     const currentData = calcDisengaged(students, attendance, statuses, groups, exams, {
       gradeId: disengagedGradeFilter,
       mode: disengagedMode,
@@ -1360,6 +1364,7 @@ function renderAchievementsSection(box) {
         const phone = student.parentPhone;
         if (!phone) { toast("لا يوجد هاتف لولى الأمر", "warning"); return; }
 
+        Sounds.messageSent();
         openWhatsApp(phone, message);
         markAchievementSent(achId);
         toast("تم الإرسال وتسجيل الإنجاز ✓", "success");

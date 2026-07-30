@@ -15,7 +15,7 @@ import { computePnL, renderPnLHTML } from "./pnl-report.js";
 import { renderStackedBar } from "./charts.js";
 import { openCollectionDialog } from "./collection-dialog.js";
 import { openWhatsApp } from "./whatsapp.js";
-import { getCenterName, getSession } from "./storage.js";
+import { getCenterName, getSession, isFeatureEnabled } from "./storage.js";
 import { canPerformAction } from "./permissions.js";
 
 const content = await initPage("finance");
@@ -39,7 +39,7 @@ function render() {
       <button class="tab-btn ${activeTab === "weekly" ? "is-active" : ""}" data-tab="weekly">${icons.chart}<span>الأسبوعى</span></button>
       <button class="tab-btn ${activeTab === "late" ? "is-active" : ""}" data-tab="late">${icons.alert}<span>المتأخرات</span></button>
       <button class="tab-btn ${activeTab === "monthly" ? "is-active" : ""}" data-tab="monthly">${icons.shield}<span>الإيرادات الشهرية</span></button>
-      <button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات</span></button>
+      ${isFeatureEnabled("extraCharges") ? `<button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات</span></button>` : ""}
       <button class="tab-btn ${activeTab === "pnl" ? "is-active" : ""}" data-tab="pnl">${icons.chart}<span>التقرير الختامي</span></button>
     </div>
 
@@ -92,8 +92,8 @@ function renderDailyTab(box) {
     renderDailyTab(box);
   });
 
-  document.getElementById("dailyExportExcelBtn")?.addEventListener("click", () => exportTableToExcel("#groupsBreakdown table", `التقرير_اليومى_${selectedDate}`));
-  document.getElementById("dailyExportPdfBtn")?.addEventListener("click", () => printTableAsPDF("#groupsBreakdown table", `التقرير اليومى — ${formatDateAr(selectedDate)}`));
+  document.getElementById("dailyExportExcelBtn")?.addEventListener("click", () => { Sounds.export(); exportTableToExcel("#groupsBreakdown table", `التقرير_اليومى_${selectedDate}`); });
+  document.getElementById("dailyExportPdfBtn")?.addEventListener("click", () => { Sounds.export(); printTableAsPDF("#groupsBreakdown table", `التقرير اليومى — ${formatDateAr(selectedDate)}`); });
 
   renderGroupsBreakdown();
   renderPaymentsTable();
@@ -583,6 +583,7 @@ async function openChargeForm() {
   });
 
   saveExtraCharges(charges);
+  Sounds.save();
   toast(`تم تطبيق الاستحقاق على ${groupStudents.length} طالب بنجاح`, "success");
   renderChargesTable();
 }
@@ -713,8 +714,8 @@ function renderLateTab(box) {
     renderLateStudentsList();
   });
 
-  document.getElementById("lateExportExcelBtn")?.addEventListener("click", () => exportTableToExcel("#lateStudentsList table", "المتأخرات_المالية"));
-  document.getElementById("lateExportPdfBtn")?.addEventListener("click", () => printTableAsPDF("#lateStudentsList table", "المتأخرات المالية"));
+  document.getElementById("lateExportExcelBtn")?.addEventListener("click", () => { Sounds.export(); exportTableToExcel("#lateStudentsList table", "المتأخرات_المالية"); });
+  document.getElementById("lateExportPdfBtn")?.addEventListener("click", () => { Sounds.export(); printTableAsPDF("#lateStudentsList table", "المتأخرات المالية"); });
 
   renderLateStudentsList();
 }
@@ -819,6 +820,7 @@ function renderLateStudentsList() {
     btn.addEventListener("click", () => {
       const name = btn.dataset.name;
       const phone = btn.dataset.phone;
+      Sounds.messageSent();
       const msg = `مرحباً، أنا مستر فارس من ${getCenterName()}.\nتذكير: لدى الطالب/ة ${name} مبالغ مستحقة غير مدفوعة.\nيرجى المتابعة والتواصل معنا لتسوية المبلغ.\nشكراً لكم.`;
       openWhatsApp(phone, msg);
     })

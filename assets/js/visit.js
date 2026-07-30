@@ -12,7 +12,9 @@ import {
   getPayments, savePayments, getExams,
   getWalletTransactions, saveWalletTransactions,
   addWalletDeposit, getFollowupLogs, addFollowupLog, getLastFollowupLog,
-  recordCashCollection, recordLedgerOnly, addLedgerEntry,
+  recordCashCollection, recordLedgerOnly, addLedgerEntry, getCenterName,
+  isFeatureEnabled,
+  getSystemSettings,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, debounce } from "./helpers.js";
 import { toast, confirmDialog, formModal, whatsappPreviewDialog } from "./ui.js";
@@ -25,6 +27,7 @@ import { formatTimeAr, formatDaysAr, WEEKDAY_OPTIONS } from "./schedule.js";
 import { renderTemplate } from "./whatsapp-templates.js";
 import { buildMonthlyFollowupMessage } from "./reports.js";
 import { openCollectionDialog } from "./collection-dialog.js";
+import { canPerformAction } from "./permissions.js";
 
 const content = await initPage("visit");
 let selectedStudentId = null;
@@ -104,7 +107,8 @@ function onSearch() {
     !codeMatches.includes(s) && !nameMatches.includes(s) &&
     ((s.phone || "").toLowerCase().includes(term) || (s.parentPhone || "").toLowerCase().includes(term))
   );
-  const matches = [...codeMatches, ...nameMatches, ...phoneMatches].slice(0, 12);
+  const allMatches = [...codeMatches, ...nameMatches, ...phoneMatches];
+  const matches = allMatches.slice(0, 30);
 
   if (!matches.length) {
     results.innerHTML = `<div class="vst-search__empty">لا توجد نتائج</div>`;
@@ -112,6 +116,7 @@ function onSearch() {
     return;
   }
 
+  const hasMore = allMatches.length > 30;
   results.innerHTML = matches.map((s) => {
     const g = findGroup(groups, s.groupId);
     const wallet = Number(s.walletBalance || 0);
@@ -130,6 +135,10 @@ function onSearch() {
         </div>
       </div>`;
   }).join("");
+
+  if (hasMore) {
+    results.innerHTML += `<div style="text-align:center; padding:8px; font-size:12px; color:var(--muted);">عرض ${matches.length} من ${allMatches.length} نتيجة — حدد أكثر لتحديد طالب</div>`;
+  }
 
   results.style.display = "block";
   results.querySelectorAll(".vst-search__item").forEach((el) =>
@@ -182,7 +191,7 @@ function renderStudentZone() {
           <div class="vst-profile-card__meta">تاريخ الانضمام: ${formatDateAr(student.joinDate)}</div>
         </div>
         <div class="vst-profile-card__badges">
-          ${wallet > 0 ? `<div class="vst-badge vst-badge--success">${icons.wallet} ${formatMoney(wallet)}</div>` : ""}
+          ${isFeatureEnabled("wallet") && wallet > 0 ? `<div class="vst-badge vst-badge--success">${icons.wallet} ${formatMoney(wallet)}</div>` : ""}
           ${debt > 0 ? `<div class="vst-badge vst-badge--danger">${icons.money} ${formatMoney(debt)}</div>` : ""}
           ${locked ? `<div class="vst-badge vst-badge--warning">🔒 مقفول</div>` : ""}
         </div>
@@ -423,6 +432,12 @@ function onStatusClick(studentId, statusId) {
     }
   }
 
+  // صوت حسب نوع الحالة
+  if (status.payment === "paid") Sounds.cashRegister();
+  else if (status.category === "absent" || status.category === "action") Sounds.warning();
+  else Sounds.success();
+  if (result.student?.dataStatus === "minimal") Sounds.incompleteAlert();
+
   let message = `${result.status.name}: ${result.student.name}`;
   if (result.financeInfo) {
     message += ` — تم تحصيل ${formatMoney(result.financeInfo.collected)}`;
@@ -447,6 +462,8 @@ async function onActionClick(studentId, statusId) {
   if (!ok) return;
 
   const result = recordActionStatus(studentId, statusId);
+  if (status.tone === "danger") Sounds.urgentAlarm();
+  else Sounds.warning();
   toast(`تم تسجيل: ${status.name}`, status.tone === "danger" ? "danger" : "warning");
 
   if (result?.rewardResult && status.rewardAmount > 0) {
@@ -468,8 +485,8 @@ function computeTotalDue(student) {
   const group = findGroup(getGroups(), student.groupId);
   const sessionDue = group ? dueAmount(student, group) : 0;
   const priorBalance = Number(student.lateBalance || 0);
-  const walletBalance = Number(student.walletBalance || 0);
-  const charges = getExtraCharges().filter((c) => c.studentId === student.id && c.status === "unpaid");
+  const walletBalance = isFeatureEnabled("wallet") ? Number(student.walletBalance || 0) : 0;
+  const charges = isFeatureEnabled("extraCharges") ? getExtraCharges().filter((c) => c.studentId === student.id && c.status === "unpaid") : [];
   const chargesTotal = charges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
   const grandTotal = sessionDue + priorBalance + chargesTotal;
   const netDue = Math.max(0, grandTotal - walletBalance);
@@ -634,7 +651,7 @@ function renderReceiptHTML(receipt) {
   return `
     <div class="vst-receipt">
       <div class="vst-receipt__header">
-        <div class="vst-receipt__center">سنتر الفارس التعليمي</div>
+        <div class="vst-receipt__center">${getCenterName()}</div>
         <div class="vst-receipt__title">إيصال تسوية شاملة</div>
         <div class="vst-receipt__date">${formatDateAr(date)} — ${time}</div>
       </div>
@@ -683,9 +700,11 @@ function renderReceiptHTML(receipt) {
 // ═══════════════════════════════════════════════════════════
 
 function renderFinanceTab(box, student) {
-  const wallet = Number(student.walletBalance || 0);
+  const enableWallet = isFeatureEnabled("wallet");
+  const enableCharges = isFeatureEnabled("extraCharges");
+  const wallet = enableWallet ? Number(student.walletBalance || 0) : 0;
   const debt = Number(student.lateBalance || 0);
-  const charges = getExtraCharges().filter((c) => c.studentId === student.id && c.status === "unpaid");
+  const charges = enableCharges ? getExtraCharges().filter((c) => c.studentId === student.id && c.status === "unpaid") : [];
   const totalCharges = charges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
   const group = findGroup(getGroups(), student.groupId);
   const sessionPrice = group ? dueAmount(student, group) : 0;
@@ -738,9 +757,11 @@ function renderFinanceTab(box, student) {
       <div class="vst-master-ledger__actions">
         ${netDue > 0 ? `
           <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+            ${canPerformAction(getSession(), "visit", "collection") ? `
             <button class="btn btn-outline" id="vstCollectionDialogBtn" style="font-size:13px; padding:10px 16px;">
               💰 تحصيل تفصيلي
             </button>
+            ` : ""}
           </div>
           <div class="vst-master-ledger__pay-row">
             <input type="number" class="input" id="vstSettleAmount" min="0" step="1" value="${netDue}" style="max-width:180px; font-size:18px; font-weight:800; text-align:center;">
@@ -764,21 +785,23 @@ function renderFinanceTab(box, student) {
     </div>`}
 
     <div class="vst-finance-grid" style="margin-top:16px;">
+      ${enableWallet ? `
       <div class="vst-finance-box vst-finance-box--wallet">
         <div class="vst-finance-box__icon">${icons.wallet}</div>
         <div class="vst-finance-box__value">${formatMoney(wallet)}</div>
         <div class="vst-finance-box__label">الرصيد المتاح</div>
-      </div>
+      </div>` : ""}
       <div class="vst-finance-box vst-finance-box--debt" style="cursor:${debt > 0 ? "pointer" : "default"}; ${debt > 0 ? "" : "opacity:0.5;"}" ${debt > 0 ? `id="vstDebtBox"` : ""}>
         <div class="vst-finance-box__icon">${icons.money}</div>
         <div class="vst-finance-box__value">${formatMoney(debt)}</div>
         <div class="vst-finance-box__label">المتأخرات${debt > 0 ? " — اضغط للتحصيل" : ""}</div>
       </div>
+      ${enableCharges ? `
       <div class="vst-finance-box vst-finance-box--charges">
         <div class="vst-finance-box__icon">${icons.alert}</div>
         <div class="vst-finance-box__value">${formatMoney(totalCharges)}</div>
         <div class="vst-finance-box__label">مستحقات أخرى</div>
-      </div>
+      </div>` : ""}
       <div class="vst-finance-box vst-finance-box--session">
         <div class="vst-finance-box__icon">${icons.clipboard}</div>
         <div class="vst-finance-box__value">${formatMoney(sessionPrice)}</div>
@@ -786,6 +809,7 @@ function renderFinanceTab(box, student) {
       </div>
     </div>
 
+    ${enableWallet && canPerformAction(getSession(), "visit", "wallet_deposit") ? `
     <div class="card card-pad" style="margin-top:16px;">
       <div class="card__head"><div class="card__title">إيداع في المحفظة</div></div>
       <div class="vst-deposit-form">
@@ -793,6 +817,7 @@ function renderFinanceTab(box, student) {
         <button class="btn btn-success" id="vstDepositBtn">${icons.wallet} إيداع</button>
       </div>
     </div>
+    ` : ""}
 
     ${charges.length ? `
     <div class="card card-pad" style="margin-top:16px;">
@@ -842,6 +867,7 @@ function renderFinanceTab(box, student) {
       const result = settleAllDebts(student.id, amount);
       if (!result) { toast("فشلت عملية التسوية", "error"); return; }
 
+      Sounds.cashRegister();
       toast(`✅ تم التسوية الشاملة — الإجمالي: ${formatMoney(result.receipt.breakdown.grandTotal)}`, "success");
 
       // عرض الإيصال
@@ -852,7 +878,7 @@ function renderFinanceTab(box, student) {
 
       // إرسال واتساب بالإيصال
       try {
-        if (student.parentPhone) {
+        if (student.parentPhone && getSystemSettings().waReceiptToggle !== false) {
           const r = result.receipt;
           const waMsg = [
             `✅ *إيصال تسوية شاملة*`,
@@ -899,7 +925,10 @@ function renderFinanceTab(box, student) {
   box.querySelectorAll(".vstSettleChargeBtn").forEach((btn) =>
     btn.addEventListener("click", () => {
       const charge = settleExtraCharge(btn.dataset.id);
-      if (charge) toast(`تم تسوية "${charge.name}"`, "success");
+      if (charge) {
+        Sounds.coinDrop();
+        toast(`تم تسوية "${charge.name}"`, "success");
+      }
       renderStudentZone();
     })
   );
@@ -910,6 +939,7 @@ function renderFinanceTab(box, student) {
     if (amount <= 0) { toast("أدخل مبلغ صحيح", "warning"); return; }
     const result = addWalletDeposit(student.id, amount);
     if (!result) { toast("فشلت عملية الإيداع", "error"); return; }
+    Sounds.coinDrop();
     let msg = `تم إيداع ${formatMoney(amount)}`;
     if (result.debtCovered > 0) msg += ` — تغطية متأخرات: ${formatMoney(result.debtCovered)}`;
     if (result.walletDeposit > 0) msg += ` — رصيد جديد: ${formatMoney(result.newWalletBalance)}`;
@@ -917,7 +947,7 @@ function renderFinanceTab(box, student) {
     try {
       if (student.parentPhone) openWhatsApp(student.parentPhone, renderTemplate("wallet_deposit_reception", {
         studentName: student.name, amount: formatMoney(amount),
-        newWalletBalance: formatMoney(result.newWalletBalance), centerName: "سنتر الفارس التعليمي",
+        newWalletBalance: formatMoney(result.newWalletBalance), centerName: getCenterName(),
       }));
     } catch (e) { /* popup blocker */ }
     renderStudentZone();
@@ -1351,12 +1381,14 @@ async function openAddNoteModal(student) {
   if (!result || !result.text.trim()) return;
 
   addFollowupLog(student.id, result.text.trim(), { date: result.date, time: result.time });
+  Sounds.save();
   toast("تم حفظ الملاحظة بنجاح", "success");
   renderStudentZone();
 }
 
 async function sendFollowupWhatsApp(student) {
   if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
+  Sounds.messageSent();
 
   const attendance = getAttendance().filter((a) => a.studentId === student.id);
   const exams = getExams()
@@ -1387,7 +1419,7 @@ function renderContactTab(box, student) {
   const summaryMessage = renderTemplate("gen_summary", {
     studentName: student.name, wallet: formatMoney(wallet),
     debt: formatMoney(debt), groupName: group?.name || "—",
-    centerName: "سنتر الفارس التعليمي",
+    centerName: getCenterName(),
   });
 
   box.innerHTML = `
@@ -1427,14 +1459,16 @@ function renderContactTab(box, student) {
 
   document.getElementById("vstWaSummaryBtn").addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
+    Sounds.messageSent();
     try { openWhatsApp(student.parentPhone, summaryMessage); } catch (e) { /* popup blocker */ }
   });
 
   document.getElementById("vstWaCustomBtn").addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
+    Sounds.messageSent();
     try {
       openWhatsApp(student.parentPhone, renderTemplate("gen_custom_opener", {
-        studentName: student.name, centerName: "سنتر الفارس التعليمي",
+        studentName: student.name, centerName: getCenterName(),
       }));
     } catch (e) { /* popup blocker */ }
   });
@@ -1788,6 +1822,8 @@ style.textContent = `
   .vst-table__row:last-child { border-bottom: none; }
   .vst-table__row--exams { grid-template-columns: 1fr 1fr 1fr; }
   .vst-table__header.vst-table__row--exams { grid-template-columns: 1fr 1fr 1fr; }
+  .vst-table__row--exams-plus { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .vst-table__header.vst-table__row--exams-plus { grid-template-columns: 1fr 1fr 1fr 1fr; }
   .vst-table__row--att { grid-template-columns: 1fr 1fr 80px; }
   .vst-table__header.vst-table__row--att { grid-template-columns: 1fr 1fr 80px; }
 
@@ -1993,6 +2029,9 @@ style.textContent = `
     .vst-history-header > :nth-child(2) { display: none; }
     .vst-tl-stats { grid-template-columns: repeat(2, 1fr); }
     .vst-tl-stat__num { font-size: 18px; }
+  }
+  @media (max-width: 400px) {
+    .vst-schedule { grid-template-columns: repeat(2, 1fr); }
   }
 `;
 document.head.appendChild(style);

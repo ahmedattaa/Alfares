@@ -214,8 +214,10 @@ function bindOpenShiftEvents(shift) {
     const closed = closeShift(closingCash, getSession()?.username || "النظام");
     if (closed) {
       if (variance !== 0) {
+        Sounds.warning();
         toast(`تم التقفيل — ${variance > 0 ? "زيادة" : "عجز"} ${formatMoney(Math.abs(variance))} ج.م`, "warning");
       } else {
+        Sounds.cashRegister();
         toast("تم التقفيل بنجاح — الدرج متطابق ✓", "success");
       }
       render();
@@ -339,6 +341,7 @@ function bindOpeningPageEvents(shiftMode = "mandatory") {
 
     const shift = openShift(total, session?.username || "النظام");
     if (shift) {
+      Sounds.success();
       toast(shiftMode === "no_custody" ? "تم فتح الوردية بدون عهدة ✓" : `تم فتح الوردية — العهدة: ${formatMoney(total)} ✓`, "success");
       render();
     }

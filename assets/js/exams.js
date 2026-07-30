@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getExams, saveExams, getGroups, getStudents, getGrades, getSettings, getAdvancePermissionForStudent } from "./storage.js";
+import { getExams, saveExams, getGroups, getStudents, getGrades, getSettings, getAdvancePermissionForStudent, getSystemSettings, addWalletDeposit } from "./storage.js";
 import { escapeHTML, initials, formatDateAr, generateId, todayISO } from "./helpers.js";
 import { toast, formModal, emptyStateHTML, whatsappPreviewDialog, confirmDialog } from "./ui.js";
 import { groupName, gradeName, findGroup } from "./lookups.js";
@@ -384,6 +384,14 @@ function renderGradesPanel() {
         return `${meta.icon} ${st?.name || ""} — ${meta.label}`;
       }).join("\n");
       toast(`🎉 تم اكتشاف ${allDetected.length} إنجاز:\n${summary}`, "success", 6000);
+
+      /* ── مكافأة تلقائية للدرجة الكاملة ── */
+      const sys = getSystemSettings();
+      if (sys.rewardEnabled !== false && Number(sys.rewardAmount) > 0) {
+        allDetected.filter((a) => a.type === "perfect").forEach((a) => {
+          addWalletDeposit(a.studentId, Number(sys.rewardAmount), "مكافأة تفوق — درجة كاملة");
+        });
+      }
     }
 
     renderExamsList();
@@ -395,9 +403,10 @@ function buildStatsBar(scores, maxScore) {
   const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   const high = Math.max(...scores);
   const low = Math.min(...scores);
-  const passCount = scores.filter((s) => s >= maxScore * 0.5).length;
+  const passThreshold = Number(getSystemSettings().defaultPassPercentage) / 100;
+  const passCount = scores.filter((s) => s >= maxScore * passThreshold).length;
   const failCount = scores.length - passCount;
-  const passPct = Math.round((passCount / scores.length) * 100);
+  const passRate = Math.round((passCount / scores.length) * 100);
 
   const avgPct = Math.round((avg / maxScore) * 100);
   const highPct = Math.round((high / maxScore) * 100);
@@ -427,9 +436,9 @@ function buildStatsBar(scores, maxScore) {
           <span style="font-size:22px; font-weight:800; color:var(--danger);">${failCount}</span>
         </div>
         <div style="margin-top:6px; background:var(--border-2, #e0e0e0); border-radius:6px; height:6px; overflow:hidden;">
-          <div style="height:100%; width:${passPct}%; background:var(--success); border-radius:6px; transition:width 0.3s;"></div>
+          <div style="height:100%; width:${passRate}%; background:var(--success); border-radius:6px; transition:width 0.3s;"></div>
         </div>
-        <div style="font-size:11px; color:var(--muted); margin-top:3px;">${passPct}% نجاح</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:3px;">${passRate}% نجاح</div>
       </div>
     </div>
   `;

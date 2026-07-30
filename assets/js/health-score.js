@@ -4,20 +4,25 @@
 // بدون امتحانات: الحضور (60%) + السلوكي (40%)
 // =========================================================
 
-import { getStudents, getAttendance, getExams, getStudentStatuses, getGroups, getGrades } from "./storage.js";
+import { getStudents, getAttendance, getExams, getStudentStatuses, getGroups, getGrades, getSystemSettings } from "./storage.js";
 import { findGroup, gradeName, groupName } from "./lookups.js";
 
 const LOOKBACK_DAYS = 30;
 
 /* ── حساب درجة الطالب ── */
 export function computeHealthScore(studentId) {
+  const sys = getSystemSettings();
   const statuses = getStudentStatuses();
   const now = new Date();
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - LOOKBACK_DAYS);
   const cutoff = thirtyDaysAgo.toISOString().slice(0, 10);
 
-  /* ── 1. الحضور (40%) ── */
+  const wAtt = Number(sys.healthWeightAttendance) / 100;
+  const wExam = Number(sys.healthWeightExams) / 100;
+  const wBeh = Number(sys.healthWeightBehavior) / 100;
+
+  /* ── 1. الحضور ── */
   const allAttendance = getAttendance().filter((a) => a.studentId === studentId && a.category === "attendance");
   const recentAttendance = allAttendance.filter((a) => a.date >= cutoff);
   const attendanceSource = recentAttendance.length >= 2 ? recentAttendance : allAttendance;
@@ -31,7 +36,7 @@ export function computeHealthScore(studentId) {
     attendanceRate = Math.round((presentCount / attendanceSource.length) * 100);
   }
 
-  /* ── 2. الدرجات (40%) ── */
+  /* ── 2. الدرجات ── */
   const exams = getExams();
   const examPercentages = [];
   exams.forEach((exam) => {
@@ -46,7 +51,7 @@ export function computeHealthScore(studentId) {
     ? Math.round(examPercentages.reduce((sum, p) => sum + p, 0) / examPercentages.length)
     : 0;
 
-  /* ── 3. السجل السلوكي (20%) ── */
+  /* ── 3. السجل السلوكي ── */
   let behaviorDeductions = 0;
   const negativeStatuses = statuses.filter((s) => s.category === "action" && (s.tone === "warning" || s.tone === "danger"));
   const negativeIds = new Set(negativeStatuses.map((s) => s.id));
@@ -54,19 +59,27 @@ export function computeHealthScore(studentId) {
   const recentActions = getAttendance().filter(
     (a) => a.studentId === studentId && a.category === "action" && a.date >= cutoff && negativeIds.has(a.statusId)
   );
+  const dangerPenalty = Math.round(wBeh > 0 ? (8 / 0.2) * wBeh : 0);
+  const warningPenalty = Math.round(wBeh > 0 ? (3 / 0.2) * wBeh : 0);
   recentActions.forEach((a) => {
     const st = statuses.find((s) => s.id === a.statusId);
-    if (st?.tone === "danger") behaviorDeductions += 8;
-    else if (st?.tone === "warning") behaviorDeductions += 3;
+    if (st?.tone === "danger") behaviorDeductions += dangerPenalty;
+    else if (st?.tone === "warning") behaviorDeductions += warningPenalty;
   });
-  const behaviorScore = Math.max(0, 20 - behaviorDeductions);
+  const maxBehaviorScore = Math.round(wBeh * 100);
+  const behaviorScore = Math.max(0, maxBehaviorScore - behaviorDeductions);
 
   /* ── 4. النتيجة النهائية ── */
   let total;
-  if (hasExams) {
-    total = Math.round(attendanceRate * 0.4 + examAvg * 0.4 + behaviorScore);
+  if (hasExams && wExam > 0) {
+    total = Math.round(attendanceRate * wAtt + examAvg * wExam + (wBeh > 0 ? behaviorScore : 0));
+  } else if (!hasExams && wExam > 0) {
+    const remaining = wAtt + wBeh;
+    const adjAtt = remaining > 0 ? wAtt / remaining : 0.5;
+    const adjBeh = remaining > 0 ? wBeh / remaining : 0.5;
+    total = Math.round(attendanceRate * adjAtt + (wBeh > 0 ? behaviorScore : 0));
   } else {
-    total = Math.round(attendanceRate * 0.6 + behaviorScore);
+    total = Math.round(attendanceRate * (wAtt + wExam > 0 ? wAtt / (wAtt + wExam) : 1));
   }
   total = Math.min(100, Math.max(0, total));
 
@@ -92,40 +105,56 @@ export function computeAllHealthScores() {
 
 /* ── تصنيف اللون ── */
 export function getHealthColor(score) {
-  if (score >= 60) return "success";
-  if (score >= 40) return "warning";
+  const sys = getSystemSettings();
+  const green = Number(sys.healthColorGreen);
+  const yellow = Number(sys.healthColorYellow);
+  if (score >= green) return "success";
+  if (score >= yellow) return "warning";
   return "danger";
 }
 
 /* ── تصنيف النص ── */
 export function getHealthLabel(score) {
-  if (score >= 80) return "ممتاز";
-  if (score >= 60) return "جيد";
-  if (score >= 40) return "محتاج متابعة";
+  const sys = getSystemSettings();
+  const green = Number(sys.healthColorGreen);
+  const yellow = Number(sys.healthColorYellow);
+  if (score >= green) return "ممتاز";
+  if (score >= yellow) return "جيد";
+  if (score >= yellow * 0.6) return "محتاج متابعة";
   return "في خطر";
 }
 
-/* ── طلاب في منطقة الخطر (< 40) ── */
+/* ── طلاب في منطقة الخطر ── */
 function getDangerStudents() {
-  return computeAllHealthScores().filter((s) => s.health.total < 40);
+  const sys = getSystemSettings();
+  const yellow = Number(sys.healthColorYellow);
+  return computeAllHealthScores().filter((s) => s.health.total < yellow);
 }
 
-/* ── طلاب محتاجين متابعة (40–59) ── */
+/* ── طلاب محتاجين متابعة ── */
 function getWarningStudents() {
-  return computeAllHealthScores().filter((s) => s.health.total >= 40 && s.health.total < 60);
+  const sys = getSystemSettings();
+  const green = Number(sys.healthColorGreen);
+  const yellow = Number(sys.healthColorYellow);
+  return computeAllHealthScores().filter((s) => s.health.total >= yellow && s.health.total < green);
 }
 
-/* ── طلاب أصحاء (≥ 60) ── */
+/* ── طلاب أصحاء ── */
 function getHealthyStudents() {
-  return computeAllHealthScores().filter((s) => s.health.total >= 60);
+  const sys = getSystemSettings();
+  const green = Number(sys.healthColorGreen);
+  return computeAllHealthScores().filter((s) => s.health.total >= green);
 }
 
 /* ── ملخص الألوان للداشبورد ── */
 export function getHealthSummary() {
   const all = computeAllHealthScores();
-  const danger = all.filter((s) => s.health.total < 40);
-  const warning = all.filter((s) => s.health.total >= 40 && s.health.total < 60);
-  const healthy = all.filter((s) => s.health.total >= 60);
+  const sys = getSystemSettings();
+  const green = Number(sys.healthColorGreen);
+  const yellow = Number(sys.healthColorYellow);
+  const danger = all.filter((s) => s.health.total < yellow);
+  const warning = all.filter((s) => s.health.total >= yellow && s.health.total < green);
+  const healthy = all.filter((s) => s.health.total >= green);
   return { danger, warning, healthy, total: all.length };
 }
 

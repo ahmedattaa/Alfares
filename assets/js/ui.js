@@ -4,7 +4,7 @@
 
 import { icons } from "./icons.js";
 import { initials, formatHeaderDate, escapeHTML } from "./helpers.js";
-import { getSession, logout, getSettings, flushPendingWrites, getCurrentShift } from "./storage.js";
+import { getSession, logout, getSettings, flushPendingWrites, getCurrentShift, getSystemSettings } from "./storage.js";
 import { canAccessPage } from "./permissions.js";
 import { THEMES, getCurrentTheme, setCurrentTheme, applyCurrentTheme } from "./themes.js";
 
@@ -194,6 +194,16 @@ function bindShellEvents() {
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#themeSwitcher")) themeMenu?.classList.remove("is-open");
   });
+
+  /* ── تقفيل إجباري للوردية ── */
+  window.addEventListener("beforeunload", (e) => {
+    const sys = getSystemSettings();
+    if (sys.strictShiftClosing && getCurrentShift()) {
+      e.preventDefault();
+      e.returnValue = "⚠️ الوردية لسه مفتوحة! لو سيبت الصفحة هتتفقد البيانات. احرص على تقفيل الوردية الأول.";
+      return e.returnValue;
+    }
+  });
 }
 
 /* ================= Toast ================= */
@@ -304,7 +314,7 @@ export function choiceDialog({ title, body, yesText = "نعم", noText = "لا" 
 export function formModal({ title, bodyHTML, submitText = "حفظ", cancelText = "إلغاء", wide = false } = {}) {
   const overlay = ensureOverlay();
   overlay.innerHTML = `
-    <div class="modal" style="${wide ? "max-width:560px;" : ""}">
+    <div class="modal${wide ? " modal--wide" : ""}">
       <div class="modal__head">
         <div class="modal__title">${title}</div>
       </div>
@@ -377,7 +387,7 @@ export function menuDialog({ title = "", bodyHTML = "", buttons = [] } = {}) {
 export function whatsappPreviewDialog({ title = "إرسال عبر واتساب", recipientLabel = "", defaultMessage = "" } = {}) {
   const overlay = ensureOverlay();
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;">
+    <div class="modal">
       <div class="modal__head">
         <div class="modal__title">${title}</div>
       </div>
