@@ -20,10 +20,16 @@ export function openBulkImportModal(preselectedGroupId) {
   document.body.appendChild(ov);
 
   const validGroups = groups.filter((g) => g.gradeId && grades.find((gr) => gr.id === g.gradeId));
-  const defaultGroup = preselectedGroupId ? validGroups.find((g) => g.id === preselectedGroupId) : validGroups[0];
+  const defaultGradeId = preselectedGroupId
+    ? (groups.find((g) => g.id === preselectedGroupId)?.gradeId || grades[0]?.id)
+    : grades[0]?.id;
+  const groupsForDefaultGrade = validGroups.filter((g) => g.gradeId === defaultGradeId);
+  const defaultGroup = preselectedGroupId ? validGroups.find((g) => g.id === preselectedGroupId) : groupsForDefaultGrade[0];
 
   let parsedRows = [];
   let addedIds = new Set();
+  let biGradeId = defaultGradeId;
+  let biGroupId = defaultGroup?.id || "";
 
   function close() { ov.remove(); }
 
@@ -49,15 +55,19 @@ export function openBulkImportModal(preselectedGroupId) {
         <!-- BODY -->
         <div style="flex:1;overflow-y:auto;padding:18px 22px;" id="bulkImportBody">
 
-          <!-- STEP 1: Group -->
+          <!-- STEP 1: Grade + Group -->
           <div style="margin-bottom:16px;">
-            <label style="font-weight:700;font-size:14px;display:block;margin-bottom:6px;">❶ المجموعة</label>
-            <select id="biGroupSelect" class="select" style="max-width:400px;">
-              ${validGroups.map((g) => {
-                const gr = grades.find((gr) => gr.id === g.gradeId);
-                return `<option value="${g.id}" ${g.id === defaultGroup?.id ? "selected" : ""}>${escapeHTML(g.name)} (${escapeHTML(gr?.name || "")})</option>`;
-              }).join("")}
-            </select>
+            <label style="font-weight:700;font-size:14px;display:block;margin-bottom:6px;">❶ السنة الدراسية والمجموعة</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <select id="biGradeSelect" class="select" style="max-width:240px;">
+                ${grades.map((g) => `<option value="${g.id}" ${g.id === biGradeId ? "selected" : ""}>${escapeHTML(g.name)}</option>`).join("")}
+              </select>
+              <select id="biGroupSelect" class="select" style="max-width:300px;">
+                ${validGroups.filter((g) => g.gradeId === biGradeId).map((g) => {
+                  return `<option value="${g.id}" ${g.id === biGroupId ? "selected" : ""}>${escapeHTML(g.name)} (${escapeHTML(g.code)})</option>`;
+                }).join("")}
+              </select>
+            </div>
           </div>
 
           <!-- STEP 2: Data Input -->
@@ -145,13 +155,20 @@ export function openBulkImportModal(preselectedGroupId) {
     ov.querySelector(".bi-close-x")?.addEventListener("click", close);
     ov.querySelector("#biCloseBtn")?.addEventListener("click", close);
 
-    const sel = ov.querySelector("#biGroupSelect");
-    if (sel) {
-      sel.addEventListener("change", () => {
-        updateGroupNames();
-        render();
-      });
-    }
+    const biGradeSel = ov.querySelector("#biGradeSelect");
+    const biGroupSel = ov.querySelector("#biGroupSelect");
+    biGradeSel?.addEventListener("change", () => {
+      biGradeId = biGradeSel.value;
+      const relevant = validGroups.filter((g) => g.gradeId === biGradeId);
+      biGroupId = relevant.some((g) => g.id === biGroupId) ? biGroupId : (relevant[0]?.id || "");
+      updateGroupNames();
+      render();
+    });
+    biGroupSel?.addEventListener("change", () => {
+      biGroupId = biGroupSel.value;
+      updateGroupNames();
+      render();
+    });
 
     const pasteBtn = ov.querySelector("#biPasteTabBtn");
     const pasteArea = ov.querySelector("#biPasteArea");
@@ -219,7 +236,7 @@ export function openBulkImportModal(preselectedGroupId) {
   }
 
   function addStudent(row) {
-    const selectedGroupId = ov.querySelector("#biGroupSelect")?.value || defaultGroup?.id || "";
+    const selectedGroupId = ov.querySelector("#biGroupSelect")?.value || biGroupId || defaultGroup?.id || "";
     const grp = groups.find((g) => g.id === selectedGroupId);
     const student = {
       id: row.code || generateId("STU"),

@@ -19,25 +19,54 @@
   <div class="auth-card">
     <div class="auth-card__logo" id="authLogo">سن</div>
     <div class="auth-card__title" id="authCenterName">سنتر الفارس التعليمي</div>
-    <div class="auth-card__subtitle">تسجيل الدخول للوصول إلى لوحة التحكم</div>
+    <div class="auth-card__subtitle" id="authSubtitle">تسجيل الدخول للوحة التحكم</div>
 
-    <div class="auth-error" id="authError">اسم المستخدم أو كلمة المرور غير صحيحة</div>
+    <div class="auth-error" id="authError"></div>
 
-    <form id="loginForm">
-      <div class="field">
-        <label class="field__label">اسم المستخدم</label>
-        <input class="input" type="text" id="username" placeholder="اكتب اسم المستخدم" autocomplete="username" required>
+    <!-- Role tabs -->
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab is-active" data-role="admin">إدارة</button>
+      <button class="auth-tab" data-role="parent">ولي أمر</button>
+      <button class="auth-tab" data-role="student">طالب</button>
+    </div>
+
+    <form id="loginForm" autocomplete="off">
+      <!-- Admin fields -->
+      <div class="auth-fields" data-mode="admin">
+        <div class="field">
+          <label class="field__label">اسم المستخدم</label>
+          <input class="input" type="text" id="username" placeholder="اكتب اسم المستخدم" autocomplete="username">
+        </div>
+        <div class="field">
+          <label class="field__label">كلمة المرور</label>
+          <input class="input" type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
       </div>
-      <div class="field">
-        <label class="field__label">كلمة المرور</label>
-        <input class="input" type="password" id="password" placeholder="••••••••" autocomplete="current-password" required>
+
+      <!-- Parent fields -->
+      <div class="auth-fields" data-mode="parent" style="display:none;">
+        <div class="field">
+          <label class="field__label">رقم هاتف ولي الأمر</label>
+          <input class="input ltr" type="tel" id="parentPhone" placeholder="010xxxxxxxx" dir="ltr" inputmode="numeric">
+        </div>
+        <div class="field__hint" style="margin-top:-8px; margin-bottom:12px;">أدخل رقم الهاتف المسجل في بيانات الطالب</div>
       </div>
+
+      <!-- Student fields -->
+      <div class="auth-fields" data-mode="student" style="display:none;">
+        <div class="field">
+          <label class="field__label">كود الطالب</label>
+          <input class="input ltr" type="text" id="studentCode" placeholder="مثال: 101" dir="ltr" inputmode="numeric">
+        </div>
+        <div class="field__hint" style="margin-top:-8px; margin-bottom:12px;">أدخل كود الطالب المسجل في السنتر — للاختبار: 101</div>
+      </div>
+
       <button class="btn btn-primary btn-block btn-lg" type="submit" id="loginBtn">
         <span id="loginBtnText">تسجيل الدخول</span>
       </button>
     </form>
 
-    <div class="auth-demo-hint">بيانات تجريبية: admin / 1234</div>
+    <div class="auth-demo-hint" id="authHint">بيانات تجريبية: admin / 1234</div>
   </div>
 </div>
 
