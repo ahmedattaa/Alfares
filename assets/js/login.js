@@ -2,17 +2,47 @@
 // Login — منطق صفحة تسجيل الدخول
 // =========================================================
 
-import { seedIfNeeded, login, getSettings, flushPendingWrites } from "./storage.js";
+import { seedIfNeeded, login, parentLogin, studentLogin, getSettings, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled } from "./storage.js";
 import { redirectIfLoggedIn } from "./app.js";
 import { toast } from "./ui.js";
 import { initials, fakeDelay } from "./helpers.js";
 import { applyCurrentTheme } from "./themes.js";
 
+/* ---- Modes ---- */
+const MODES = {
+  admin: {
+    label: "إدارة",
+    fields: ["username", "password"],
+    subtitle: "تسجيل الدخول للوحة التحكم",
+    hint: "بيانات تجريبية: admin / 1234",
+  },
+  parent: {
+    label: "ولي أمر",
+    fields: ["parentPhone"],
+    subtitle: "تسجيل الدخول لمتابعة أبنائك",
+    hint: "أدخل رقم هاتف ولي الأمر المسجل في بيانات الطالب — للاختبار: 01000000000",
+  },
+  student: {
+    label: "طالب",
+    fields: ["studentCode"],
+    subtitle: "دخول الطالب لمتابعة الدرجات والحضور",
+    hint: "أدخل كود الطالب المسجل في السنتر — للاختبار: 101",
+  },
+};
+
+let currentMode = "admin";
+
+/* ---- Refs ---- */
 const form = document.getElementById("loginForm");
 const errorBox = document.getElementById("authError");
+const subtitle = document.getElementById("authSubtitle");
 const loginBtn = document.getElementById("loginBtn");
 const loginBtnText = document.getElementById("loginBtnText");
+const hint = document.getElementById("authHint");
+const tabs = document.querySelectorAll(".auth-tab");
+const fieldGroups = document.querySelectorAll(".auth-fields");
 
+/* ---- Bootstrap ---- */
 async function bootstrap() {
   await seedIfNeeded();
   await redirectIfLoggedIn();
@@ -22,35 +52,174 @@ async function bootstrap() {
     document.getElementById("authCenterName").textContent = settings.centerName;
     document.getElementById("authLogo").textContent = initials(settings.centerName);
   }
+
+  // بوابات الدخول حسب إعدادات السنتر
+  const parentEnabled = isParentPortalEnabled();
+  const parentTab = [...tabs].find((t) => t.dataset.role === "parent");
+  if (!parentEnabled && parentTab) {
+    parentTab.classList.add("is-disabled");
+    parentTab.dataset.disabled = "true";
+    if (currentMode === "parent") switchMode("admin");
+  }
+
+  const studentEnabled = isStudentPortalEnabled();
+  const studentTab = [...tabs].find((t) => t.dataset.role === "student");
+  if (!studentEnabled && studentTab) {
+    studentTab.classList.add("is-disabled");
+    studentTab.dataset.disabled = "true";
+    if (currentMode === "student") switchMode("admin");
+  }
+
+  // دعم ?role= من الصفحة الرئيسية
+  const requestedRole = new URLSearchParams(location.search).get("role");
+  if (requestedRole && MODES[requestedRole] && !MODES[requestedRole].disabled) {
+    const rTab = [...tabs].find((t) => t.dataset.role === requestedRole);
+    const ok = !(rTab?.dataset.disabled === "true");
+    if (ok) switchMode(requestedRole);
+  }
 }
 
+/* ---- Tab switching ---- */
+function switchMode(mode) {
+  if (mode === currentMode) return;
+  if (MODES[mode]?.disabled) return;
+  const tab = [...tabs].find((t) => t.dataset.role === mode);
+  if (tab?.dataset.disabled === "true") return;
+
+  currentMode = mode;
+  errorBox.classList.remove("is-open");
+
+  // Update tabs
+  tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.role === mode));
+
+  // Show/hide field groups
+  fieldGroups.forEach((g) => {
+    g.style.display = g.dataset.mode === mode ? "" : "none";
+  });
+
+  // Update subtitle + hint
+  subtitle.textContent = MODES[mode].subtitle;
+  hint.textContent = MODES[mode].hint;
+
+}
+
+tabs.forEach((tab) => {
+  tab.addEventListener("click", () => switchMode(tab.dataset.role));
+});
+
+/* ---- Login ---- */
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorBox.classList.remove("is-open");
+
+  if (currentMode === "admin") {
+    await handleAdminLogin();
+  } else if (currentMode === "parent") {
+    await handleParentLogin();
+  } else if (currentMode === "student") {
+    await handleStudentLogin();
+  }
+});
+
+async function handleAdminLogin() {
   await seedIfNeeded();
 
   const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value.trim();
 
-  loginBtn.disabled = true;
-  loginBtnText.innerHTML = `<span class="spinner"></span>`;
+  if (!username || !password) {
+    showError("برجاء إدخال اسم المستخدم وكلمة المرور");
+    return;
+  }
+
+  setLoading(true);
   await fakeDelay(400);
 
   const session = login(username, password);
+  setLoading(false);
 
   if (!session) {
-    errorBox.classList.add("is-open");
-    loginBtn.disabled = false;
-    loginBtnText.textContent = "تسجيل الدخول";
+    showError("اسم المستخدم أو كلمة المرور غير صحيحة");
     toast("فشل تسجيل الدخول، برجاء التأكد من البيانات", "danger");
     return;
   }
 
   toast(`مرحبًا بعودتك، ${session.name}`, "success");
+  finalizeLogin(session);
+}
+
+async function handleParentLogin() {
+  const phone = document.getElementById("parentPhone").value.trim();
+
+  if (!phone) {
+    showError("برجاء إدخال رقم هاتف ولي الأمر");
+    return;
+  }
+
+  // Normalize phone
+  const normalized = phone.replace(/[\s\-\(\)]/g, "");
+
+  setLoading(true);
+  await fakeDelay(400);
+
+  const result = parentLogin(normalized);
+  setLoading(false);
+
+  if (!result) {
+    showError("لم يتم العثور على طالب بهذا الرقم");
+    toast("لم يتم العثور على طالب بهذا الرقم", "warning");
+    return;
+  }
+
+  const { session, students } = result;
+
+  toast(students.length === 1
+    ? `مرحبًا بعودتك ولي أمر ${students[0].name}`
+    : `مرحبًا بعودتك، لديك ${students.length} أبناء مسجلين`, "success");
+  finalizeLogin(session, "visit.html");
+}
+
+async function handleStudentLogin() {
+  const code = document.getElementById("studentCode").value.trim();
+
+  if (!code) {
+    showError("برجاء إدخال كود الطالب");
+    return;
+  }
+
+  setLoading(true);
+  await fakeDelay(400);
+
+  const result = studentLogin(code);
+  setLoading(false);
+
+  if (!result) {
+    showError("لم يتم العثور على طالب بهذا الكود");
+    toast("لم يتم العثور على طالب بهذا الكود", "warning");
+    return;
+  }
+
+  const { students } = result;
+  toast(`مرحبًا بعودتك، ${students[0].name}`, "success");
+  finalizeLogin(result.session, "visit.html");
+}
+
+/* ---- Helpers ---- */
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.classList.add("is-open");
+}
+
+function setLoading(on) {
+  loginBtn.disabled = on;
+  loginBtnText.innerHTML = on ? `<span class="spinner"></span>` : "تسجيل الدخول";
+}
+
+async function finalizeLogin(session, redirectUrl) {
   applyCurrentTheme();
   await fakeDelay(300);
   await flushPendingWrites();
-  window.location.href = "dashboard.html";
-});
+  window.location.href = redirectUrl || "dashboard.html";
+}
 
 bootstrap();

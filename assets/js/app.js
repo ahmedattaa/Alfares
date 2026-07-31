@@ -28,9 +28,9 @@ export async function initPage(activePage) {
     return null;
   }
 
-  // لو الصفحة تتطلب صندوق مفتوح ومفيش وردية → توجيه لصفحة الصندوق
+  // لو الصفحة تتطلب صندوق مفتوح ومفيش وردية → توجيه لصفحة الصندوق (ما عدا ولي الأمر والطالب)
   const shiftMode = getSettings().shiftMode || "mandatory";
-  if (SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift() && shiftMode !== "disabled") {
+  if (session.role !== "parent" && session.role !== "student" && SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift() && shiftMode !== "disabled") {
     window.location.href = "shift.html";
     return null;
   }
@@ -42,6 +42,11 @@ export async function initPage(activePage) {
 export async function redirectIfLoggedIn() {
   await seedIfNeeded();
   if (isLoggedIn()) {
-    window.location.href = "dashboard.html";
+    const session = getSession();
+    if (session?.role === "parent" || session?.role === "student") {
+      window.location.href = "visit.html";
+    } else {
+      window.location.href = "dashboard.html";
+    }
   }
 }

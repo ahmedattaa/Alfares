@@ -48,7 +48,11 @@ export function renderShell(activePage) {
   const settings = getSettings();
   const session = getSession();
   const centerName = settings.centerName || "سنتر تعليمى";
-  const visibleNavItems = NAV_ITEMS.filter((item) => canAccessPage(session, item.page));
+  const visibleNavItems = NAV_ITEMS.filter((item) => canAccessPage(session, item.page)).map((item) =>
+    session?.role === "student" && item.page === "visit"
+      ? { ...item, label: "ملفي الدراسي", href: "visit.html" }
+      : item
+  );
 
   document.body.insertAdjacentHTML(
     "afterbegin",
@@ -87,11 +91,12 @@ export function renderShell(activePage) {
           <div class="topbar__left">
             <button class="menu-toggle" id="menuToggle" aria-label="فتح القائمة">${icons.menu}</button>
             <div>
-              <div class="topbar__title">${PAGE_TITLES[activePage] || ""}</div>
+              <div class="topbar__title">${session?.role === "student" && activePage === "visit" ? "ملفي الدراسي" : PAGE_TITLES[activePage] || ""}</div>
             </div>
           </div>
           <div class="topbar__right">
             ${(() => {
+              if (session?.role === "student") return `<span class="shift-indicator shift-indicator--open" style="background:var(--primary);" title="حساب طالب — عرض فقط">${icons.shield} حساب طالب</span>`;
               const shift = getCurrentShift();
               const shiftMode = getSettings().shiftMode || "mandatory";
               if (shift) {
@@ -125,7 +130,7 @@ export function renderShell(activePage) {
               <div class="user-chip__avatar">${initials(session?.name || "مستخدم")}</div>
               <div>
                 <div class="user-chip__name">${session?.name || "مستخدم"}</div>
-                <div class="user-chip__role">${session?.role === "admin" ? "مدير" : session?.role === "assistant" ? "مدرس مساعد" : ""}</div>
+                <div class="user-chip__role">${session?.role === "admin" ? "مدير" : session?.role === "assistant" ? "مدرس مساعد" : session?.role === "parent" ? "ولي أمر" : session?.role === "student" ? "طالب" : ""}</div>
               </div>
             </div>
             <button class="topbar-logout" id="logoutBtn" title="تسجيل الخروج">

@@ -14,7 +14,7 @@ import {
   addWalletDeposit, getFollowupLogs, addFollowupLog, getLastFollowupLog,
   recordCashCollection, recordLedgerOnly, addLedgerEntry, getCenterName,
   isFeatureEnabled,
-  getSystemSettings,
+  getSystemSettings, getSession,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, debounce } from "./helpers.js";
 import { toast, confirmDialog, formModal, whatsappPreviewDialog } from "./ui.js";
@@ -29,51 +29,169 @@ import { buildMonthlyFollowupMessage } from "./reports.js";
 import { openCollectionDialog } from "./collection-dialog.js";
 import { canPerformAction } from "./permissions.js";
 
+// ═══════════════════════════════════════════════════════════
+//  CSS — كل أنماط الصفحة (تُحقن قبل الـ await عشان تكون جاهزة)
+// ═══════════════════════════════════════════════════════════
+const style = document.createElement("style");
+style.textContent = `@keyframes fadeUp{ from{ opacity:0; transform:translateY(16px) } to{ opacity:1; transform:translateY(0) } }@keyframes scaleIn{ from{ opacity:0; transform:scale(.92) } to{ opacity:1; transform:scale(1) } }`;
+document.head.appendChild(style);
+// باقي الـ CSS يُلحق في نهاية الملف عبر vstStyles()
+
+const TABS = [
+  { id: "timeline",   label: "الخط الزمني",           icon: icons.clock },
+  { id: "profile",    label: "ملف الطالب",           icon: icons.users },
+  { id: "attendance", label: "تسجيل الحضور",          icon: icons.check },
+  { id: "finance",    label: "الإدارة المالية",        icon: icons.wallet },
+  { id: "grades",     label: "الدرجات والحضور",       icon: icons.chart },
+  { id: "followup",   label: "المتابعة",              icon: icons.clipboard },
+  { id: "contact",    label: "التواصل والجدول",       icon: icons.whatsapp },
+];
+
 const content = await initPage("visit");
 let selectedStudentId = null;
 let activeTab = "profile";
 
-if (content) render();
+// URL param auto-load
+const urlParams = new URLSearchParams(window.location.search);
+const urlStudentId = urlParams.get("studentId");
+
+// If parent/student role, restrict to linked students only
+const session = getSession();
+const isParent = session?.role === "parent" || session?.role === "student";
+const isStudent = session?.role === "student";
+const allowedStudentIds = isParent ? (session?.linkedStudentIds || []) : null;
+
+if (content) {
+  // Determine auto-select target BEFORE render to avoid showing the dashboard then switching
+  const autoTarget = (urlStudentId && (!allowedStudentIds || allowedStudentIds.includes(urlStudentId)))
+    ? urlStudentId
+    : (isParent && allowedStudentIds && allowedStudentIds.length === 1 ? allowedStudentIds[0] : null);
+
+  if (autoTarget) selectedStudentId = autoTarget;
+
+  render();
+
+  if (selectedStudentId) selectStudent(selectedStudentId);
+}
 
 // ═══════════════════════════════════════════════════════════
 //  الرئيسيّة
 // ═══════════════════════════════════════════════════════════
 
 function render() {
+  // Parent with multiple children and no selection yet → show dashboard
+  const showDashboard = isParent && allowedStudentIds && allowedStudentIds.length > 1 && !selectedStudentId;
+
   content.innerHTML = `
     <div class="page__header">
       <div>
-        <div class="page__title">لوحة ولي الأمر</div>
-        <div class="page__subtitle">بحث شامل لكل ما يخص الطالب — ملفه، ماليته، حضوره، درجاته، متابعته</div>
+        <div class="page__title">${showDashboard ? icons.grid + " لوحة العائلة" : isStudent ? icons.shield + " ملفي الدراسي" : icons.shield + " لوحة ولي الأمر"}</div>
+        <div class="page__subtitle">${showDashboard ? "جميع أبنائك المسجلين في السنتر — اختر أحدهم لعرض تفاصيله" : isStudent ? "متابعة درجاتك وحضورك وملفك الدراسي" : "بحث شامل لكل ما يخص الطالب — ملفه، ماليته، حضوره، درجاته، متابعته"}</div>
       </div>
     </div>
 
+    ${showDashboard ? renderParentDashboardHTML() : `
     <div class="vst-search">
       <div class="vst-search__icon">${icons.search}</div>
       <input type="text" class="vst-search__input" id="vstSearchInput"
              placeholder="ابحث بالاسم أو الكود أو رقم التليفون أو تليفون ولي الأمر..." autofocus>
       <div id="vstSearchResults" class="vst-search__results"></div>
-    </div>
+    </div>`}
 
     <div id="vstStudentZone" style="display:none;"></div>
   `;
 
-  const input = document.getElementById("vstSearchInput");
-  input.addEventListener("input", debounce(onSearch, 120));
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      const term = input.value.trim();
-      if (!term) return;
-      const match = findSingleMatch(term);
-      if (match) selectStudent(match.id);
+  if (!showDashboard) {
+    const input = document.getElementById("vstSearchInput");
+    if (input) {
+      input.addEventListener("input", debounce(onSearch, 120));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          const term = input.value.trim();
+          if (!term) return;
+          const match = findSingleMatch(term);
+          if (match) selectStudent(match.id);
+        }
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".vst-search")) {
+          document.getElementById("vstSearchResults").style.display = "none";
+        }
+      });
+      input.focus();
     }
-  });
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".vst-search")) {
-      document.getElementById("vstSearchResults").style.display = "none";
-    }
-  });
-  input.focus();
+  } else {
+    // Bind click on dashboard cards
+    document.querySelectorAll(".ps-card[data-sid]").forEach((el) => {
+      el.addEventListener("click", () => selectStudent(el.dataset.sid));
+    });
+  }
+}
+
+function renderParentDashboardHTML() {
+  const all = getStudents().filter((s) => allowedStudentIds.includes(s.id));
+  const groups = getGroups();
+  const walletOn = isFeatureEnabled("wallet");
+  const totalWallet = walletOn ? all.reduce((sum, s) => sum + Number(s.walletBalance || 0), 0) : 0;
+  const totalDebt = all.reduce((sum, s) => sum + Number(s.lateBalance || 0), 0);
+  const activeCount = all.filter((s) => s.status === "active").length;
+  const colors = ["#4F6EF7","#F59E0B","#10B981","#EF4444","#8B5CF6","#EC4899","#06B6D4","#F97316"];
+
+  return `
+    <div class="parent-dashboard">
+      <div class="ps-rail">
+        <div class="ps-chip" style="--c:#4F6EF7">
+          <div class="ps-chip__n">${all.length}</div>
+          <div class="ps-chip__l">${icons.users} عدد الأبناء</div>
+        </div>
+        ${walletOn ? `
+        <div class="ps-chip" style="--c:#10B981">
+          <div class="ps-chip__n">${formatMoney(totalWallet)}</div>
+          <div class="ps-chip__l">${icons.wallet} إجمالي المحفظة</div>
+        </div>` : ""}
+        <div class="ps-chip" style="--c:${totalDebt > 0 ? "#EF4444" : "#10B981"}">
+          <div class="ps-chip__n">${formatMoney(totalDebt)}</div>
+          <div class="ps-chip__l">${icons.money} إجمالي المتأخرات</div>
+        </div>
+      </div>
+
+      <div class="ps-bento">
+        ${all.map((s, i) => {
+          const g = groups.find((gr) => gr.id === s.groupId);
+          const wallet = Number(s.walletBalance || 0);
+          const debt = Number(s.lateBalance || 0);
+          const initials = (s.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2);
+          const c = colors[i % colors.length];
+
+          let badges = "";
+          if (walletOn && wallet > 0) badges += `<span class="ps-card__badge ps-card__badge--wallet">${icons.wallet} ${formatMoney(wallet)}</span>`;
+          if (debt > 0) badges += `<span class="ps-card__badge ps-card__badge--debt">${icons.money} ${formatMoney(debt)}</span>`;
+          if (s.status !== "active") badges += `<span class="ps-card__badge ps-card__badge--inactive">غير نشط</span>`;
+          if (!badges) badges = `<span class="ps-card__badge ps-card__badge--status">${icons.check} نشط</span>`;
+
+          return `
+          <div class="ps-card" data-sid="${s.id}" style="--c:${c}">
+            <div class="ps-card__top">
+              <div class="ps-card__av" style="background:linear-gradient(135deg,${c},${c}88)">${escapeHTML(initials)}</div>
+              <div class="ps-card__info">
+                <div class="ps-card__name">${escapeHTML(s.name)}</div>
+                <div class="ps-card__meta">${g ? escapeHTML(g.name) : "بدون مجموعة"}</div>
+                <div class="ps-card__codes">
+                  <span class="ps-card__code">${escapeHTML(s.code || "—")}</span>
+                  ${s.phone ? `<span class="ps-card__code">${escapeHTML(s.phone)}</span>` : ""}
+                </div>
+              </div>
+            </div>
+            <div class="ps-card__body">${badges}</div>
+            <div class="ps-card__footer">
+              <span class="hint">${icons.arrowLeft} عرض الملف</span>
+              <span class="arrow">‹</span>
+            </div>
+          </div>`;
+        }).join("")}
+        ${all.length === 0 ? '<div class="ps-card__empty">لا يوجد أبناء مسجلين</div>' : ""}
+      </div>
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -82,7 +200,7 @@ function render() {
 
 function findSingleMatch(term) {
   const lower = term.toLowerCase();
-  const students = getStudents();
+  const students = allowedStudentIds ? getStudents().filter((s) => allowedStudentIds.includes(s.id)) : getStudents();
   const matches = students.filter((s) => {
     const name = (s.name || "").toLowerCase();
     const code = (s.code || "").toLowerCase();
@@ -98,7 +216,7 @@ function onSearch() {
   const results = document.getElementById("vstSearchResults");
   if (term.length < 1) { results.style.display = "none"; return; }
 
-  const allStudents = getStudents();
+  const allStudents = allowedStudentIds ? getStudents().filter((s) => allowedStudentIds.includes(s.id)) : getStudents();
   const groups = getGroups();
 
   const codeMatches = allStudents.filter((s) => (s.code || "").toLowerCase().startsWith(term));
@@ -124,8 +242,8 @@ function onSearch() {
     const isActive = s.status === "active";
     const badges = [];
     if (wallet > 0) badges.push(`<span style="color:#fff;">${formatMoney(wallet)}</span>`);
-    if (debt > 0) badges.push(`<span style="color:#fca5a5;">${formatMoney(debt)} متأخر</span>`);
-    if (!isActive) badges.push(`<span style="color:#fde68a;">غير نشط</span>`);
+    if (debt > 0) badges.push(`<span style="color:var(--danger);">${formatMoney(debt)} متأخر</span>`);
+    if (!isActive) badges.push(`<span style="color:var(--warning);">غير نشط</span>`);
     return `
       <div class="vst-search__item" data-id="${s.id}">
         <div class="vst-search__item-code ${!isActive ? "is-inactive" : ""}">${escapeHTML(s.code || "?")}</div>
@@ -147,6 +265,10 @@ function onSearch() {
 }
 
 function selectStudent(id) {
+  if (allowedStudentIds && !allowedStudentIds.includes(id)) {
+    toast("لا يمكنك عرض هذا الطالب", "warning");
+    return;
+  }
   selectedStudentId = id;
   activeTab = "profile";
   document.getElementById("vstSearchResults").style.display = "none";
@@ -159,16 +281,6 @@ function selectStudent(id) {
 //  كارت الطالب + التبويبات
 // ═══════════════════════════════════════════════════════════
 
-const TABS = [
-  { id: "timeline",   label: "الخط الزمني",           icon: icons.clock },
-  { id: "profile",    label: "ملف الطالب",           icon: icons.users },
-  { id: "attendance", label: "تسجيل الحضور",          icon: icons.check },
-  { id: "finance",    label: "الإدارة المالية",        icon: icons.wallet },
-  { id: "grades",     label: "الدرجات والحضور",       icon: icons.chart },
-  { id: "followup",   label: "المتابعة",              icon: icons.clipboard },
-  { id: "contact",    label: "التواصل والجدول",       icon: icons.whatsapp },
-];
-
 function renderStudentZone() {
   const zone = document.getElementById("vstStudentZone");
   zone.style.display = "block";
@@ -180,20 +292,29 @@ function renderStudentZone() {
   const wallet = Number(student.walletBalance || 0);
   const debt = Number(student.lateBalance || 0);
   const locked = isStudentLocked(student);
+  const showBack = isParent && allowedStudentIds && allowedStudentIds.length > 1;
+
+  const initials = (student.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2);
 
   zone.innerHTML = `
+    ${showBack ? `<div style="margin-bottom:12px;"><button class="btn btn-ghost btn-sm" id="backToDashboardBtn" style="gap:4px;font-size:12.5px;"><span style="font-size:18px;">›</span> العودة لجميع الأبناء</button></div>` : ""}
     <div class="vst-profile-card">
       <div class="vst-profile-card__header">
-        <div class="vst-profile-card__avatar">${escapeHTML(student.code || "?")}</div>
+        <div class="vst-profile-card__avatar">${escapeHTML(initials)}</div>
         <div class="vst-profile-card__info">
           <div class="vst-profile-card__name">${escapeHTML(student.name)}</div>
-          <div class="vst-profile-card__meta">${escapeHTML(group?.name || "")} · ${escapeHTML(grade || "")}</div>
-          <div class="vst-profile-card__meta">تاريخ الانضمام: ${formatDateAr(student.joinDate)}</div>
+          <div class="vst-profile-card__meta">
+            <span>${escapeHTML(group?.name || "")}</span>
+            <span class="vst-profile-card__meta-sep">·</span>
+            <span>${escapeHTML(grade || "")}</span>
+            <span class="vst-profile-card__meta-sep">·</span>
+            <span>منذ ${formatDateAr(student.joinDate)}</span>
+          </div>
         </div>
         <div class="vst-profile-card__badges">
           ${isFeatureEnabled("wallet") && wallet > 0 ? `<div class="vst-badge vst-badge--success">${icons.wallet} ${formatMoney(wallet)}</div>` : ""}
           ${debt > 0 ? `<div class="vst-badge vst-badge--danger">${icons.money} ${formatMoney(debt)}</div>` : ""}
-          ${locked ? `<div class="vst-badge vst-badge--warning">🔒 مقفول</div>` : ""}
+          ${locked ? `<div class="vst-badge vst-badge--warning">${icons.alert} مقفول</div>` : ""}
         </div>
       </div>
     </div>
@@ -215,6 +336,9 @@ function renderStudentZone() {
       renderStudentZone();
     })
   );
+
+  const backBtn = document.getElementById("backToDashboardBtn");
+  if (backBtn) backBtn.addEventListener("click", () => { selectedStudentId = null; render(); });
 
   renderTabContent();
 }
@@ -256,44 +380,48 @@ function renderProfileTab(box, student) {
 
   const lastLog = getLastFollowupLog(student.id);
   const group = findGroup(getGroups(), student.groupId);
+  const debt = Number(student.lateBalance || 0);
 
   box.innerHTML = `
     <div class="vst-info-grid">
-      <div class="vst-info-card">
-        <div class="vst-info-card__icon" style="background:rgba(16,185,129,.1); color:var(--success);">${icons.check}</div>
+      <div class="vst-info-card" style="--c:var(--success)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.check}</div>
         <div class="vst-info-card__value">${presentCount}/${totalCount}</div>
         <div class="vst-info-card__label">حضور آخر 30 يوم</div>
       </div>
-      <div class="vst-info-card">
-        <div class="vst-info-card__icon" style="background:rgba(102,126,234,.1); color:var(--primary);">${icons.chart}</div>
+      <div class="vst-info-card" style="--c:${rate >= 70 ? "var(--success)" : rate >= 40 ? "var(--warning)" : "var(--danger)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.chart}</div>
         <div class="vst-info-card__value" style="color:${rate >= 70 ? "var(--success)" : rate >= 40 ? "var(--warning)" : "var(--danger)"};">${rate}%</div>
         <div class="vst-info-card__label">نسبة الحضور</div>
       </div>
-      <div class="vst-info-card">
-        <div class="vst-info-card__icon" style="background:rgba(245,158,11,.1); color:var(--warning);">${icons.clock}</div>
+      <div class="vst-info-card" style="--c:var(--warning)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--warning) 12%, transparent); color:var(--warning);">${icons.clock}</div>
         <div class="vst-info-card__value">${unpaidCount}</div>
         <div class="vst-info-card__label">حصص غير مدفوعة</div>
       </div>
-      <div class="vst-info-card">
-        <div class="vst-info-card__icon" style="background:rgba(239,68,68,.1); color:var(--danger);">${icons.money}</div>
-        <div class="vst-info-card__value">${formatMoney(Number(student.lateBalance || 0))}</div>
+      <div class="vst-info-card" style="--c:${debt > 0 ? "var(--danger)" : "var(--success)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--danger) 12%, transparent); color:var(--danger);">${icons.money}</div>
+        <div class="vst-info-card__value" style="color:${debt > 0 ? "var(--danger)" : "var(--success)"};">${formatMoney(Number(student.lateBalance || 0))}</div>
         <div class="vst-info-card__label">المتأخرات المالية</div>
       </div>
     </div>
 
     <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">بيانات الطالب</div></div>
-      ${detailRow("الكود", student.code || "")}
-      ${detailRow("المجموعة", group?.name || "")}
-      ${detailRow("السنة الدراسية", gradeName(getGrades(), student.gradeId) || "")}
-      ${detailRow("المواعيد", `${formatDaysAr(group?.days || [])} — ${formatTimeAr(group?.time)}`)}
-      ${detailRow("سعر الحصة", formatMoney(group?.sessionPrice || 0))}
-      ${detailRow("الخصم", student.discount ? formatMoney(student.discount) : "—")}
-      ${detailRow("تليفون الطالب", student.phone || "—")}
-      ${detailRow("تليفون ولي الأمر", student.parentPhone || "—")}
-      ${detailRow("المهنة", student.fatherJob || "—")}
-      ${detailRow("المدرسة", student.school || "—")}
-      ${detailRow("الحالة", student.status === "active" ? "نشط" : "غير نشط")}
+      <div class="card__head"><div class="card__title">${icons.users} بيانات الطالب</div></div>
+      <div class="vst-detail-grid">
+        ${detailRow("الكود", student.code || "")}
+        ${detailRow("الحالة", student.status === "active" ? "نشط" : "غير نشط")}
+        ${detailRow("المجموعة", group?.name || "")}
+        ${detailRow("السعر", formatMoney(group?.sessionPrice || 0))}
+        ${detailRow("السنة", gradeName(getGrades(), student.gradeId) || "")}
+        ${detailRow("الخصم", student.discount ? formatMoney(student.discount) : "—")}
+        ${detailRow("المواعيد", `${formatDaysAr(group?.days || [])} — ${formatTimeAr(group?.time)}`)}
+        ${detailRow("المدرسة", student.school || "—")}
+        ${detailRow("تليفون", student.phone || "—")}
+        ${detailRow("تليفون ولي الأمر", student.parentPhone || "—")}
+        ${detailRow("المهنة", student.fatherJob || "—")}
+        ${detailRow("تاريخ الانضمام", formatDateAr(student.joinDate))}
+      </div>
     </div>
 
     ${lastLog ? `
@@ -318,31 +446,107 @@ function renderAttendanceTab(box, student) {
   const attendanceStatuses = statusesByCategory(statuses, "attendance");
   const actionStatuses = statusesByCategory(statuses, "action");
   const group = findGroup(getGroups(), student.groupId);
+  const presentIds = new Set(statuses.filter((s) => s.presence === "present").map((s) => s.id));
+  const unpaidIds = new Set(statuses.filter((s) => s.payment === "unpaid").map((s) => s.id));
 
   const today = todayISO();
-  const todayRecord = getAttendance().find(
-    (a) => a.studentId === student.id && a.date === today && a.category === "attendance"
-  );
+  const allAtt = getAttendance().filter((a) => a.studentId === student.id && a.category === "attendance");
+  const todayRecord = allAtt.find((a) => a.date === today);
   const currentStatus = todayRecord ? statuses.find((s) => s.id === todayRecord.statusId) : null;
 
   const breakdown = computeFinanceBreakdown(student, group, getExtraCharges());
 
+  // Last 30 days stats
+  const last30 = allAtt.filter((a) => (Date.now() - new Date(a.date).getTime()) / 86400000 <= 30);
+  const present30 = last30.filter((a) => presentIds.has(a.statusId)).length;
+  const absent30 = last30.filter((a) => !presentIds.has(a.statusId)).length;
+  const attRate = last30.length ? Math.round((present30 / last30.length) * 100) : 100;
+  const unpaid30 = last30.filter((a) => unpaidIds.has(a.statusId)).length;
+
+  // Mini calendar for this month
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthDays = Array.from({ length: daysInMonth }, (_, i) => {
+    const d = new Date(year, month, i + 1);
+    const iso = d.toISOString().slice(0, 10);
+    const record = allAtt.find((a) => a.date === iso);
+    const st = record ? statuses.find((s) => s.id === record.statusId) : null;
+    const isPresent = record && presentIds.has(record.statusId);
+    const isFuture = d > now;
+    return { iso, isPresent, st, record, isFuture, day: i + 1 };
+  });
+
+  const dayNames = ["ح","ن","ث","ر","خ","ج","س"];
+  const todayName = dayNames[now.getDay()];
+
   box.innerHTML = `
-    <div class="vst-att-status-bar">
+    <div class="vst-info-grid" style="margin-bottom:16px;">
+      <div class="vst-info-card" style="--c:${attRate >= 70 ? "var(--success)" : attRate >= 40 ? "var(--warning)" : "var(--danger)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.check}</div>
+        <div class="vst-info-card__value">${present30}/${last30.length}</div>
+        <div class="vst-info-card__label">حضور (آخر 30 يوم)</div>
+      </div>
+      <div class="vst-info-card" style="--c:${attRate >= 70 ? "var(--success)" : attRate >= 40 ? "var(--warning)" : "var(--danger)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.chart}</div>
+        <div class="vst-info-card__value" style="color:${attRate >= 70 ? "var(--success)" : attRate >= 40 ? "var(--warning)" : "var(--danger)"};">${attRate}%</div>
+        <div class="vst-info-card__label">نسبة الحضور</div>
+      </div>
+      <div class="vst-info-card" style="--c:${absent30 > 0 ? "var(--danger)" : "var(--success)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--danger) 12%, transparent); color:var(--danger);">${icons.x}</div>
+        <div class="vst-info-card__value" style="color:${absent30 > 0 ? "var(--danger)" : "var(--success)"};">${absent30}</div>
+        <div class="vst-info-card__label">غياب</div>
+      </div>
+      <div class="vst-info-card" style="--c:${unpaid30 > 0 ? "var(--warning)" : "var(--success)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--warning) 12%, transparent); color:var(--warning);">${icons.clock}</div>
+        <div class="vst-info-card__value" style="color:${unpaid30 > 0 ? "var(--warning)" : "var(--success)"};">${unpaid30}</div>
+        <div class="vst-info-card__label">حصص غير مدفوعة</div>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head">
+        <div class="card__title" style="display:flex; align-items:center; gap:8px;">
+          ${icons.calendar} حضور شهر ${["يناير","فبراير","مارس","إبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"][month]} ${year}
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:4px; text-align:center;">
+        ${dayNames.map((n) => `<span style="font-size:10px; font-weight:700; color:var(--muted); padding:4px 0;">${n}</span>`).join("")}
+        ${Array.from({ length: new Date(year, month, 1).getDay() }, () => `<span></span>`).join("")}
+        ${monthDays.map((d) => `
+          <div title="${d.isFuture ? "" : d.st ? d.st.name : "لا يوجد تسجيل"}"
+               style="padding:4px 0; border-radius:6px; font-size:12px; font-weight:600;
+                      ${d.isFuture ? "opacity:.25;" : d.isPresent ? "background:var(--success); color:#fff;" : d.st ? "background:var(--danger); color:#fff;" : "background:var(--bg-2);"}
+                      ${d.iso === today && !d.isFuture ? "outline:2px solid var(--primary); outline-offset:-2px;" : ""}">
+            ${d.day}
+          </div>
+        `).join("")}
+      </div>
+      <div class="vst-att-legend">
+        <span><span class="vst-att-legend__dot" style="background:var(--success);"></span>حاضر</span>
+        <span><span class="vst-att-legend__dot" style="background:var(--danger);"></span>غائب</span>
+        <span><span class="vst-att-legend__dot" style="background:var(--bg-2);"></span>لم يسجل</span>
+      </div>
+    </div>
+
+    <div class="vst-att-status-bar" style="margin-bottom:16px;">
       ${currentStatus
-        ? `<span class="badge badge-${currentStatus.tone}"><span class="badge-dot"></span>حالة اليوم: ${escapeHTML(currentStatus.name)} (${todayRecord.time})</span>`
-        : `<span class="badge badge-neutral">لم يتم تسجيل حالة اليوم بعد</span>`
+        ? `<span class="badge badge-${currentStatus.tone}" style="font-size:13px; padding:8px 16px;"><span class="badge-dot"></span>حالة ${todayName}: ${escapeHTML(currentStatus.name)} (${todayRecord.time})</span>`
+        : `<span class="badge badge-neutral" style="font-size:13px; padding:8px 16px;">${icons.clock} لم يتم تسجيل حالة ${todayName} بعد</span>`
       }
+      ${group ? `<span class="badge badge-neutral" style="font-size:12px; margin-right:8px;">${icons.clock} ${group.days?.join(" - ") || ""} — ${group.time || ""}</span>` : ""}
     </div>
 
     ${renderFinancePanelHTML(breakdown)}
 
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">تسجيل حالة الحضور</div></div>
+    ${!isStudent ? `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.check} تسجيل حالة الحضور</div></div>
       <div class="status-btn-grid">
         ${attendanceStatuses.map((s) => `
           <button class="btn btn-${s.tone} vstStatusBtn" data-status="${s.id}"
-            style="${currentStatus?.id === s.id ? "outline:2px solid rgba(0,0,0,.15);" : ""}">
+            style="${currentStatus?.id === s.id ? "outline:2px solid color-mix(in srgb, var(--text) 15%, transparent); box-shadow:0 0 0 3px var(--" + s.tone + ");" : ""}">
             ${icons.check}<span>${escapeHTML(s.name)}</span>
           </button>
         `).join("")}
@@ -350,8 +554,8 @@ function renderAttendanceTab(box, student) {
     </div>
 
     ${actionStatuses.length ? `
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">إجراءات استثنائية</div></div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.alert} إجراءات استثنائية</div></div>
       <div class="status-btn-grid">
         ${actionStatuses.map((s) => `
           <button class="btn btn-outline vstActionBtn" data-status="${s.id}"
@@ -361,10 +565,11 @@ function renderAttendanceTab(box, student) {
         `).join("")}
       </div>
     </div>` : ""}
+    ` : ""}
 
-    <div class="card card-pad" style="margin-top:16px; border-style:dashed;">
-      <div class="card__head"><div class="card__title" style="font-size:14px;">آخر 10 حالات مسجلة</div></div>
-      ${renderRecentHistory(student.id)}
+    <div class="card card-pad">
+      <div class="card__head"><div class="card__title">${icons.clipboard} آخر 15 حالة مسجلة</div></div>
+      ${renderRecentHistory(student.id, 15)}
     </div>
   `;
 
@@ -376,12 +581,12 @@ function renderAttendanceTab(box, student) {
   );
 }
 
-function renderRecentHistory(studentId) {
+function renderRecentHistory(studentId, limit) {
   const statuses = getStudentStatuses();
   const records = getAttendance()
     .filter((a) => a.studentId === studentId)
     .sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1))
-    .slice(0, 10);
+    .slice(0, limit || 10);
 
   if (!records.length) return `<div class="text-muted" style="font-size:13px; padding:12px;">لا يوجد سجل سابق</div>`;
 
@@ -390,10 +595,10 @@ function renderRecentHistory(studentId) {
       <div class="vst-history-header">
         <span>التاريخ</span><span>الحالة</span><span>الوقت</span>
       </div>
-      ${records.map((r) => {
+      ${records.map((r, ri) => {
         const s = statuses.find((st) => st.id === r.statusId);
         return `
-          <div class="vst-history-row">
+          <div class="vst-history-row" style="animation:fadeUp .25s ease both; animation-delay:${ri * .03}s;">
             <span>${formatDateAr(r.date)}</span>
             <span class="badge badge-${s?.tone || "neutral"}"><span class="badge-dot"></span>${escapeHTML(s?.name || "—")}</span>
             <span>${r.time || "—"}</span>
@@ -711,14 +916,52 @@ function renderFinanceTab(box, student) {
   const payments = getPayments().filter((p) => p.studentId === student.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 25);
   const grandTotal = sessionPrice + debt + totalCharges;
   const netDue = Math.max(0, grandTotal - wallet);
+  const totalPaid = payments.filter((p) => p.status === "paid").reduce((s, p) => s + Number(p.amount || 0), 0);
+  const progressPct = grandTotal > 0 ? Math.min(100, Math.round((totalPaid / (totalPaid + grandTotal)) * 100)) : 100;
 
   box.innerHTML = `
+    <div class="vst-info-grid" style="margin-bottom:16px;">
+      <div class="vst-info-card" style="--c:${netDue > 0 ? "var(--danger)" : "var(--success)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--danger) 12%, transparent); color:${netDue > 0 ? "var(--danger)" : "var(--success)"};">${icons.money}</div>
+        <div class="vst-info-card__value" style="color:${netDue > 0 ? "var(--danger)" : "var(--success)"};">${formatMoney(netDue)}</div>
+        <div class="vst-info-card__label">المطلوب سداده</div>
+      </div>
+      ${enableWallet ? `
+      <div class="vst-info-card" style="--c:var(--success)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.wallet}</div>
+        <div class="vst-info-card__value">${formatMoney(wallet)}</div>
+        <div class="vst-info-card__label">المحفظة</div>
+      </div>` : ""}
+      <div class="vst-info-card" style="--c:${debt > 0 ? "var(--warning)" : "var(--success)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--warning) 12%, transparent); color:${debt > 0 ? "var(--warning)" : "var(--success)"};">${icons.clock}</div>
+        <div class="vst-info-card__value">${formatMoney(debt)}</div>
+        <div class="vst-info-card__label">متأخرات</div>
+      </div>
+      <div class="vst-info-card" style="--c:var(--primary)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.chart}</div>
+        <div class="vst-info-card__value">${formatMoney(sessionPrice)}</div>
+        <div class="vst-info-card__label">سعر الحصة</div>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    ${grandTotal > 0 ? `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;">
+        <span>تم الدفع: ${formatMoney(totalPaid)}</span>
+        <span>المتبقي: ${formatMoney(grandTotal)}</span>
+      </div>
+      <div style="height:8px; background:var(--bg-2); border-radius:99px; overflow:hidden;">
+        <div style="height:100%; width:${progressPct}%; background:linear-gradient(90deg,var(--success),color-mix(in srgb, var(--success) 70%, white)); border-radius:99px; transition:width .6s ease;"></div>
+      </div>
+      <div style="text-align:center; font-size:11px; color:var(--muted); margin-top:4px;">نسبة التسوية: ${progressPct}%</div>
+    </div>` : ""}
+
     ${grandTotal > 0 ? `
     <div class="vst-master-ledger card card-pad">
       <div class="vst-master-ledger__header">
         <div>
-          <div class="card__title" style="margin:0;">💰 الحساب الشامل — ما عليه ${escapeHTML(student.name)}</div>
-          <div class="text-muted" style="font-size:12px; margin-top:2px;">تسوية شاملة في ضربة واحدة</div>
+          <div class="card__title" style="margin:0; display:flex; align-items:center; gap:6px;">${icons.money} الحساب الشامل — ${escapeHTML(student.name)}</div>
         </div>
       </div>
 
@@ -726,27 +969,27 @@ function renderFinanceTab(box, student) {
         ${sessionPrice > 0 ? `
           <div class="vst-master-ledger__row">
             <span>سعر الحصة${group ? ` (${escapeHTML(group.name)})` : ""}</span>
-            <span>${formatMoney(sessionPrice)}</span>
+            <span class="vst-ledger-amount">${formatMoney(sessionPrice)}</span>
           </div>` : ""}
         ${debt > 0 ? `
           <div class="vst-master-ledger__row vst-master-ledger__row--debt">
-            <span>متأخرات سابقة</span>
-            <span>${formatMoney(debt)}</span>
+            <span>${icons.clock} متأخرات سابقة</span>
+            <span class="vst-ledger-amount" style="color:var(--warning);">${formatMoney(debt)}</span>
           </div>` : ""}
         ${charges.length ? charges.map((c) => `
           <div class="vst-master-ledger__row">
-            <span>📋 ${escapeHTML(c.name)}</span>
-            <span>${formatMoney(c.amount)}</span>
+            <span>${icons.alert} ${escapeHTML(c.name)}</span>
+            <span class="vst-ledger-amount">${formatMoney(c.amount)}</span>
           </div>`).join("") : ""}
         <div class="vst-master-ledger__divider"></div>
         <div class="vst-master-ledger__row vst-master-ledger__row--total">
           <span>الإجمالي المطلوب</span>
-          <span>${formatMoney(grandTotal)}</span>
+          <span class="vst-ledger-amount" style="font-size:18px;">${formatMoney(grandTotal)}</span>
         </div>
         ${wallet > 0 ? `
           <div class="vst-master-ledger__row" style="color:var(--success);">
-            <span>💚 رصيد المحفظة المتاح</span>
-            <span>−${formatMoney(wallet)}</span>
+            <span>${icons.wallet} خصم المحفظة</span>
+            <span class="vst-ledger-amount">−${formatMoney(wallet)}</span>
           </div>` : ""}
         <div class="vst-master-ledger__row vst-master-ledger__row--net">
           <span>المطلوب سداده الآن</span>
@@ -759,59 +1002,45 @@ function renderFinanceTab(box, student) {
           <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
             ${canPerformAction(getSession(), "visit", "collection") ? `
             <button class="btn btn-outline" id="vstCollectionDialogBtn" style="font-size:13px; padding:10px 16px;">
-              💰 تحصيل تفصيلي
+              ${icons.money} تحصيل تفصيلي
             </button>
             ` : ""}
           </div>
           <div class="vst-master-ledger__pay-row">
             <input type="number" class="input" id="vstSettleAmount" min="0" step="1" value="${netDue}" style="max-width:180px; font-size:18px; font-weight:800; text-align:center;">
             <button class="btn btn-success btn-lg" id="vstSettleAllBtn" style="font-size:16px; padding:14px 28px;">
-              ✅ تسوية شاملة — ${formatMoney(netDue)}
+              ${icons.check} تسوية شاملة — ${formatMoney(netDue)}
             </button>
           </div>
-          <div class="field__hint" style="margin-top:8px;">ادفع المبلغ المطلوب وسجّله هنا — النظام يصفّي كل المستحقات تلقائياً</div>
         ` : `
           <div class="vst-master-ledger__cleared">
-            <span style="font-size:24px;">🎉</span>
+            <span style="font-size:28px; opacity:.6;">✓</span>
             <div style="font-weight:700;">لا مبالغ مستحقة — الحساب مصفّى بالكامل</div>
           </div>
         `}
       </div>
     </div>` : `
-    <div class="card card-pad" style="text-align:center; padding:30px;">
-      <div style="font-size:36px; margin-bottom:8px;">🎉</div>
+    <div class="card card-pad" style="text-align:center; padding:30px; margin-bottom:16px;">
+      <div style="font-size:28px; opacity:.5; margin-bottom:8px;">✓</div>
       <div style="font-weight:700; font-size:16px;">الحساب مصفّى — لا مبالغ مستحقة</div>
       <div class="text-muted" style="margin-top:4px;">${wallet > 0 ? `رصيد المحفظة: ${formatMoney(wallet)}` : "لا يوجد رصيد في المحفظة"}</div>
     </div>`}
 
-    <div class="vst-finance-grid" style="margin-top:16px;">
-      ${enableWallet ? `
-      <div class="vst-finance-box vst-finance-box--wallet">
-        <div class="vst-finance-box__icon">${icons.wallet}</div>
-        <div class="vst-finance-box__value">${formatMoney(wallet)}</div>
-        <div class="vst-finance-box__label">الرصيد المتاح</div>
-      </div>` : ""}
-      <div class="vst-finance-box vst-finance-box--debt" style="cursor:${debt > 0 ? "pointer" : "default"}; ${debt > 0 ? "" : "opacity:0.5;"}" ${debt > 0 ? `id="vstDebtBox"` : ""}>
-        <div class="vst-finance-box__icon">${icons.money}</div>
-        <div class="vst-finance-box__value">${formatMoney(debt)}</div>
-        <div class="vst-finance-box__label">المتأخرات${debt > 0 ? " — اضغط للتحصيل" : ""}</div>
+    ${group ? `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.clipboard} معلومات المجموعة</div></div>
+      <div class="vst-detail-grid">
+        <div class="vst-detail-row"><span>المجموعة</span><span>${escapeHTML(group.name)}</span></div>
+        <div class="vst-detail-row"><span>الأيام</span><span>${group.days?.join(" - ") || "—"}</span></div>
+        <div class="vst-detail-row"><span>الموعد</span><span>${group.time || "—"}</span></div>
+        ${group.startDate ? `<div class="vst-detail-row"><span>تاريخ البداية</span><span>${formatDateAr(group.startDate)}</span></div>` : ""}
+        <div class="vst-detail-row"><span>سعر الحصة</span><span class="badge badge-primary">${formatMoney(sessionPrice)}</span></div>
       </div>
-      ${enableCharges ? `
-      <div class="vst-finance-box vst-finance-box--charges">
-        <div class="vst-finance-box__icon">${icons.alert}</div>
-        <div class="vst-finance-box__value">${formatMoney(totalCharges)}</div>
-        <div class="vst-finance-box__label">مستحقات أخرى</div>
-      </div>` : ""}
-      <div class="vst-finance-box vst-finance-box--session">
-        <div class="vst-finance-box__icon">${icons.clipboard}</div>
-        <div class="vst-finance-box__value">${formatMoney(sessionPrice)}</div>
-        <div class="vst-finance-box__label">سعر الحصة</div>
-      </div>
-    </div>
+    </div>` : ""}
 
     ${enableWallet && canPerformAction(getSession(), "visit", "wallet_deposit") ? `
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">إيداع في المحفظة</div></div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.wallet} إيداع في المحفظة</div></div>
       <div class="vst-deposit-form">
         <input type="number" class="input" id="vstDepositInput" min="1" step="1" placeholder="المبلغ (ج.م)" style="max-width:200px;">
         <button class="btn btn-success" id="vstDepositBtn">${icons.wallet} إيداع</button>
@@ -820,30 +1049,31 @@ function renderFinanceTab(box, student) {
     ` : ""}
 
     ${charges.length ? `
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">مستحقات أخرى</div></div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.alert} مستحقات أخرى</div></div>
       ${charges.map((c) => `
-        <div class="vst-detail-row">
-          <span>${escapeHTML(c.name)} — ${formatMoney(c.amount)}</span>
+        <div class="vst-detail-row" style="animation:fadeUp .2s ease both;">
+          <span>${icons.alert} ${escapeHTML(c.name)} — ${formatMoney(c.amount)}</span>
           <button class="btn btn-success btn-sm vstSettleChargeBtn" data-id="${c.id}">تسوية</button>
         </div>
       `).join("")}
     </div>` : ""}
 
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">سجل الدفعات (${payments.length})</div></div>
-      ${payments.length ? payments.map((p) => `
-        <div class="vst-payment-row ${p.status === "paid" ? "is-paid" : "is-unpaid"}">
-          <div class="vst-payment-row__info">
-            <div class="vst-payment-row__note">${escapeHTML(p.note || "")}</div>
-            <div class="vst-payment-row__date">${formatDateAr(p.date)} ${p.sessionDate ? `(حصة ${formatDateAr(p.sessionDate)})` : ""}</div>
-          </div>
-          <div class="vst-payment-row__amount">
-            ${p.status === "paid" ? `<span style="color:var(--success);">+${formatMoney(p.amount)}</span>` : `<span style="color:var(--danger);">-${formatMoney(p.amount || 0)}</span>`}
-            ${p.walletUsed > 0 ? `<span class="vst-payment-row__wallet">${icons.wallet} ${formatMoney(p.walletUsed)}</span>` : ""}
-          </div>
+    <div class="card card-pad">
+      <div class="card__head"><div class="card__title">${icons.clipboard} سجل الدفعات (${payments.length})</div></div>
+      <div class="vst-history-table">
+        <div class="vst-history-header">
+          <span>التاريخ</span><span>الملاحظة</span><span>المبلغ</span><span>الحالة</span>
         </div>
-      `).join("") : `<div class="text-muted" style="padding:20px; text-align:center;">لا توجد دفعات مسجلة</div>`}
+        ${payments.length ? payments.map((p, pi) => `
+          <div class="vst-history-row" style="animation:fadeUp .2s ease both; animation-delay:${pi * .03}s;">
+            <span style="white-space:nowrap;">${formatDateAr(p.date)}${p.sessionDate ? `<br><span style="font-size:10px; color:var(--muted);">حصة ${formatDateAr(p.sessionDate)}</span>` : ""}</span>
+            <span style="font-size:13px;">${escapeHTML(p.note || "—")}</span>
+            <span style="font-weight:700; color:${p.status === "paid" ? "var(--success)" : "var(--danger)"};">${p.status === "paid" ? "+" : "-"}${formatMoney(p.amount || 0)}${p.walletUsed > 0 ? ` <span style="font-weight:400; font-size:11px; color:var(--muted);">(محفظة ${formatMoney(p.walletUsed)})</span>` : ""}</span>
+            <span><span class="badge badge-${p.status === "paid" ? "success" : "danger"}"><span class="badge-dot"></span>${p.status === "paid" ? "مسدد" : "مستحق"}</span></span>
+          </div>
+        `).join("") : `<div class="text-muted" style="padding:20px; text-align:center;">لا توجد دفعات مسجلة</div>`}
+      </div>
     </div>
 
     <div id="vstReceiptZone"></div>
@@ -909,14 +1139,6 @@ function renderFinanceTab(box, student) {
   const collectionBtn = document.getElementById("vstCollectionDialogBtn");
   if (collectionBtn) {
     collectionBtn.addEventListener("click", () => {
-      openCollectionDialog(student.id, { onClose: () => renderStudentZone() });
-    });
-  }
-
-  // ═══ صندوق المتأخرات (ضغط للتحصيل) ═══
-  const debtBox = document.getElementById("vstDebtBox");
-  if (debtBox) {
-    debtBox.addEventListener("click", () => {
       openCollectionDialog(student.id, { onClose: () => renderStudentZone() });
     });
   }
@@ -1144,11 +1366,11 @@ function renderRadarChartSVG(analytics, size = 280) {
     return `<text x="${pt.x}" y="${pt.y}" text-anchor="${anchor}" dominant-baseline="middle" fill="var(--muted)" font-size="10" font-weight="600">${escapeHTML(shortTitle)}</text>`;
   }).join("");
 
-  // متوسط المجموعة (أزرق شفاف)
-  const groupPolygon = `<polygon points="${buildPolygonPoints(groupValues)}" fill="rgba(102,126,234,0.15)" stroke="var(--primary)" stroke-width="2" stroke-dasharray="4,3"/>`;
+  // متوسط المجموعة (شفاف)
+  const groupPolygon = `<polygon points="${buildPolygonPoints(groupValues)}" fill="color-mix(in srgb, var(--primary) 15%, transparent)" stroke="var(--primary)" stroke-width="2" stroke-dasharray="4,3"/>`;
 
-  // درجات الطالب (أخضر متدرج)
-  const studentPolygon = `<polygon points="${buildPolygonPoints(studentValues)}" fill="rgba(16,185,129,0.2)" stroke="var(--success)" stroke-width="2.5"/>`;
+  // درجات الطالب (شفاف)
+  const studentPolygon = `<polygon points="${buildPolygonPoints(studentValues)}" fill="color-mix(in srgb, var(--success) 20%, transparent)" stroke="var(--success)" stroke-width="2.5"/>`;
 
   // نقاط الطالب
   const studentDots = studentValues.map((v, i) => {
@@ -1192,6 +1414,8 @@ function renderGradesTab(box, student) {
     .filter((a) => a.studentId === student.id && a.category === "attendance")
     .sort((a, b) => b.date.localeCompare(a.date));
   const statuses = getStudentStatuses();
+  const presentIds = new Set(statuses.filter((s) => s.presence === "present").map((s) => s.id));
+  const unpaidIds = new Set(statuses.filter((s) => s.payment === "unpaid").map((s) => s.id));
 
   const exams = getExams().filter((e) =>
     e.results?.some((r) => r.studentId === student.id)
@@ -1201,17 +1425,57 @@ function renderGradesTab(box, student) {
   }).sort((a, b) => b.date.localeCompare(a.date));
 
   const recentAtt = attendance.slice(0, 20);
+  const total30 = attendance.filter((a) => (Date.now() - new Date(a.date).getTime()) / 86400000 <= 30);
+  const present30 = total30.filter((a) => presentIds.has(a.statusId)).length;
+  const attRate = total30.length ? Math.round((present30 / total30.length) * 100) : 0;
 
-  // ═══ التحليل المقارن ═══
+  const scored = exams.filter((e) => e.score != null && !e.absent && !e.excused);
+  const avg = scored.length ? Math.round(scored.reduce((s, e) => s + (e.score / (e.maxScore || 1)) * 100, 0) / scored.length) : 0;
+  const best = scored.length ? Math.max(...scored.map((e) => Math.round((e.score / (e.maxScore || 1)) * 100))) : 0;
+
   const analytics = computeComparativeAnalytics(student);
   const statements = analytics ? generateComparativeStatements(analytics) : [];
   const radarSVG = analytics ? renderRadarChartSVG(analytics) : null;
 
-  box.innerHTML = `
-    ${analytics && statements.length ? `
-    <div class="card card-pad vst-analytics-card">
-      <div class="card__head"><div class="card__title">📊 التحليل المقارن — كيف يتفوق ابنك مقارنة بزملائه</div></div>
+  const recentDays = 30;
+  const days = Array.from({ length: recentDays }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (recentDays - 1 - i));
+    const iso = d.toISOString().slice(0, 10);
+    const record = attendance.find((a) => a.date === iso);
+    const st = record ? statuses.find((s) => s.id === record.statusId) : null;
+    const isPresent = record && presentIds.has(record.statusId);
+    const isToday = iso === todayISO();
+    return { iso, isPresent, st, record, isToday };
+  });
 
+  box.innerHTML = `
+    <div class="vst-info-grid" style="margin-bottom:16px;">
+      <div class="vst-info-card" style="--c:var(--primary)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.chart}</div>
+        <div class="vst-info-card__value">${exams.length}</div>
+        <div class="vst-info-card__label">إجمالي الامتحانات</div>
+      </div>
+      <div class="vst-info-card" style="--c:${avg >= 60 ? "var(--success)" : avg >= 40 ? "var(--warning)" : "var(--danger)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.check}</div>
+        <div class="vst-info-card__value" style="color:${avg >= 60 ? "var(--success)" : avg >= 40 ? "var(--warning)" : "var(--danger)"};">${avg}%</div>
+        <div class="vst-info-card__label">المتوسط العام</div>
+      </div>
+      <div class="vst-info-card" style="--c:var(--success)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.shield}</div>
+        <div class="vst-info-card__value">${best}%</div>
+        <div class="vst-info-card__label">أعلى درجة</div>
+      </div>
+      <div class="vst-info-card" style="--c:${attRate >= 70 ? "var(--success)" : attRate >= 40 ? "var(--warning)" : "var(--danger)"}">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--warning) 12%, transparent); color:var(--warning);">${icons.clock}</div>
+        <div class="vst-info-card__value" style="color:${attRate >= 70 ? "var(--success)" : attRate >= 40 ? "var(--warning)" : "var(--danger)"};">${attRate}%</div>
+        <div class="vst-info-card__label">نسبة الحضور (30 يوم)</div>
+      </div>
+    </div>
+
+    ${analytics && statements.length ? `
+    <div class="card card-pad vst-analytics-card" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.radar} التحليل المقارن</div></div>
       <div class="vst-analytics-summary">
         <div class="vst-analytics-kpi">
           <div class="vst-analytics-kpi__value" style="color:${analytics.overallStudentAvg >= analytics.overallGroupAvg ? "var(--success)" : "var(--danger)"};">${analytics.overallStudentAvg}%</div>
@@ -1223,10 +1487,9 @@ function renderGradesTab(box, student) {
         </div>
         <div class="vst-analytics-kpi">
           <div class="vst-analytics-kpi__value" style="color:${(analytics.overallPercentile || 0) >= 50 ? "var(--success)" : "var(--warning)"};">${analytics.overallPercentile != null ? `#${Math.round((100 - analytics.overallPercentile) / 100 * exams.length) + 1}` : "—"}</div>
-          <div class="vst-analytics-kpi__label">الترتيب من ${exams.length} طالب</div>
+          <div class="vst-analytics-kpi__label">الترتيب</div>
         </div>
       </div>
-
       <div class="vst-statements">
         ${statements.map((s) => `
           <div class="vst-statement vst-statement--${s.tone}">
@@ -1238,11 +1501,9 @@ function renderGradesTab(box, student) {
     </div>` : ""}
 
     ${radarSVG ? `
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">🎯 مقارنة أداء ابنك بمتوسط المجموعة</div></div>
-      <div class="vst-radar-wrap">
-        ${radarSVG}
-      </div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.radar} مقارنة الأداء</div></div>
+      <div class="vst-radar-wrap">${radarSVG}</div>
       <div class="vst-radar-details">
         ${analytics.examStats.filter((e) => e.studentPct != null).map((e) => {
           const diff = e.studentPct - e.groupAvgPct;
@@ -1260,8 +1521,8 @@ function renderGradesTab(box, student) {
       </div>
     </div>` : ""}
 
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">الدرجات التفصيلية</div></div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.chart} الدرجات التفصيلية</div></div>
       ${exams.length ? `
         <div class="vst-table">
           <div class="vst-table__header vst-table__row--exams-plus">
@@ -1270,33 +1531,57 @@ function renderGradesTab(box, student) {
           ${exams.map((e) => {
             let scoreDisplay = e.score ?? "—";
             let scoreColor = "";
+            let barPct = 0;
             if (e.absent) { scoreDisplay = "غائب"; scoreColor = "var(--danger)"; }
             else if (e.excused) { scoreDisplay = "بعذر"; scoreColor = "var(--warning)"; }
             else if (e.maxScore && e.score != null) {
               const pct = Math.round((e.score / e.maxScore) * 100);
+              barPct = pct;
               scoreColor = pct >= 60 ? "var(--success)" : pct >= 40 ? "var(--warning)" : "var(--danger)";
-              scoreDisplay = `${e.score}/${e.maxScore} (${pct}%)`;
+              scoreDisplay = `${e.score}/${e.maxScore}`;
             }
             const examAnalytics = analytics?.examStats.find((a) => a.id === e.id);
             let rankDisplay = "—";
             if (examAnalytics?.percentile != null) {
               const p = examAnalytics.percentile;
               const rank = Math.round((100 - p) / 100 * examAnalytics.totalScored) + 1;
-              rankDisplay = `#${rank}/${examAnalytics.totalScored}`;
+              rankDisplay = `#${rank}`;
             }
             return `
-              <div class="vst-table__row vst-table__row--exams-plus">
-                <span>${formatDateAr(e.date)}</span>
-                <span>${escapeHTML(e.title || "")}</span>
-                <span style="font-weight:700; color:${scoreColor};">${scoreDisplay}</span>
+              <div class="vst-table__row vst-table__row--exams-plus" style="position:relative;">
+                <span style="font-size:12px;">${formatDateAr(e.date)}</span>
+                <span style="font-weight:600;">${escapeHTML(e.title || "")}</span>
+                <span style="font-weight:700; color:${scoreColor}; display:flex; align-items:center; gap:8px;">
+                  ${barPct > 0 ? `<span style="width:40px; height:6px; background:var(--bg-2); border-radius:3px; display:inline-block; overflow:hidden;"><span style="display:block; height:100%; width:${barPct}%; background:${scoreColor}; border-radius:3px; transition:width .4s ease;"></span></span>` : ""}
+                  ${scoreDisplay}
+                </span>
                 <span style="font-weight:600; font-size:12px;">${rankDisplay}</span>
               </div>`;
           }).join("")}
         </div>` : `<div class="text-muted" style="padding:20px; text-align:center;">لا توجد درجات مسجلة</div>`}
     </div>
 
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">سجل الحضور (${recentAtt.length} آخر)</div></div>
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="card__head"><div class="card__title">${icons.calendar} الحضور — آخر ${recentDays} يوم</div></div>
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:12px;">
+        ${days.map((d) => {
+          let cls = "vst-att-dot";
+          if (d.isPresent) cls += " vst-att-dot--present";
+          else if (d.st) cls += " vst-att-dot--absent";
+          else cls += " vst-att-dot--empty";
+          if (d.isToday) cls += " vst-att-dot--today";
+          return `<div title="${formatDateAr(d.iso)}${d.st ? ` — ${d.st.name}` : ""}" class="${cls}"></div>`;
+        }).join("")}
+      </div>
+      <div class="vst-att-legend">
+        <span><span class="vst-att-legend__dot" style="background:var(--success);"></span>حاضر</span>
+        <span><span class="vst-att-legend__dot" style="background:var(--danger);"></span>غائب</span>
+        <span><span class="vst-att-legend__dot" style="background:var(--bg-2);"></span>لم يسجل</span>
+      </div>
+    </div>
+
+    <div class="card card-pad">
+      <div class="card__head"><div class="card__title">${icons.clipboard} سجل الحضور (آخر ${recentAtt.length})</div></div>
       ${recentAtt.length ? `
         <div class="vst-table">
           <div class="vst-table__header vst-table__row--att">
@@ -1324,10 +1609,12 @@ function renderFollowupTab(box, student) {
   const logs = getFollowupLogs().filter((l) => l.studentId === student.id).reverse().slice(0, 30);
 
   box.innerHTML = `
+    ${!isStudent ? `
     <div class="vst-followup-actions">
       <button class="btn btn-primary" id="vstAddNoteBtn">${icons.clipboard} إضافة ملاحظة</button>
       <button class="btn btn-success" id="vstSendReportBtn">${icons.whatsapp} إرسال تقرير متابعة شهري</button>
     </div>
+    ` : ""}
 
     <div class="card card-pad" style="margin-top:16px;">
       <div class="card__head"><div class="card__title">سجل ملاحظات المتابعة (${logs.length})</div></div>
@@ -1340,8 +1627,8 @@ function renderFollowupTab(box, student) {
     </div>
   `;
 
-  document.getElementById("vstAddNoteBtn").addEventListener("click", () => openAddNoteModal(student));
-  document.getElementById("vstSendReportBtn").addEventListener("click", () => sendFollowupWhatsApp(student));
+  document.getElementById("vstAddNoteBtn")?.addEventListener("click", () => openAddNoteModal(student));
+  document.getElementById("vstSendReportBtn")?.addEventListener("click", () => sendFollowupWhatsApp(student));
 }
 
 async function openAddNoteModal(student) {
@@ -1428,9 +1715,11 @@ function renderContactTab(box, student) {
       ${detailRow("تليفون الطالب", student.phone || "—")}
       ${detailRow("تليفون ولي الأمر", student.parentPhone || "—")}
       <div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">
+        ${!isStudent ? `
         <button class="btn btn-success" id="vstWaSummaryBtn">${icons.whatsapp} إرسال ملخص واتساب</button>
         <button class="btn btn-outline" id="vstWaCustomBtn">${icons.whatsapp} رسالة مخصصة</button>
         <button class="btn btn-outline" id="vstWaCallBtn">📞 اتصال هاتفي بولي الأمر</button>
+        ` : ""}
       </div>
     </div>
 
@@ -1457,13 +1746,13 @@ function renderContactTab(box, student) {
     </div>
   `;
 
-  document.getElementById("vstWaSummaryBtn").addEventListener("click", () => {
+  document.getElementById("vstWaSummaryBtn")?.addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
     Sounds.messageSent();
     try { openWhatsApp(student.parentPhone, summaryMessage); } catch (e) { /* popup blocker */ }
   });
 
-  document.getElementById("vstWaCustomBtn").addEventListener("click", () => {
+  document.getElementById("vstWaCustomBtn")?.addEventListener("click", () => {
     if (!student.parentPhone) { toast("لا يوجد تليفون لولي الأمر", "warning"); return; }
     Sounds.messageSent();
     try {
@@ -1473,7 +1762,7 @@ function renderContactTab(box, student) {
     } catch (e) { /* popup blocker */ }
   });
 
-  document.getElementById("vstWaCallBtn").addEventListener("click", () => {
+  document.getElementById("vstWaCallBtn")?.addEventListener("click", () => {
     if (student.parentPhone) {
       window.open(`tel:${student.parentPhone}`, "_self");
     } else {
@@ -1616,10 +1905,9 @@ function renderTimelineTab(box, student) {
   events.sort((a, b) => {
     const da = a.date + (a.time || "99:99");
     const db = b.date + (b.time || "99:99");
-    return db.localeCompare(da);  // الأحدث أولاً
+    return db.localeCompare(da);
   });
 
-  // تجميع بالتاريخ
   const grouped = new Map();
   events.forEach((ev) => {
     if (!grouped.has(ev.date)) grouped.set(ev.date, []);
@@ -1628,71 +1916,89 @@ function renderTimelineTab(box, student) {
 
   if (!events.length) {
     box.innerHTML = `
-      <div class="card card-pad" style="text-align:center; padding:40px;">
-        <div style="font-size:48px; margin-bottom:12px;">📭</div>
-        <div style="font-weight:700; font-size:16px; margin-bottom:4px;">لا توجد أحداث مسجلة</div>
-        <div class="text-muted">لم يُسجَّل أي حدث بعد لهذا الطالب</div>
+      <div class="card card-pad" style="text-align:center; padding:50px 20px;">
+        <div style="font-size:48px; margin-bottom:16px; opacity:.5;">📭</div>
+        <div style="font-weight:800; font-size:17px; margin-bottom:4px;">لا توجد أحداث مسجلة</div>
+        <div class="text-muted" style="font-size:13px;">لم يُسجَّل أي حدث بعد لهذا الطالب</div>
       </div>`;
     return;
   }
 
-  // إحصائيات سريعة
   const attCount   = events.filter((e) => e.type === "attendance").length;
   const examCount  = events.filter((e) => e.type === "exam").length;
   const payCount   = events.filter((e) => e.type === "payment").length;
   const followCount= events.filter((e) => e.type === "followup").length;
 
+  const today = todayISO();
+  const monthNames = ["يناير","فبراير","مارس","إبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+
   box.innerHTML = `
-    <div class="vst-tl-stats">
-      <div class="vst-tl-stat">
-        <div class="vst-tl-stat__num">${events.length}</div>
-        <div class="vst-tl-stat__label">إجمالي الأحداث</div>
+    <div class="vst-info-grid" style="margin-bottom:16px;">
+      <div class="vst-info-card" style="--c:var(--primary)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.grid}</div>
+        <div class="vst-info-card__value">${events.length}</div>
+        <div class="vst-info-card__label">إجمالي الأحداث</div>
       </div>
-      <div class="vst-tl-stat">
-        <div class="vst-tl-stat__num">${attCount}</div>
-        <div class="vst-tl-stat__label">حدث حضور</div>
+      <div class="vst-info-card" style="--c:var(--success)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.check}</div>
+        <div class="vst-info-card__value">${attCount}</div>
+        <div class="vst-info-card__label">حضور</div>
       </div>
-      <div class="vst-tl-stat">
-        <div class="vst-tl-stat__num">${examCount}</div>
-        <div class="vst-tl-stat__label">امتحان</div>
+      <div class="vst-info-card" style="--c:var(--warning)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--warning) 12%, transparent); color:var(--warning);">${icons.chart}</div>
+        <div class="vst-info-card__value">${examCount}</div>
+        <div class="vst-info-card__label">امتحانات</div>
       </div>
-      <div class="vst-tl-stat">
-        <div class="vst-tl-stat__num">${followCount}</div>
-        <div class="vst-tl-stat__label">ملاحظة</div>
+      <div class="vst-info-card" style="--c:var(--primary)">
+        <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.clipboard}</div>
+        <div class="vst-info-card__value">${followCount}</div>
+        <div class="vst-info-card__label">ملاحظات</div>
       </div>
     </div>
 
     <div class="vst-timeline">
-      ${Array.from(grouped.entries()).map(([date, dayEvents]) => `
-        <div class="vst-tl-date">
-          <span class="vst-tl-date__dot"></span>
-          ${formatDateAr(date)}
-        </div>
-        ${dayEvents.map((ev) => `
-          <div class="vst-tl-event vst-tl-event--${ev.tone}">
-            <div class="vst-tl-event__dot"></div>
-            <div class="vst-tl-event__card">
-              <div class="vst-tl-event__head">
-                <span class="vst-tl-event__emoji">${ev.emoji}</span>
-                <span class="vst-tl-event__title">${escapeHTML(ev.title)}</span>
-                ${ev.time ? `<span class="vst-tl-event__time">${ev.time}</span>` : ""}
-              </div>
-              <div class="vst-tl-event__body">${escapeHTML(ev.desc)}</div>
-              ${ev.sub ? `<div class="vst-tl-event__sub">${escapeHTML(ev.sub)}</div>` : ""}
-            </div>
+      ${Array.from(grouped.entries()).map(([date, dayEvents], di) => {
+        const dateObj = new Date(date + "T12:00:00");
+        const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}`;
+        const monthLabel = `${monthNames[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+        const isToday = date === today;
+
+        // حساب أول يوم في الشهر لعرض عنوان الشهر
+        const prevDate = di > 0 ? Array.from(grouped.keys())[di - 1] : null;
+        const prevMonth = prevDate ? new Date(prevDate + "T12:00:00").getMonth() : -1;
+        const showMonth = prevDate ? (dateObj.getMonth() !== prevMonth || dateObj.getFullYear() !== new Date(prevDate + "T12:00:00").getFullYear()) : true;
+
+        return `
+          ${showMonth ? `<div class="vst-tl-month">${monthLabel}</div>` : ""}
+          <div class="vst-tl-date">
+            <span class="vst-tl-date__dot"></span>
+            ${formatDateAr(date)}
+            ${isToday ? '<span class="badge badge-primary" style="font-size:10px; margin-right:8px;">اليوم</span>' : ""}
           </div>
-        `).join("")}
-      `).join("")}
+          ${dayEvents.map((ev) => `
+            <div class="vst-tl-event vst-tl-event--${ev.tone}" style="animation-delay:${Math.random() * .15}s;">
+              <div class="vst-tl-event__dot"></div>
+              <div class="vst-tl-event__card">
+                <div class="vst-tl-event__head">
+                  ${ev.icon ? `<span class="vst-tl-event__icon">${ev.icon}</span>` : `<span class="vst-tl-event__emoji">${ev.emoji}</span>`}
+                  <span class="vst-tl-event__title">${escapeHTML(ev.title)}</span>
+                  ${ev.time ? `<span class="vst-tl-event__time">${ev.time}</span>` : ""}
+                </div>
+                <div class="vst-tl-event__body">${escapeHTML(ev.desc)}</div>
+                ${ev.sub ? `<div class="vst-tl-event__sub">${escapeHTML(ev.sub)}</div>` : ""}
+              </div>
+            </div>
+          `).join("")}
+        `;
+      }).join("")}
     </div>
   `;
 }
 
 // ═══════════════════════════════════════════════════════════
-//  CSS — كل أنماط الصفحة
+//  CSS — يُلحق بالعنصر المُنشأ أعلاه
 // ═══════════════════════════════════════════════════════════
-
-const style = document.createElement("style");
-style.textContent = `
+style.textContent += `
   /* --- Search --- */
   .vst-search { position: relative; margin-bottom: 20px; }
   .vst-search__icon { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--muted); width: 20px; height: 20px; pointer-events: none; }
@@ -1705,7 +2011,7 @@ style.textContent = `
   .vst-search__results {
     position: absolute; top: calc(100% + 4px); right: 0; left: 0; z-index: 100;
     background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.12); max-height: 380px; overflow-y: auto;
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--text) 12%, transparent); max-height: 380px; overflow-y: auto;
     display: none;
   }
   .vst-search__empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
@@ -1725,58 +2031,99 @@ style.textContent = `
   .vst-search__item-name { font-weight: 700; font-size: 14px; }
   .vst-search__item-meta { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+  /* --- Entrance Animations --- */
+  @keyframes fadeUp { from{ opacity:0; transform:translateY(16px) } to{ opacity:1; transform:translateY(0) } }
+  @keyframes scaleIn { from{ opacity:0; transform:scale(.92) } to{ opacity:1; transform:scale(1) } }
+  .vst-profile-card { animation:fadeUp .35s ease both; }
+  .vst-info-card { animation:fadeUp .3s ease both; }
+  .vst-info-card:nth-child(1) { animation-delay:.04s; }
+  .vst-info-card:nth-child(2) { animation-delay:.08s; }
+  .vst-info-card:nth-child(3) { animation-delay:.12s; }
+  .vst-info-card:nth-child(4) { animation-delay:.16s; }
+
   /* --- Profile Card --- */
   .vst-profile-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 16px; padding: 20px; color: #fff; margin-bottom: 16px;
-    box-shadow: 0 4px 20px rgba(102,126,234,.3);
+    position:relative; overflow:hidden;
+    background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 70%, black) 100%);
+    border-radius: 18px; padding: 24px; color: #fff; margin-bottom: 20px;
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--primary) 30%, transparent);
   }
-  .vst-profile-card__header { display: flex; align-items: center; gap: 14px; }
+  .vst-profile-card::before {
+    content:''; position:absolute; top:-50%; right:-30%; width:300px; height:300px;
+    border-radius:50%; background:rgba(255,255,255,.06);
+  }
+  .vst-profile-card::after {
+    content:''; position:absolute; bottom:-40%; left:-20%; width:200px; height:200px;
+    border-radius:50%; background:rgba(255,255,255,.04);
+  }
+  .vst-profile-card__header { display: flex; align-items: center; gap: 16px; position:relative; z-index:1; }
   .vst-profile-card__avatar {
-    width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,.2);
+    width: 60px; height: 60px; border-radius: 16px;
+    background: rgba(255,255,255,.2);
+    backdrop-filter: blur(8px);
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px; font-weight: 800; flex-shrink: 0;
+    font-size: 22px; font-weight: 800; flex-shrink: 0;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--text) 10%, transparent);
   }
-  .vst-profile-card__info { flex: 1; }
-  .vst-profile-card__name { font-size: 18px; font-weight: 800; }
-  .vst-profile-card__meta { font-size: 12px; opacity: .85; margin-top: 2px; }
-  .vst-profile-card__badges { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+  .vst-profile-card__info { flex: 1; min-width:0; }
+  .vst-profile-card__name { font-size: 20px; font-weight: 800; letter-spacing:-.3px; }
+  .vst-profile-card__meta { font-size: 12px; opacity: .85; margin-top: 3px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .vst-profile-card__meta-sep { opacity:.4; }
+  .vst-profile-card__badges { display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; align-items:flex-start; }
   .vst-badge {
-    display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
-    border-radius: 20px; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px;
+    border-radius: 20px; font-size: 11.5px; font-weight: 700;
+    backdrop-filter: blur(4px);
   }
-  .vst-badge--success { background: rgba(255,255,255,.2); }
-  .vst-badge--danger { background: rgba(239,68,68,.8); }
-  .vst-badge--warning { background: rgba(245,158,11,.8); }
-  .vst-badge svg { width: 12px; height: 12px; }
+  .vst-badge--success { background: color-mix(in srgb, var(--success) 35%, transparent); }
+  .vst-badge--danger { background: color-mix(in srgb, var(--danger) 60%, transparent); }
+  .vst-badge--warning { background: color-mix(in srgb, var(--warning) 60%, transparent); }
+  .vst-badge svg { width: 13px; height: 13px; }
 
   /* --- Tabs --- */
-  .vst-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
+  .vst-tabs {
+    display: flex; gap: 6px; margin-bottom: 20px; overflow-x: auto; scrollbar-width: none;
+    padding:4px; background:var(--bg); border-radius:14px;
+    animation:fadeUp .35s ease both;
+  }
   .vst-tabs::-webkit-scrollbar { display: none; }
   .vst-tab {
-    padding: 10px 16px; border-radius: 10px; border: none; background: var(--bg-2);
-    font-family: inherit; font-size: 13px; font-weight: 700; color: var(--muted);
-    cursor: pointer; white-space: nowrap; transition: all .2s;
-    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 18px; border-radius: 10px; border: none; background: transparent;
+    font-family: inherit; font-size: 12.5px; font-weight: 700; color: var(--muted);
+    cursor: pointer; white-space: nowrap; transition: all .25s ease;
+    display: inline-flex; align-items: center; gap: 7px; flex-shrink:0;
   }
-  .vst-tab:hover { color: var(--text); }
-  .vst-tab.is-active { background: var(--primary); color: #fff; }
-  .vst-tab__icon { width: 14px; height: 14px; }
-  .vst-tab__icon svg { width: 14px; height: 14px; }
+  .vst-tab:hover { color: var(--text); background:var(--bg-2); }
+  .vst-tab.is-active { background: var(--primary); color: #fff; box-shadow:0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent); }
+  .vst-tab__icon { width: 16px; height: 16px; }
+  .vst-tab__icon svg { width: 16px; height: 16px; }
 
   /* --- Info Grid (Profile Tab) --- */
-  .vst-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .vst-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 12px; }
   .vst-info-card {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px; text-align: center;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 14px; text-align: center; box-shadow:var(--shadow-sm);
+    transition:transform .2s ease, box-shadow .2s ease;
+    position:relative; overflow:hidden;
   }
-  .vst-info-card__icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px; }
+  .vst-info-card::before { content:""; position:absolute; top:0; right:0; left:0; height:3px; background:var(--c,var(--primary)); }
+  .vst-info-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-md); }
+  .vst-info-card__icon {
+    width: 42px; height: 42px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;
+  }
   .vst-info-card__icon svg { width: 20px; height: 20px; }
-  .vst-info-card__value { font-size: 22px; font-weight: 800; }
-  .vst-info-card__label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .vst-info-card__value { font-size: 24px; font-weight: 800; letter-spacing:-.5px; }
+  .vst-info-card__label { font-size: 11px; color: var(--muted); margin-top: 3px; font-weight:600; }
 
   /* --- Detail Rows --- */
-  .vst-detail-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .vst-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+  .vst-detail-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  .vst-detail-row:nth-child(odd) { background:var(--bg); }
   .vst-detail-row:last-child { border-bottom: none; }
   .vst-detail-label { color: var(--muted); font-weight: 600; flex-shrink: 0; margin-left: 8px; }
 
@@ -1784,16 +2131,18 @@ style.textContent = `
   .vst-att-status-bar { margin-bottom: 16px; }
 
   /* --- Finance Tab --- */
-  .vst-finance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
-  .vst-finance-box { border-radius: 12px; padding: 16px; text-align: center; color: #fff; }
-  .vst-finance-box--wallet { background: linear-gradient(135deg, #10b981, #059669); }
-  .vst-finance-box--debt { background: linear-gradient(135deg, #ef4444, #dc2626); }
-  .vst-finance-box--charges { background: linear-gradient(135deg, #f59e0b, #d97706); }
-  .vst-finance-box--session { background: linear-gradient(135deg, #667eea, #764ba2); }
-  .vst-finance-box__icon { width: 32px; height: 32px; margin: 0 auto 6px; }
-  .vst-finance-box__icon svg { width: 20px; height: 20px; }
-  .vst-finance-box__value { font-size: 18px; font-weight: 800; }
-  .vst-finance-box__label { font-size: 11px; opacity: .85; }
+  .vst-finance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 12px; }
+  .vst-finance-box { border-radius: 14px; padding: 20px 16px; text-align: center; color: #fff; position:relative; overflow:hidden; }
+  .vst-finance-box::before { content:""; position:absolute; top:-20%; right:-20%; width:100px; height:100px; border-radius:50%; background:rgba(255,255,255,.08); }
+  .vst-finance-box--wallet { background: linear-gradient(135deg, color-mix(in srgb, var(--success) 80%, white), color-mix(in srgb, var(--success) 70%, black)); }
+  .vst-finance-box--debt { background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 70%, black)); }
+  .vst-finance-box--charges { background: linear-gradient(135deg, var(--warning), color-mix(in srgb, var(--warning) 70%, black)); }
+  .vst-finance-box--session { background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 60%, black)); }
+  .vst-finance-box__icon { width: 36px; height: 36px; margin: 0 auto 8px; }
+  .vst-finance-box__icon svg { width: 22px; height: 22px; }
+  .vst-finance-box__value { font-size: 20px; font-weight: 800; letter-spacing:-.3px; }
+  .vst-finance-box__label { font-size: 11.5px; opacity: .85; font-weight:600; }
+  .vst-ledger-amount { font-weight: 700; font-size: 15px; letter-spacing:-.3px; }
   .vst-deposit-form { display: flex; gap: 10px; align-items: center; }
 
   /* --- Payment Rows --- */
@@ -1852,7 +2201,7 @@ style.textContent = `
     text-align: center; padding: 12px 4px; border-radius: 10px;
     background: var(--bg-2); border: 2px solid transparent;
   }
-  .vst-schedule__day.is-active { border-color: var(--primary); background: rgba(102,126,234,.08); }
+  .vst-schedule__day.is-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
   .vst-schedule__day-name { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
   .vst-schedule__day.is-active .vst-schedule__day-name { color: var(--primary); }
   .vst-schedule__day-time { font-size: 12px; font-weight: 700; }
@@ -1865,6 +2214,13 @@ style.textContent = `
   }
   .vst-tl-stat__num { font-size: 24px; font-weight: 800; color: var(--primary); }
   .vst-tl-stat__label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* --- Timeline Month header --- */
+  .vst-tl-month {
+    font-size:13px; font-weight:800; color:var(--primary); padding:16px 0 8px 32px;
+    text-transform:uppercase; letter-spacing:1px; position:relative;
+  }
+  .vst-tl-month:first-child { padding-top:4px; }
 
   /* --- Timeline Line --- */
   .vst-timeline { position: relative; padding-right: 32px; }
@@ -1900,9 +2256,10 @@ style.textContent = `
 
   .vst-tl-event__card {
     background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; transition: transform .15s, box-shadow .15s;
+    padding: 12px 14px; transition: transform .15s ease, box-shadow .15s ease;
+    animation:fadeUp .3s ease both;
   }
-  .vst-tl-event__card:hover { transform: translateX(-2px); box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+  .vst-tl-event__card:hover { transform: translateX(-2px);     box-shadow: 0 2px 12px color-mix(in srgb, var(--text) 6%, transparent); }
 
   .vst-tl-event--success .vst-tl-event__card { border-right: 3px solid var(--success); }
   .vst-tl-event--danger  .vst-tl-event__card { border-right: 3px solid var(--danger); }
@@ -1910,6 +2267,8 @@ style.textContent = `
   .vst-tl-event--primary .vst-tl-event__card { border-right: 3px solid var(--primary); }
 
   .vst-tl-event__head { display: flex; align-items: center; gap: 8px; }
+  .vst-tl-event__icon { width:20px; height:20px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+  .vst-tl-event__icon svg { width:18px; height:18px; }
   .vst-tl-event__emoji { font-size: 16px; flex-shrink: 0; }
   .vst-tl-event__title { font-weight: 700; font-size: 13px; }
   .vst-tl-event__time { font-size: 11px; color: var(--muted); margin-right: auto; }
@@ -1930,10 +2289,10 @@ style.textContent = `
     border-radius: 8px; font-size: 13px; font-weight: 600;
     border-right: 3px solid var(--border);
   }
-  .vst-statement--success { background: rgba(16,185,129,.06); border-right-color: var(--success); }
-  .vst-statement--warning { background: rgba(245,158,11,.06); border-right-color: var(--warning); }
-  .vst-statement--danger  { background: rgba(239,68,68,.06);  border-right-color: var(--danger); }
-  .vst-statement--primary { background: rgba(102,126,234,.06); border-right-color: var(--primary); }
+  .vst-statement--success { background: color-mix(in srgb, var(--success) 6%, transparent); border-right-color: var(--success); }
+  .vst-statement--warning { background: color-mix(in srgb, var(--warning) 6%, transparent); border-right-color: var(--warning); }
+  .vst-statement--danger  { background: color-mix(in srgb, var(--danger) 6%, transparent);  border-right-color: var(--danger); }
+  .vst-statement--primary { background: color-mix(in srgb, var(--primary) 6%, transparent); border-right-color: var(--primary); }
   .vst-statement__emoji { font-size: 18px; flex-shrink: 0; }
 
   /* --- Radar Chart --- */
@@ -1946,6 +2305,16 @@ style.textContent = `
   .vst-radar-detail { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 6px 0; }
   .vst-radar-detail__title { color: var(--muted); font-weight: 600; }
   .vst-radar-detail__scores { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+
+  /* --- Mini attendance calendar --- */
+  .vst-att-dot { width:18px; height:18px; border-radius:4px; cursor:pointer; transition:transform .15s ease; position:relative; }
+  .vst-att-dot:hover { transform:scale(1.35); z-index:2; }
+  .vst-att-dot--present { background:var(--success); }
+  .vst-att-dot--absent { background:var(--danger); }
+  .vst-att-dot--empty { background:var(--bg-2); }
+  .vst-att-dot--today { outline:2px solid var(--primary); outline-offset:2px; }
+  .vst-att-legend { display:flex; gap:14px; font-size:11px; color:var(--muted); margin-top:12px; }
+  .vst-att-legend__dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-left:4px; }
 
   /* --- Master Ledger Card --- */
   .vst-master-ledger { border: 2px solid var(--primary); border-top: 4px solid var(--success); }
@@ -1971,7 +2340,7 @@ style.textContent = `
   .vst-master-ledger__actions { margin-top: 16px; }
   .vst-master-ledger__pay-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .vst-master-ledger__cleared {
-    text-align: center; padding: 20px; background: rgba(16,185,129,.06);
+    text-align: center; padding: 20px; background: color-mix(in srgb, var(--success) 6%, transparent);
     border-radius: 12px; color: var(--success);
   }
 
@@ -1995,8 +2364,11 @@ style.textContent = `
 
   /* --- Responsive --- */
   @media (max-width: 700px) {
-    .vst-profile-card__header { flex-wrap: wrap; }
-    .vst-profile-card__badges { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+    .vst-profile-card { padding:18px; }
+    .vst-profile-card__header { flex-wrap: wrap; gap:12px; }
+    .vst-profile-card__avatar { width:48px; height:48px; font-size:18px; }
+    .vst-profile-card__name { font-size:17px; }
+    .vst-detail-grid { grid-template-columns:1fr; }
     .vst-info-grid { grid-template-columns: repeat(2, 1fr); }
     .vst-finance-grid { grid-template-columns: repeat(2, 1fr); }
     .vst-table__row--att { grid-template-columns: 1fr 80px; }
@@ -2022,6 +2394,7 @@ style.textContent = `
     .vst-profile-card__name { font-size: 15px; }
     .vst-tabs { gap: 2px; }
     .vst-tab { padding: 8px 12px; font-size: 12px; }
+    .vst-info-grid { grid-template-columns: repeat(2, 1fr); }
     .vst-schedule { grid-template-columns: repeat(4, 1fr); }
     .vst-history-row { grid-template-columns: 1fr 80px; }
     .vst-history-row > :nth-child(2) { display: none; }
@@ -2034,4 +2407,4 @@ style.textContent = `
     .vst-schedule { grid-template-columns: repeat(2, 1fr); }
   }
 `;
-document.head.appendChild(style);
+// style already appended above

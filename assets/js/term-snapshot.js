@@ -99,9 +99,9 @@ export function renderSnapshotSummaryHTML(termId) {
               <tr>
                 <th>الطالب</th>
                 <th>محفظة (لقطة → حالي)</th>
-                <th>ال变了</th>
+                <th>التغير</th>
                 <th>متأخرات (لقطة → حالي)</th>
-                <th>الت变了</th>
+                <th>التغير</th>
               </tr>
             </thead>
             <tbody>

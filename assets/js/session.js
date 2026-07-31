@@ -847,7 +847,7 @@ function onStatusClick(studentId, statusId, roster) {
       if (sessionLog) {
         const elapsed = (Date.now() - sessionLog.openedAt) / 60000;
         if (elapsed > lockoutMin) {
-          toast(`⛔ تم تجميد الحصة — البوابة مقفولة بعد ${lockoutMin} دقيقة. سجّل الطالب غائب.', 'warning`);
+          toast(`⛔ تم تجميد الحصة — البوابة مقفولة بعد ${lockoutMin} دقيقة. سجّل الطالب غائب.`, 'warning');
           return;
         }
       }

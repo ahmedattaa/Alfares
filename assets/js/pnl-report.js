@@ -46,9 +46,9 @@ function getPreviousTermStart(currentTermId) {
 
 /** حساب إجمالي عدد الحصص المتوقعة لمجموعة في فترة معينة */
 function countScheduledSessions(group, start, end) {
-  if (!group.schedule || !group.schedule.days) return 0;
+  if (!group.days || !group.days.length) return 0;
   const dayMap = { "الأحد": 0, "الاثنين": 1, "الثلاثاء": 2, "الأربعاء": 3, "الخميس": 4, "الجمعة": 5, "السبت": 6 };
-  const days = group.schedule.days.map((d) => dayMap[d]).filter((d) => d !== undefined);
+  const days = group.days.map((d) => dayMap[d]).filter((d) => d !== undefined);
   if (!days.length) return 0;
   const s = new Date(start);
   const e = new Date(end);

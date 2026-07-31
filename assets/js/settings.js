@@ -25,6 +25,9 @@ import {
   getAcademicMonths,
   saveAcademicMonths,
   backfillLedger,
+  isParentPortalEnabled,
+  isStudentPortalEnabled,
+  isBookingEnabled,
 } from "./storage.js";
 import { escapeHTML, generateId } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
@@ -98,6 +101,9 @@ function renderTabContent() {
 function renderCenterTab(box) {
   const settings = getSettings();
   const session = getSession();
+  const parentPortalEnabled = isParentPortalEnabled();
+  const studentPortalEnabled = isStudentPortalEnabled();
+  const bookingEnabled = isBookingEnabled();
 
   box.innerHTML = `
     <div class="grid-2">
@@ -154,6 +160,30 @@ function renderCenterTab(box) {
         </div>
 
         <div class="card card-pad">
+          <div class="card__head"><div class="card__title">🚪 بوابات الدخول</div></div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer; margin-bottom:10px;">
+            <input type="checkbox" id="parentPortalToggle" ${parentPortalEnabled ? "checked" : ""} style="width:16px;height:16px;">
+            السماح بدخول ولي الأمر للمتابعة
+          </label>
+          <div class="field__hint" style="margin:-4px 0 12px;">لو مقفول، تبويب «ولي أمر» وزر «متابعة ولي الأمر» مش هيظهروا في تسجيل الدخول والصفحة الرئيسية.</div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="studentPortalToggle" ${studentPortalEnabled ? "checked" : ""} style="width:16px;height:16px;">
+            السماح بدخول الطالب لمتابعة درجاته
+          </label>
+          <div class="field__hint" style="margin:-4px 0 0;">لو مقفول، تبويب «طالب» وزر «بوابة الطالب» مش هيظهروا في تسجيل الدخول والصفحة الرئيسية.</div>
+        </div>
+
+        <div class="card card-pad">
+          <div class="card__head"><div class="card__title">🗓️ الحجوزات أونلاين</div></div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="bookingToggle" ${bookingEnabled ? "checked" : ""} style="width:16px;height:16px;">
+            تفعيل قسم الحجز واستقبال حجوزات جديدة
+          </label>
+          <div class="field__hint" style="margin:-4px 0 0;">لو مقفول، قسم «احجز مكانك» بيختفي من الصفحة الرئيسية ولا يتم استقبال حجوزات جديدة.</div>
+          <div id="bookingRequestsWrap" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="card card-pad">
           <div class="card__head"><div class="card__title">${icons.palette} المظهر والسمة</div></div>
           <div class="field">
             <label class="field__label">السمة</label>
@@ -180,6 +210,72 @@ function renderCenterTab(box) {
     const on = Sounds.toggle();
     toast(on ? "تم تفعيل المؤثرات الصوتية" : "تم إيقاف المؤثرات الصوتية", on ? "success" : "info");
   });
+
+  document.getElementById("parentPortalToggle")?.addEventListener("change", (e) => {
+    const on = e.target.checked;
+    saveSettings({ ...getSettings(), parentPortalEnabled: on });
+    toast(on ? "تم تفعيل دخول ولي الأمر" : "تم إيقاف دخول ولي الأمر", on ? "success" : "info");
+  });
+
+  document.getElementById("studentPortalToggle")?.addEventListener("change", (e) => {
+    const on = e.target.checked;
+    saveSettings({ ...getSettings(), studentPortalEnabled: on });
+    toast(on ? "تم تفعيل دخول الطالب" : "تم إيقاف دخول الطالب", on ? "success" : "info");
+  });
+
+  document.getElementById("bookingToggle")?.addEventListener("change", (e) => {
+    const on = e.target.checked;
+    saveSettings({ ...getSettings(), bookingEnabled: on });
+    toast(on ? "تم تفعيل الحجوزات أونلاين" : "تم إيقاف استقبال الحجوزات", on ? "success" : "info");
+  });
+
+  renderBookingRequests();
+
+  function getBookingRequests() {
+    try {
+      const raw = localStorage.getItem("booking_requests");
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  function renderBookingRequests() {
+    const wrap = document.getElementById("bookingRequestsWrap");
+    if (!wrap) return;
+    const requests = getBookingRequests();
+    const pending = requests.filter(r => r.status === "pending");
+    if (!requests.length) {
+      wrap.innerHTML = "";
+      return;
+    }
+    wrap.innerHTML = `
+      <div class="card__head" style="margin-bottom:8px;"><div class="card__title" style="font-size:13px;">طلبات الحجز <span style="color:var(--danger);">(${pending.length})</span></div></div>
+      ${requests.slice().reverse().map(r => `
+        <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; margin-bottom:6px; background:color-mix(in srgb, var(--surface) 55%, transparent); border:1px solid var(--border);">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:700; font-size:13.5px;">${escapeHTML(r.name)} <span style="font-weight:400; color:var(--muted); font-size:12px;">${escapeHTML(r.group)}</span></div>
+            <div style="font-size:12px; color:var(--muted);">${escapeHTML(r.phone)} · ${new Date(r.createdAt).toLocaleString("ar-EG", { dateStyle: "short", timeStyle: "short" })}</div>
+          </div>
+          <span style="font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px; ${r.status === "pending" ? "color:var(--warning); background:color-mix(in srgb, var(--warning) 15%, transparent);" : "color:var(--success); background:color-mix(in srgb, var(--success) 15%, transparent);"}">${r.status === "pending" ? "قيد الانتظار" : "تم التواصل"}</span>
+          ${r.status === "pending" ? `<button class="btn btn-success btn-sm bk-done" data-id="${r.id}">${icons.check} تم</button>` : ""}
+          <button class="btn btn-sm" style="color:var(--danger);" data-bk-del="${r.id}">${icons.trash}</button>
+        </div>
+      `).join("")}
+    `;
+    wrap.querySelectorAll(".bk-done").forEach(btn => btn.addEventListener("click", () => {
+      const list = getBookingRequests();
+      const item = list.find(x => x.id === btn.dataset.id);
+      if (item) item.status = "accepted";
+      try { localStorage.setItem("booking_requests", JSON.stringify(list)); } catch {}
+      toast(`تم تأكيد التواصل مع ${item?.name || ""}`, "success");
+      renderBookingRequests();
+    }));
+    wrap.querySelectorAll("[data-bk-del]").forEach(btn => btn.addEventListener("click", () => {
+      const list = getBookingRequests().filter(x => x.id !== btn.dataset.bkDel);
+      try { localStorage.setItem("booking_requests", JSON.stringify(list)); } catch {}
+      toast("تم حذف الطلب", "info");
+      renderBookingRequests();
+    }));
+  }
 
   document.getElementById("themeSelect")?.addEventListener("change", (e) => {
     const theme = e.target.value;

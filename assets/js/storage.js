@@ -144,6 +144,9 @@ export async function seedIfNeeded() {
   // بيانات تجريبية — تتأكد من وجودها دائماً (حتى لو الـ seed شغال قبل كده)
   seedTestData();
 
+  // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
+  ensureDemoParentPhone();
+
   if (readJSON(KEYS.seeded, false) === true) return;
 
   try {
@@ -178,6 +181,18 @@ export async function seedIfNeeded() {
   } catch (e) {
     console.error("فشل تحميل بيانات Mock — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
   }
+
+  // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
+  ensureDemoParentPhone();
+}
+
+function ensureDemoParentPhone() {
+  const students = getStudents();
+  if (!students.length) return;
+  if (students.some((s) => s.parentPhone && s.parentPhone.replace(/[\s\-\(\)]/g, "") === "01000000000")) return;
+  students[0].parentPhone = "01000000000";
+  saveStudents(students);
+  console.log("✅ Demo parentPhone set on", students[0].name);
 }
 
 /** بيانات تجريبية — كل الأيام × 3 سنوات دراسية × 52+ طالب × كل الحالات */
@@ -253,7 +268,7 @@ function seedTestData() {
           newStudents.push({
             id: sid, code: `${code}${String(si).padStart(2,"0")}`, name: rn(),
             gradeId: gr.gradeId, groupId: gid,
-            phone: rp(), parentPhone: rp(), fatherJob: "", school: "",
+            phone: rp(), parentPhone: si === 1 ? "01000000000" : rp(), fatherJob: "", school: "",
             joinDate: today, status: "active", discount, lateBalance: late, walletBalance: wallet,
             locked: d.id === "ST-SUSPEND", lockReason: d.id === "ST-SUSPEND" ? "إيقاف مؤقت" : null,
             lockDate: d.id === "ST-SUSPEND" ? today : null,
@@ -530,12 +545,15 @@ const SYSTEM_SETTINGS_DEFAULTS = {
   rewardAmount: 10,
   eliteBadgeThreshold: 95,
   eliteBadgeConsecutiveExams: 3,
+  parentPortalEnabled: true,
+  studentPortalEnabled: true,
+  bookingEnabled: true,
 };
 
 export const getSystemSettings = () => {
   const saved = readJSON(KEYS.settings, {});
   const merged = { ...SYSTEM_SETTINGS_DEFAULTS };
-  const boolKeys = new Set(["financialLockEnabled", "strictShiftClosing", "gateAudioFeedback", "waSilentMode", "waAbsenceBatching", "waReceiptToggle", "rewardEnabled"]);
+  const boolKeys = new Set(["financialLockEnabled", "strictShiftClosing", "gateAudioFeedback", "waSilentMode", "waAbsenceBatching", "waReceiptToggle", "rewardEnabled", "parentPortalEnabled", "studentPortalEnabled", "bookingEnabled"]);
   for (const key of Object.keys(SYSTEM_SETTINGS_DEFAULTS)) {
     if (saved[key] !== undefined) {
       if (boolKeys.has(key)) merged[key] = saved[key] === true || saved[key] === "true";
@@ -551,6 +569,21 @@ export const isFeatureEnabled = (feature) => {
   if (feature === "wallet") return s.enableWallet !== false;
   if (feature === "extraCharges") return s.enableExtraCharges !== false;
   return true;
+};
+
+export const isParentPortalEnabled = () => {
+  const s = getSystemSettings();
+  return s.parentPortalEnabled !== false;
+};
+
+export const isStudentPortalEnabled = () => {
+  const s = getSystemSettings();
+  return s.studentPortalEnabled !== false;
+};
+
+export const isBookingEnabled = () => {
+  const s = getSystemSettings();
+  return s.bookingEnabled !== false;
 };
 
 /* ---------------- Session / Auth ---------------- */
@@ -579,6 +612,87 @@ export function login(username, password) {
 export function logout() {
   cache[KEYS.session] = null;
   trackWrite(idbDelete(KEYS.session).catch(() => {}));
+}
+
+/**
+ * Parent login by phone number.
+ * Looks up students whose `parentPhone` matches.
+ * Returns { session, students: [...] } or null.
+ * Creates a restricted session with role="parent" + linked student IDs.
+ */
+export function parentLogin(phone) {
+  const normalized = phone.replace(/[\s\-\(\)]/g, "");
+  const students = getStudents().filter(
+    (s) => s.parentPhone && s.parentPhone.replace(/[\s\-\(\)]/g, "") === normalized && s.status !== "graduated"
+  );
+
+  // Fallback: search by student phone too
+  const fallback = !students.length ? getStudents().filter(
+    (s) => s.phone && s.phone.replace(/[\s\-\(\)]/g, "") === normalized && s.status !== "graduated"
+  ) : [];
+
+  const matched = students.length ? students : fallback;
+  if (!matched.length) return null;
+
+  const groups = readJSON(KEYS.groups, []);
+  const enriched = matched.map((s) => ({
+    id: s.id,
+    name: s.name,
+    code: s.code,
+    groupName: (groups.find((g) => g.id === s.groupId) || {}).name || "",
+  }));
+
+  const session = {
+    username: "parent_" + normalized,
+    name: "ولي أمر",
+    role: "parent",
+    permissions: ["visit"],
+    actions: {},
+    parentPhone: normalized,
+    linkedStudentIds: enriched.map((s) => s.id),
+    loggedInAt: Date.now(),
+  };
+  writeJSON(KEYS.session, session);
+  return { session, students: enriched };
+}
+
+/**
+ * Student login by student code.
+ * Looks up an active student whose `code` matches.
+ * Returns { session, students: [...] } or null.
+ * Creates a restricted view-only session with role="student".
+ */
+export function studentLogin(code) {
+  const normalized = String(code || "").trim();
+  if (!normalized) return null;
+
+  const student = getStudents().find(
+    (s) => s.status !== "graduated" && String(s.code).trim() === normalized
+  );
+  if (!student) return null;
+
+  const session = {
+    username: "student_" + student.code,
+    name: student.name,
+    role: "student",
+    permissions: ["visit"],
+    actions: { visit: ["view"] },
+    studentId: student.id,
+    linkedStudentIds: [student.id],
+    loggedInAt: Date.now(),
+  };
+  writeJSON(KEYS.session, session);
+
+  const groups = readJSON(KEYS.groups, []);
+  return {
+    session,
+    students: [{
+      id: student.id,
+      name: student.name,
+      code: student.code,
+      groupName: (groups.find((g) => g.id === student.groupId) || {}).name || "",
+    }],
+  };
 }
 
 export function isLoggedIn() {
