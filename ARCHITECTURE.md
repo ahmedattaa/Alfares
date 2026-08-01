@@ -71,7 +71,7 @@
   ```
 - **تحميل بيانات Mock**: `storage.js` بيحسب المسار من موضع الملف نفسه:
   ```js
-  const MOCK_BASE = new URL("../assets/mock/", import.meta.url).href;
+  const MOCK_BASE = new URL("../mock/", import.meta.url).href;
   ```
   فـ `fetch` تشتغل من أي صفحة في أي منطقة، ومن غير ما نعتمد على root الرفع.
 

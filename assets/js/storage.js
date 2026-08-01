@@ -45,7 +45,7 @@ const KEYS = {
   seeded: "center_seeded_v12",
 };
 
-const MOCK_BASE = new URL("../assets/mock/", import.meta.url).href;
+const MOCK_BASE = new URL("../mock/", import.meta.url).href;
 
 let cache = {};
 let cacheLoaded = false;
@@ -137,6 +137,12 @@ async function fetchMock(file) {
   return res.json();
 }
 
+/** مستخدمو الاختبار — ضمانة للدخول (admin / 1234) لو فشل تحميل الإعدادات أو البيانات قديمة */
+const FALLBACK_DEMO_USERS = [
+  { username: "admin", password: "1234", name: "مدير النظام", role: "admin", permissions: [], theme: "default" },
+  { username: "assist1", password: "1234", name: "أ. حسن حسن", role: "assistant", permissions: ["session", "reception", "students", "followup"], theme: "default" },
+];
+
 /** تهيئة البيانات لأول مرة فقط من ملفات mock إلى IndexedDB */
 export async function seedIfNeeded() {
   await ensureCacheLoaded();
@@ -146,6 +152,9 @@ export async function seedIfNeeded() {
 
   // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
   ensureDemoParentPhone();
+
+  // ضمان وجود مستخدم الـ admin التجريبي (admin / 1234) مهما كان مصدر البيانات
+  ensureAdminUser();
 
   if (readJSON(KEYS.seeded, false) === true) return;
 
@@ -180,10 +189,31 @@ export async function seedIfNeeded() {
     writeJSON(KEYS.seeded, true);
   } catch (e) {
     console.error("فشل تحميل بيانات Mock — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
+    // لو فشل تحميل الإعدادات، نضمن وجود المستخدمين التجريبيين عشان الدخول يشتغل
+    if (!Array.isArray(getSettings().users) || getSettings().users.length === 0) {
+      writeJSON(KEYS.settings, { ...getSettings(), users: FALLBACK_DEMO_USERS.map((u) => ({ ...u })) });
+    }
   }
+
+  // ضمان وجود مستخدم الـ admin التجريبي (admin / 1234) مهما كان مصدر البيانات
+  ensureAdminUser();
 
   // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
   ensureDemoParentPhone();
+}
+
+/** يضمن وجود مستخدمي الاختبار في الإعدادات — بيفضل أي بيانات حقيقية ولا يعيد ضبط كلمات مرور موجودة */
+function ensureAdminUser() {
+  const settings = getSettings();
+  const users = Array.isArray(settings.users) ? settings.users : [];
+  if (users.length === 0) {
+    writeJSON(KEYS.settings, { ...settings, users: FALLBACK_DEMO_USERS.map((u) => ({ ...u })) });
+    return;
+  }
+  const hasAdmin = users.some((u) => u && u.username === "admin");
+  if (!hasAdmin) {
+    writeJSON(KEYS.settings, { ...settings, users: [...users, { ...FALLBACK_DEMO_USERS[0] }] });
+  }
 }
 
 function ensureDemoParentPhone() {
@@ -595,7 +625,10 @@ export function getSession() {
 
 export function login(username, password) {
   const settings = getSettings();
-  const user = (settings.users || []).find(
+  const users = Array.isArray(settings.users) && settings.users.length
+    ? settings.users
+    : FALLBACK_DEMO_USERS;
+  const user = users.find(
     (u) => u.username === username && u.password === password
   );
   if (!user) return null;
