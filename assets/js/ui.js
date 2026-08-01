@@ -7,20 +7,21 @@ import { initials, formatHeaderDate, escapeHTML } from "./helpers.js";
 import { getSession, logout, getSettings, flushPendingWrites, getCurrentShift, getSystemSettings } from "./storage.js";
 import { canAccessPage } from "./permissions.js";
 import { THEMES, getCurrentTheme, setCurrentTheme, applyCurrentTheme } from "./themes.js";
+import { appPath } from "./paths.js";
 
 const NAV_ITEMS = [
-  { page: "dashboard", label: "الرئيسية", icon: icons.home, href: "dashboard.html" },
-  { page: "quick-attendance", label: "حضور الطلاب", icon: icons.check, href: "quick-attendance.html" },
-  { page: "session", label: "إدارة الحصة", icon: icons.grid, href: "session.html" },
-  { page: "visit", label: "لوحة ولي الأمر", icon: icons.inbox, href: "visit.html" },
-  { page: "students", label: "الطلاب", icon: icons.users, href: "students.html" },
-  { page: "followup", label: "المتابعة", icon: icons.clipboard, href: "followup.html" },
-  { page: "teacher-insights", label: "لوحة المعلم", icon: icons.shield, href: "teacher-insights.html" },
-  { page: "exams", label: "الامتحانات", icon: icons.chart, href: "exams.html" },
-  { page: "finance", label: "اليومية المالية", icon: icons.wallet, href: "finance.html" },
-  { page: "shift", label: "الصندوق", icon: icons.wallet, href: "shift.html" },
-  { page: "rollover", label: "ترحيل الطلاب", icon: icons.calendar, href: "rollover.html" },
-  { page: "settings", label: "الإعدادات", icon: icons.settings, href: "settings.html" },
+  { page: "dashboard", label: "الرئيسية", icon: icons.home, href: appPath("staff/dashboard.html") },
+  { page: "quick-attendance", label: "حضور الطلاب", icon: icons.check, href: appPath("staff/quick-attendance.html") },
+  { page: "session", label: "إدارة الحصة", icon: icons.grid, href: appPath("staff/session.html") },
+  { page: "visit", label: "لوحة ولي الأمر", icon: icons.inbox, href: appPath("staff/visit.html") },
+  { page: "students", label: "الطلاب", icon: icons.users, href: appPath("staff/students.html") },
+  { page: "followup", label: "المتابعة", icon: icons.clipboard, href: appPath("staff/followup.html") },
+  { page: "teacher-insights", label: "لوحة المعلم", icon: icons.shield, href: appPath("staff/teacher-insights.html") },
+  { page: "exams", label: "الامتحانات", icon: icons.chart, href: appPath("staff/exams.html") },
+  { page: "finance", label: "اليومية المالية", icon: icons.wallet, href: appPath("staff/finance.html") },
+  { page: "shift", label: "الصندوق", icon: icons.wallet, href: appPath("staff/shift.html") },
+  { page: "rollover", label: "ترحيل الطلاب", icon: icons.calendar, href: appPath("staff/rollover.html") },
+  { page: "settings", label: "الإعدادات", icon: icons.settings, href: appPath("staff/settings.html") },
 ];
 
 const PAGE_TITLES = {
@@ -50,7 +51,7 @@ export function renderShell(activePage) {
   const centerName = settings.centerName || "سنتر تعليمى";
   const visibleNavItems = NAV_ITEMS.filter((item) => canAccessPage(session, item.page)).map((item) =>
     session?.role === "student" && item.page === "visit"
-      ? { ...item, label: "ملفي الدراسي", href: "visit.html" }
+      ? { ...item, label: "ملفي الدراسي", href: appPath("staff/visit.html") }
       : item
   );
 
@@ -106,7 +107,7 @@ export function renderShell(activePage) {
               if (shiftMode === "disabled") {
                 return `<span class="shift-indicator shift-indicator--open" title="الوردية معطّلة" style="background:var(--warning); color:#000;">${icons.alert} وردية معطّلة</span>`;
               }
-              return `<span class="shift-indicator shift-indicator--closed" title="لا توجد وردية مفتوحة" style="cursor:pointer;" onclick="window.location.href='shift.html'">${icons.alert} افتح صندوق</span>`;
+              return `<span class="shift-indicator shift-indicator--closed" title="لا توجد وردية مفتوحة" style="cursor:pointer;" onclick="window.location.href='/staff/shift.html'">${icons.alert} افتح صندوق</span>`;
             })()}
             <span class="topbar__date">${formatHeaderDate()}</span>
             <div class="theme-switcher" id="themeSwitcher">
@@ -172,7 +173,7 @@ function bindShellEvents() {
   const doLogout = async () => {
     logout();
     await flushPendingWrites();
-    window.location.href = "login.html";
+    window.location.href = appPath("login.html");
   };
   document.getElementById("logoutBtn")?.addEventListener("click", doLogout);
   document.getElementById("sidebarLogoutBtn")?.addEventListener("click", doLogout);

@@ -45,7 +45,7 @@ const KEYS = {
   seeded: "center_seeded_v12",
 };
 
-const MOCK_BASE = "assets/mock/";
+const MOCK_BASE = new URL("../assets/mock/", import.meta.url).href;
 
 let cache = {};
 let cacheLoaded = false;
@@ -563,6 +563,8 @@ export const getSystemSettings = () => {
   return merged;
 };
 export const getCenterName = () => getSettings().centerName || "سنتر الفارس التعليمي";
+export const getWhatsApp = () => getSettings().whatsapp || "";
+export const getSocialLinks = () => getSettings().socialLinks || {};
 
 export const isFeatureEnabled = (feature) => {
   const s = getSettings();

@@ -5,6 +5,7 @@
 import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift, getSettings } from "./storage.js";
 import { renderShell } from "./ui.js";
 import { canAccessPage, firstAccessiblePage } from "./permissions.js";
+import { appPath } from "./paths.js";
 
 /** الصفحات التى تتطلب صندوق مفتوح (وردية نشطة) */
 const SHIFT_REQUIRED_PAGES = [
@@ -18,7 +19,7 @@ export async function initPage(activePage) {
   await seedIfNeeded();
 
   if (!isLoggedIn()) {
-    window.location.href = "login.html";
+    window.location.href = appPath("login.html");
     return null;
   }
 
@@ -31,7 +32,7 @@ export async function initPage(activePage) {
   // لو الصفحة تتطلب صندوق مفتوح ومفيش وردية → توجيه لصفحة الصندوق (ما عدا ولي الأمر والطالب)
   const shiftMode = getSettings().shiftMode || "mandatory";
   if (session.role !== "parent" && session.role !== "student" && SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift() && shiftMode !== "disabled") {
-    window.location.href = "shift.html";
+    window.location.href = appPath("staff/shift.html");
     return null;
   }
 
@@ -43,10 +44,12 @@ export async function redirectIfLoggedIn() {
   await seedIfNeeded();
   if (isLoggedIn()) {
     const session = getSession();
-    if (session?.role === "parent" || session?.role === "student") {
-      window.location.href = "visit.html";
+    if (session?.role === "student") {
+      window.location.href = appPath("student/");
+    } else if (session?.role === "parent") {
+      window.location.href = appPath("parent/");
     } else {
-      window.location.href = "dashboard.html";
+      window.location.href = appPath("staff/dashboard.html");
     }
   }
 }

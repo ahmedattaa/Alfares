@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سيناريوهات الاختبار — نظام إدارة السنتر</title>
+<style>
+  :root { --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a; --text:#e4e4e7; --muted:#71717a; --primary:#6366f1; --success:#22c55e; --danger:#ef4444; --warning:#f59e0b; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Cairo',sans-serif; background:var(--bg); color:var(--text); padding:24px; line-height:1.7; }
+  h1 { font-size:22px; margin-bottom:4px; }
+  .sub { color:var(--muted); margin-bottom:16px; font-size:13px; }
+  .summary { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:20px; display:flex; gap:24px; flex-wrap:wrap; }
+  .summary .stat { text-align:center; min-width:100px; }
+  .summary .stat .num { font-size:28px; font-weight:800; }
+  .summary .stat .label { font-size:12px; color:var(--muted); }
+  .pass { color:var(--success); }
+  .fail { color:var(--danger); }
+  .test { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin:4px 0; font-size:13px; }
+  .test .title { font-weight:700; }
+  .test .detail { color:var(--muted); font-size:11px; margin-top:2px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; margin-left:6px; }
+  .badge-pass { background:var(--success); color:#000; }
+  .badge-fail { background:var(--danger); color:#fff; }
+</style>
+</head>
+<body>
+<h1>🧪 سيناريوهات الاختبار</h1>
+<p class="sub">اختبار فتح سنة جديدة + إضافة طلاب — يعمل بدون خادم (ملف واحد مستقل)</p>
+<div class="summary" id="summaryBox"></div>
+<div id="testResults"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// محرك اختبار مستقل — يحاكي data layer المشروع في الذاكرة
+// لا يحتاج IndexedDB ولا ES modules ولا خادم HTTP
+// ═══════════════════════════════════════════════════════════
+
+// ────── محاكاة Data Layer ──────
+const DB = {
+  academicYears: [
+    { id: "AY-2026", name: "2026 — 2027", isCurrent: true }
+  ],
+  terms: [
+    { id: "TERM-1-2026", yearId: "AY-2026", name: "الترم الأول", order: 1, startDate: "2026-08-01", endDate: "2027-01-31" },
+    { id: "TERM-2-2026", yearId: "AY-2026", name: "الترم الثاني", order: 2, startDate: "2027-02-01", endDate: "2027-05-31" }
+  ],
+  academicMonths: [
+    { id: "AM-1-2026-08", termId: "TERM-1-2026", name: "أغسطس", startDate: "2026-08-01", endDate: "2026-08-31" },
+    { id: "AM-1-2026-09", termId: "TERM-1-2026", name: "سبتمبر", startDate: "2026-09-01", endDate: "2026-09-30" },
+    { id: "AM-1-2026-10", termId: "TERM-1-2026", name: "أكتوبر", startDate: "2026-10-01", endDate: "2026-10-31" },
+    { id: "AM-1-2026-11", termId: "TERM-1-2026", name: "نوفمبر", startDate: "2026-11-01", endDate: "2026-11-30" },
+    { id: "AM-1-2026-12", termId: "TERM-1-2026", name: "ديسمبر", startDate: "2026-12-01", endDate: "2026-12-31" },
+    { id: "AM-1-2027-01", termId: "TERM-1-2026", name: "يناير", startDate: "2027-01-01", endDate: "2027-01-31" },
+    { id: "AM-2-2027-02", termId: "TERM-2-2026", name: "فبراير", startDate: "2027-02-01", endDate: "2027-02-28" },
+    { id: "AM-2-2027-03", termId: "TERM-2-2026", name: "مارس", startDate: "2027-03-01", endDate: "2027-03-31" },
+    { id: "AM-2-2027-04", termId: "TERM-2-2026", name: "أبريل", startDate: "2027-04-01", endDate: "2027-04-30" },
+    { id: "AM-2-2027-05", termId: "TERM-2-2026", name: "مايو", startDate: "2027-05-01", endDate: "2027-05-31" }
+  ],
+  grades: [
+    { id: "GR1", name: "أولى إعدادي", order: 1 },
+    { id: "GR2", name: "تانية إعدادي", order: 2 },
+    { id: "GR3", name: "تالتة إعدادي", order: 3 }
+  ],
+  groups: [
+    { id: "GRP-11", code: "11", gradeId: "GR1", name: "السبت 9:30", day: "السبت", time: "09:30", sessionPrice: 50 },
+    { id: "GRP-12", code: "12", gradeId: "GR1", name: "السبت 1:30", day: "السبت", time: "13:30", sessionPrice: 50 },
+    { id: "GRP-13", code: "13", gradeId: "GR1", name: "الأحد 10:00", day: "الأحد", time: "10:00", sessionPrice: 50 },
+    { id: "GRP-21", code: "21", gradeId: "GR2", name: "الأحد 1:30", day: "الأحد", time: "13:30", sessionPrice: 60 },
+    { id: "GRP-22", code: "22", gradeId: "GR2", name: "الأحد 4:30", day: "الأحد", time: "16:30", sessionPrice: 60 },
+    { id: "GRP-23", code: "23", gradeId: "GR2", name: "الجمعة 2:00", day: "الجمعة", time: "14:00", sessionPrice: 60 },
+    { id: "GRP-31", code: "31", gradeId: "GR3", name: "الإثنين 1:30", day: "الإثنين", time: "13:30", sessionPrice: 70 },
+    { id: "GRP-32", code: "32", gradeId: "GR3", name: "الإثنين 4:30", day: "الإثنين", time: "16:30", sessionPrice: 70 }
+  ],
+  students: [
+    { id: "STU-2001", code: "111", name: "أحمد محمد علي", gradeId: "GR1", groupId: "GRP-11", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2002", code: "112", name: "محمد أحمد سعيد", gradeId: "GR1", groupId: "GRP-11", status: "active", lateBalance: 100, walletBalance: 50, discount: 0 },
+    { id: "STU-2003", code: "113", name: "علي حسين أحمد", gradeId: "GR1", groupId: "GRP-11", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2004", code: "121", name: "حسن إبراهيم خالد", gradeId: "GR1", groupId: "GRP-12", status: "active", lateBalance: 200, walletBalance: 0, discount: 0 },
+    { id: "STU-2005", code: "131", name: "عمر ياسر محمود", gradeId: "GR1", groupId: "GRP-13", status: "active", lateBalance: 0, walletBalance: 30, discount: 0 },
+    { id: "STU-2006", code: "211", name: "سعيد عبدالله محمد", gradeId: "GR2", groupId: "GRP-21", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2007", code: "212", name: "خالد إبراهيم أحمد", gradeId: "GR2", groupId: "GRP-21", status: "active", lateBalance: 150, walletBalance: 0, discount: 0 },
+    { id: "STU-2008", code: "221", name: "مصطفى حسين علي", gradeId: "GR2", groupId: "GRP-22", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2009", code: "231", name: "يوسف أحمد إبراهيم", gradeId: "GR2", groupId: "GRP-23", status: "paused", lateBalance: 50, walletBalance: 0, discount: 0 },
+    { id: "STU-2010", code: "311", name: "إبراهيم خالد سعيد", gradeId: "GR3", groupId: "GRP-31", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2011", code: "312", name: "ياسر محمد حسين", gradeId: "GR3", groupId: "GRP-31", status: "active", lateBalance: 300, walletBalance: 100, discount: 0 },
+    { id: "STU-2012", code: "321", name: "عبدالله أحمد علي", gradeId: "GR3", groupId: "GRP-32", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 }
+  ],
+  extraCharges: [
+    { id: "CHG-001", batchId: "BATCH-BOOKS-2026", studentId: "STU-2001", name: "كتاب رياضيات", amount: 30, date: "2026-09-01", status: "unpaid" },
+    { id: "CHG-002", batchId: "BATCH-BOOKS-2026", studentId: "STU-2002", name: "كتاب رياضيات", amount: 30, date: "2026-09-01", status: "unpaid" },
+    { id: "CHG-003", batchId: "BATCH-BOOKS-2026", studentId: "STU-2003", name: "كتاب رياضيات", amount: 30, date: "2026-09-01", status: "paid" }
+  ],
+  payments: [],
+  attendance: []
+};
+
+// ────── دوال محاكاة Storage ──────
+function getStudents() { return [...DB.students]; }
+function saveStudents(list) { DB.students = [...list]; }
+function getGrades() { return [...DB.grades]; }
+function getGroups() { return [...DB.groups]; }
+function getAcademicYears() { return [...DB.academicYears]; }
+function saveAcademicYears(list) { DB.academicYears = [...list]; }
+function getTerms() { return [...DB.terms]; }
+function saveTerms(list) { DB.terms = [...list]; }
+function getAcademicMonths() { return [...DB.academicMonths]; }
+function saveAcademicMonths(list) { DB.academicMonths = [...list]; }
+function getExtraCharges() { return [...DB.extraCharges]; }
+function saveExtraCharges(list) { DB.extraCharges = [...list]; }
+function getPayments() { return [...DB.payments]; }
+
+function getTermsForYear(yearId) {
+  return getTerms().filter(t => t.yearId === yearId).sort((a, b) => a.order - b.order);
+}
+function getMonthsForTerm(termId) {
+  return getAcademicMonths().filter(m => m.termId === termId);
+}
+function getActiveAcademicYear() {
+  return getAcademicYears().find(y => y.isCurrent) || null;
+}
+function findAcademicMonthById(dateStr) {
+  if (!dateStr) return null;
+  const months = getAcademicMonths();
+  const terms = getTerms();
+  const years = getAcademicYears();
+  for (const m of months) {
+    if (dateStr >= m.startDate && dateStr <= m.endDate) {
+      const term = terms.find(t => t.id === m.termId);
+      const year = years.find(y => y.id === term?.yearId);
+      return { ...m, termId: term?.id, termName: term?.name, yearId: year?.id, yearName: year?.name };
+    }
+  }
+  return null;
+}
+function findAcademicTermById(dateStr) {
+  if (!dateStr) return null;
+  const terms = getTerms();
+  const years = getAcademicYears();
+  for (const term of terms) {
+    if (dateStr >= term.startDate && dateStr <= term.endDate) {
+      const year = years.find(y => y.id === term.yearId);
+      return { ...term, yearName: year?.name || "" };
+    }
+  }
+  return null;
+}
+
+// ────── دوال محاكاة Helpers ──────
+let _idCounter = 0;
+function generateId(prefix) { return prefix + "-" + Date.now().toString(36) + (_idCounter++); }
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function addDays(iso, days) {
+  const d = new Date(iso); d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// ────── دوال محاكاة Lookups ──────
+function findGroup(groups, groupId) { return groups.find(g => g.id === groupId) || null; }
+function groupsForGrade(groups, gradeId) { return groups.filter(g => g.gradeId === gradeId); }
+function suggestStudentCode(students, group) {
+  if (!group) return "";
+  const count = students.filter(s => s.groupId === group.id).length;
+  return group.code + (count + 1);
+}
+function dueAmount(student, group) {
+  const fullPrice = group?.sessionPrice || 0;
+  const discount = Math.min(fullPrice, Number(student?.discount || 0));
+  return Math.max(0, fullPrice - discount);
+}
+
+// ────── دالة تطبيق الاستحقاقات ──────
+function applyPendingCharges(studentId, groupId) {
+  const charges = getExtraCharges();
+  const students = getStudents();
+  const groupStudents = students.filter(s => s.groupId === groupId && s.id !== studentId);
+  if (!groupStudents.length) return 0;
+
+  const batchMap = {};
+  charges.forEach(c => {
+    if (groupStudents.some(s => s.id === c.studentId) && c.batchId) {
+      if (!batchMap[c.batchId]) batchMap[c.batchId] = { name: c.name, amount: c.amount, date: c.date };
+    }
+  });
+
+  const studentBatchIds = new Set(
+    charges.filter(c => c.studentId === studentId).map(c => c.batchId)
+  );
+
+  let added = 0;
+  Object.entries(batchMap).forEach(([batchId, info]) => {
+    if (studentBatchIds.has(batchId)) return;
+    charges.push({ id: generateId("CHG"), batchId, studentId, name: info.name, amount: info.amount, date: info.date, status: "unpaid" });
+    added++;
+  });
+
+  if (added) saveExtraCharges(charges);
+  return added;
+}
+
+// ═══════════════════════════════════════════════════════════
+// محرك الاختبارات
+// ═══════════════════════════════════════════════════════════
+const results = [];
+let totalPass = 0, totalFail = 0;
+
+function assert(cond, msg, detail) {
+  if (cond) { totalPass++; results.push({ pass: true, msg, detail: detail || "" }); }
+  else { totalFail++; results.push({ pass: false, msg, detail: detail || "" }); }
+}
+function assertEqual(actual, expected, msg) {
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) { totalPass++; results.push({ pass: true, msg, detail: "Got: " + a }); }
+  else { totalFail++; results.push({ pass: false, msg, detail: "Expected: " + e + ", Got: " + a }); }
+}
+
+function resetDB() {
+  DB.academicYears = [{ id: "AY-2026", name: "2026 — 2027", isCurrent: true }];
+  DB.terms = [
+    { id: "TERM-1-2026", yearId: "AY-2026", name: "الترم الأول", order: 1, startDate: "2026-08-01", endDate: "2027-01-31" },
+    { id: "TERM-2-2026", yearId: "AY-2026", name: "الترم الثاني", order: 2, startDate: "2027-02-01", endDate: "2027-05-31" }
+  ];
+  DB.academicMonths = [
+    { id: "AM-1-2026-08", termId: "TERM-1-2026", name: "أغسطس", startDate: "2026-08-01", endDate: "2026-08-31" },
+    { id: "AM-1-2026-09", termId: "TERM-1-2026", name: "سبتمبر", startDate: "2026-09-01", endDate: "2026-09-30" },
+    { id: "AM-1-2026-10", termId: "TERM-1-2026", name: "أكتوبر", startDate: "2026-10-01", endDate: "2026-10-31" },
+    { id: "AM-1-2026-11", termId: "TERM-1-2026", name: "نوفمبر", startDate: "2026-11-01", endDate: "2026-11-30" },
+    { id: "AM-1-2026-12", termId: "TERM-1-2026", name: "ديسمبر", startDate: "2026-12-01", endDate: "2026-12-31" },
+    { id: "AM-1-2027-01", termId: "TERM-1-2026", name: "يناير", startDate: "2027-01-01", endDate: "2027-01-31" },
+    { id: "AM-2-2027-02", termId: "TERM-2-2026", name: "فبراير", startDate: "2027-02-01", endDate: "2027-02-28" },
+    { id: "AM-2-2027-03", termId: "TERM-2-2026", name: "مارس", startDate: "2027-03-01", endDate: "2027-03-31" },
+    { id: "AM-2-2027-04", termId: "TERM-2-2026", name: "أبريل", startDate: "2027-04-01", endDate: "2027-04-30" },
+    { id: "AM-2-2027-05", termId: "TERM-2-2026", name: "مايو", startDate: "2027-05-01", endDate: "2027-05-31" }
+  ];
+  DB.students = [
+    { id: "STU-2001", code: "111", name: "أحمد محمد علي", gradeId: "GR1", groupId: "GRP-11", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2002", code: "112", name: "محمد أحمد سعيد", gradeId: "GR1", groupId: "GRP-11", status: "active", lateBalance: 100, walletBalance: 50, discount: 0 },
+    { id: "STU-2003", code: "113", name: "علي حسين أحمد", gradeId: "GR1", groupId: "GRP-11", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2004", code: "121", name: "حسن إبراهيم خالد", gradeId: "GR1", groupId: "GRP-12", status: "active", lateBalance: 200, walletBalance: 0, discount: 0 },
+    { id: "STU-2005", code: "131", name: "عمر ياسر محمود", gradeId: "GR1", groupId: "GRP-13", status: "active", lateBalance: 0, walletBalance: 30, discount: 0 },
+    { id: "STU-2006", code: "211", name: "سعيد عبدالله محمد", gradeId: "GR2", groupId: "GRP-21", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2007", code: "212", name: "خالد إبراهيم أحمد", gradeId: "GR2", groupId: "GRP-21", status: "active", lateBalance: 150, walletBalance: 0, discount: 0 },
+    { id: "STU-2008", code: "221", name: "مصطفى حسين علي", gradeId: "GR2", groupId: "GRP-22", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2009", code: "231", name: "يوسف أحمد إبراهيم", gradeId: "GR2", groupId: "GRP-23", status: "paused", lateBalance: 50, walletBalance: 0, discount: 0 },
+    { id: "STU-2010", code: "311", name: "إبراهيم خالد سعيد", gradeId: "GR3", groupId: "GRP-31", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 },
+    { id: "STU-2011", code: "312", name: "ياسر محمد حسين", gradeId: "GR3", groupId: "GRP-31", status: "active", lateBalance: 300, walletBalance: 100, discount: 0 },
+    { id: "STU-2012", code: "321", name: "عبدالله أحمد علي", gradeId: "GR3", groupId: "GRP-32", status: "active", lateBalance: 0, walletBalance: 0, discount: 0 }
+  ];
+  DB.extraCharges = [
+    { id: "CHG-001", batchId: "BATCH-BOOKS-2026", studentId: "STU-2001", name: "كتاب رياضيات", amount: 30, date: "2026-09-01", status: "unpaid" },
+    { id: "CHG-002", batchId: "BATCH-BOOKS-2026", studentId: "STU-2002", name: "كتاب رياضيات", amount: 30, date: "2026-09-01", status: "unpaid" },
+    { id: "CHG-003", batchId: "BATCH-BOOKS-2026", studentId: "STU-2003", name: "كتاب رياضيات", amount: 30, date: "2026-09-01", status: "paid" }
+  ];
+  DB.payments = [];
+  DB.attendance = [];
+  _idCounter = 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+// السيناريوهات
+// ═══════════════════════════════════════════════════════════
+
+function S1_CreateAcademicYear() {
+  const section = "S1: إنشاء سنة أكاديمية جديدة (2027-2028)";
+  resetDB();
+
+  // 1.1-1.2 التحقق من وجود السنة الحالية
+  const cy = getActiveAcademicYear();
+  assert(cy !== null, "1.1: يوجد سنة نشطة", cy?.name);
+  assertEqual(cy?.name, "2026 — 2027", "1.2: اسم السنة الحالية صحيح");
+
+  // 1.3-1.5 التحقق من الأترام والشهور
+  const terms = getTermsForYear(cy.id);
+  assertEqual(terms.length, 2, "1.3: يوجد ترمين للسنة الحالية");
+  assertEqual(terms[0]?.order, 1, "1.4: الترم الأول order=1");
+  assertEqual(terms[1]?.order, 2, "1.5: الترم الثاني order=2");
+
+  const m1 = getMonthsForTerm(terms[0].id);
+  assertEqual(m1.length, 6, "1.6: الترم الأول فيه 6 شهور");
+  const m2 = getMonthsForTerm(terms[1].id);
+  assertEqual(m2.length, 4, "1.7: الترم الثاني فيه 4 شهور");
+
+  // 1.8 إنشاء سنة جديدة
+  const years = getAcademicYears();
+  years.push({ id: "AY-2027", name: "2027 — 2028", isCurrent: false });
+  saveAcademicYears(years);
+  assert(getAcademicYears().some(y => y.id === "AY-2027"), "1.8: السنة الجديدة اتحفظت");
+  assertEqual(getAcademicYears().length, 2, "1.9: عدد السنوات = 2");
+
+  // 1.10-1.12 إنشاء ترمين للسنة الجديدة
+  const allTerms = getTerms();
+  allTerms.push(
+    { id: "TERM-1-2027", yearId: "AY-2027", name: "الترم الأول", order: 1, startDate: "2027-08-01", endDate: "2028-01-31" },
+    { id: "TERM-2-2027", yearId: "AY-2027", name: "الترم الثاني", order: 2, startDate: "2028-02-01", endDate: "2028-05-31" }
+  );
+  saveTerms(allTerms);
+  const newTerms = getTermsForYear("AY-2027");
+  assertEqual(newTerms.length, 2, "1.10: ترمين للسنة الجديدة");
+  assertEqual(newTerms[0].name, "الترم الأول", "1.11: اسم الترم الأول");
+  assertEqual(newTerms[1].name, "الترم الثاني", "1.12: اسم الترم الثاني");
+
+  // 1.13-1.14 إنشاء شهور
+  const allMonths = getAcademicMonths();
+  allMonths.push(
+    { id: "AM-1-2027-08", termId: "TERM-1-2027", name: "أغسطس", startDate: "2027-08-01", endDate: "2027-08-31" },
+    { id: "AM-1-2027-09", termId: "TERM-1-2027", name: "سبتمبر", startDate: "2027-09-01", endDate: "2027-09-30" },
+    { id: "AM-1-2027-10", termId: "TERM-1-2027", name: "أكتوبر", startDate: "2027-10-01", endDate: "2027-10-31" },
+    { id: "AM-1-2027-11", termId: "TERM-1-2027", name: "نوفمبر", startDate: "2027-11-01", endDate: "2027-11-30" },
+    { id: "AM-1-2027-12", termId: "TERM-1-2027", name: "ديسمبر", startDate: "2027-12-01", endDate: "2027-12-31" },
+    { id: "AM-1-2028-01", termId: "TERM-1-2027", name: "يناير", startDate: "2028-01-01", endDate: "2028-01-31" },
+    { id: "AM-2-2028-02", termId: "TERM-2-2027", name: "فبراير", startDate: "2028-02-01", endDate: "2028-02-28" },
+    { id: "AM-2-2028-03", termId: "TERM-2-2027", name: "مارس", startDate: "2028-03-01", endDate: "2028-03-31" },
+    { id: "AM-2-2028-04", termId: "TERM-2-2027", name: "أبريل", startDate: "2028-04-01", endDate: "2028-04-30" },
+    { id: "AM-2-2028-05", termId: "TERM-2-2027", name: "مايو", startDate: "2028-05-01", endDate: "2028-05-31" }
+  );
+  saveAcademicMonths(allMonths);
+  assertEqual(getMonthsForTerm("TERM-1-2027").length, 6, "1.13: 6 شهور للترم الأول الجديد");
+  assertEqual(getMonthsForTerm("TERM-2-2027").length, 4, "1.14: 4 شهور للترم الثاني الجديد");
+
+  // 1.15-1.17 التسلسل الزمني
+  const savedT1 = getMonthsForTerm("TERM-1-2027");
+  for (let i = 0; i < savedT1.length - 1; i++) {
+    assert(savedT1[i].endDate <= savedT1[i + 1].startDate,
+      `1.15.${i + 1}: ${savedT1[i].name} ينتهي قبل ${savedT1[i + 1].name}`);
+  }
+
+  // 1.18-1.20 تفعيل السنة الجديدة
+  saveAcademicYears(getAcademicYears().map(y => ({ ...y, isCurrent: y.id === "AY-2027" })));
+  const active = getActiveAcademicYear();
+  assertEqual(active?.id, "AY-2027", "1.18: السنة الجديدة هي النشطة");
+  assert(active?.isCurrent === true, "1.19: isCurrent = true");
+
+  // رجّعها
+  saveAcademicYears(getAcademicYears().map(y => ({ ...y, isCurrent: y.id === "AY-2026" })));
+  assertEqual(getActiveAcademicYear()?.id, "AY-2026", "1.20: رجّعنا السنة القديمة");
+}
+
+function S2_YearRollover() {
+  const section = "S2: ترحيل الطلاب لعام جديد";
+  resetDB();
+
+  const students = getStudents().filter(s => s.status === "active");
+  const grades = getGrades().sort((a, b) => a.order - b.order);
+  const groups = getGroups();
+
+  assert(students.length === 11, "2.1: 11 طالب نشط في البيانات", "Got: " + students.length);
+  assertEqual(grades.length, 3, "2.2: 3 درجات");
+
+  // ناخد أول 3 طلاب ونعملهم ترحيل
+  const targets = students.slice(0, 3);
+  const snapshots = targets.map(s => ({
+    id: s.id, name: s.name,
+    gradeId: s.gradeId, groupId: s.groupId,
+    lateBalance: Number(s.lateBalance || 0)
+  }));
+
+  const all = getStudents();
+  snapshots.forEach(snap => {
+    const s = all.find(x => x.id === snap.id);
+    const curGrade = grades.find(g => g.id === snap.gradeId);
+    const nextGrade = grades.find(g => g.order === (curGrade?.order || 0) + 1);
+    if (nextGrade) {
+      const nextGroups = groups.filter(g => g.gradeId === nextGrade.id);
+      s.gradeId = nextGrade.id;
+      s.groupId = nextGroups[0]?.id || s.groupId;
+    }
+    if (snap.lateBalance > 0) {
+      s.lateBalance = snap.lateBalance;
+      s.openingBalance = (s.openingBalance || 0) + snap.lateBalance;
+      s.openingBalanceNote = "ترحيل — " + todayISO();
+    }
+  });
+  saveStudents(all);
+
+  // التحقق
+  const after = getStudents();
+  snapshots.forEach(snap => {
+    const s = after.find(x => x.id === snap.id);
+    const curGrade = grades.find(g => g.id === snap.gradeId);
+    const nextGrade = grades.find(g => g.order === (curGrade?.order || 0) + 1);
+
+    if (nextGrade) {
+      assertEqual(s.gradeId, nextGrade.id, `2.3: ${snap.name} اتنقل لسنة ${nextGrade.order}`);
+    }
+  });
+
+  // 2.5 المتأخرات فضلت
+  snapshots.filter(s => s.lateBalance > 0).forEach(snap => {
+    const s = after.find(x => x.id === snap.id);
+    assert(s.openingBalance >= snap.lateBalance,
+      `2.5: ${snap.name} — openingBalance (${s.openingBalance}) >= lateBalance (${snap.lateBalance})`);
+  });
+
+  // رجّعهم
+  const revert = getStudents();
+  snapshots.forEach(snap => {
+    const s = revert.find(x => x.id === snap.id);
+    s.gradeId = snap.gradeId;
+    s.groupId = snap.groupId;
+    delete s.openingBalance;
+    delete s.openingBalanceNote;
+  });
+  saveStudents(revert);
+}
+
+function S3_TermRollover() {
+  resetDB();
+  const students = getStudents();
+  const groups = getGroups();
+
+  const s = students.find(x => x.id === "STU-2005");
+  assert(s !== null, "3.1: يوجد طالب STU-2005 (عمر)");
+  assertEqual(s.groupId, "GRP-13", "3.2: في مجموعة GRP-13");
+
+  const oldGroupId = s.groupId;
+  const oldGradeId = s.gradeId;
+
+  const others = groups.filter(g => g.gradeId === oldGradeId && g.id !== oldGroupId);
+  assert(others.length > 0, "3.3: يوجد مجموعات أخرى في نفس السنة");
+
+  // نقله
+  const all = getStudents();
+  const st = all.find(x => x.id === s.id);
+  st.groupId = others[0].id;
+  saveStudents(all);
+
+  const after = getStudents().find(x => x.id === s.id);
+  assertEqual(after.groupId, others[0].id, "3.4: اتنقل للمجموعة الجديدة");
+  assertEqual(after.gradeId, oldGradeId, "3.5: الـ gradeId فضله (ترم2)");
+
+  // رجّعه
+  after.groupId = oldGroupId;
+  saveStudents(getStudents());
+}
+
+function S4_AddStudent() {
+  resetDB();
+  const students = getStudents();
+  const oldCount = students.length;
+
+  const group = findGroup(getGroups(), "GRP-11");
+  assert(group !== null, "4.1: GRP-11 موجودة");
+
+  const code = suggestStudentCode(students, group);
+  assert(code.startsWith("11"), `4.2: الكود ${code} يبدأ بـ 11`);
+
+  const newS = {
+    id: generateId("STU"), code, name: "طالب اختبار",
+    gradeId: "GR1", groupId: "GRP-11", parentPhone: "01012345678",
+    joinDate: todayISO(), status: "active", discount: 0, lateBalance: 0, walletBalance: 0
+  };
+  students.push(newS);
+  saveStudents(students);
+
+  const after = getStudents();
+  assertEqual(after.length, oldCount + 1, "4.3: العدد زاد 1");
+  const added = after.find(x => x.id === newS.id);
+  assert(added !== null, "4.4: الطالب موجود");
+  assertEqual(added.name, "طالب اختبار", "4.5: الاسم صحيح");
+  assertEqual(added.gradeId, "GR1", "4.6: السنة GR1");
+  assertEqual(added.groupId, "GRP-11", "4.7: المجموعة GRP-11");
+  assertEqual(added.status, "active", "4.8: الحالة active");
+
+  // امسحه
+  saveStudents(getStudents().filter(x => x.id !== newS.id));
+}
+
+function S5_MultipleStudents() {
+  resetDB();
+  const group = getGroups().find(g => g.id === "GRP-21");
+  const names = ["تامر أحمد", "باسم حسين", "ياسمين سعيد"];
+  const ids = [];
+
+  names.forEach(name => {
+    const cur = getStudents();
+    const code = suggestStudentCode(cur, group);
+    const s = {
+      id: generateId("STU"), code, name, gradeId: "GR2", groupId: "GRP-21",
+      parentPhone: "01098765432", joinDate: todayISO(), status: "active", discount: 0, lateBalance: 0
+    };
+    cur.push(s);
+    saveStudents(cur);
+    ids.push(s.id);
+  });
+
+  const final = getStudents();
+  ids.forEach(id => assert(final.some(s => s.id === id), "5.x: الطالب " + id + " موجود"));
+
+  // التحقق من الأكواد المتسلسلة
+  const codes = final.filter(s => s.groupId === "GRP-21").map(s => s.code).sort();
+  assert(codes.length >= 3, `5.4: في ${codes.length} طالب في GRP-21`);
+
+  saveStudents(getStudents().filter(s => !ids.includes(s.id)));
+}
+
+function S6_StudentDiscount() {
+  resetDB();
+  const group = getGroups().find(g => g.id === "GRP-31");
+  assert(group.sessionPrice === 70, "6.1: سعر الحصة = 70");
+
+  const newS = {
+    id: generateId("STU"), code: "31X", name: "طالب خصم",
+    gradeId: "GR3", groupId: "GRP-31", parentPhone: "01111111111",
+    joinDate: todayISO(), status: "active", discount: 10, lateBalance: 0
+  };
+  const students = getStudents();
+  students.push(newS);
+  saveStudents(students);
+
+  const added = getStudents().find(s => s.id === newS.id);
+  assertEqual(added.discount, 10, "6.2: الخصم = 10");
+  assertEqual(dueAmount(added, group), 60, "6.3: المبلغ المطلوب = 70 - 10 = 60");
+
+  saveStudents(getStudents().filter(s => s.id !== newS.id));
+}
+
+function S7_PendingCharges() {
+  resetDB();
+  const students = getStudents();
+  const group = getGroups().find(g => g.id === "GRP-11");
+
+  // فيه استحقاق بـ batchId = BATCH-BOOKS-2026 لطلاب GRP-11
+  const batchIds = new Set();
+  getExtraCharges().forEach(c => {
+    if (students.some(s => s.id === c.studentId && s.groupId === "GRP-11") && c.batchId) {
+      batchIds.add(c.batchId);
+    }
+  });
+  assert(batchIds.has("BATCH-BOOKS-2026"), "7.1: يوجد batch BATCH-BOOKS-2026 لطلاب GRP-11");
+
+  // أضف طالب جديد في GRP-11
+  const newS = {
+    id: "STU-NEW-CHG", code: "11C", name: "طالب استحقاق",
+    gradeId: "GR1", groupId: "GRP-11", joinDate: todayISO(), status: "active", discount: 0, lateBalance: 0
+  };
+  const all = getStudents();
+  all.push(newS);
+  saveStudents(all);
+
+  const added = applyPendingCharges(newS.id, "GRP-11");
+  assert(added >= 1, `7.2: تم تطبيق ${added} استحقاق على الطالب الجديد`);
+
+  const applied = getExtraCharges().filter(c => c.studentId === newS.id);
+  assert(applied.length >= 1, "7.3: فيه استحقاق اتسجل للطالب الجديد");
+  assertEqual(applied[0]?.batchId, "BATCH-BOOKS-2026", "7.4: الـ batchId صحيح");
+  assertEqual(applied[0]?.name, "كتاب رياضيات", "7.5: اسم الاستحقاق صحيح");
+
+  // تأكد إنه مش هيتسجل مرتين
+  const added2 = applyPendingCharges(newS.id, "GRP-11");
+  assertEqual(added2, 0, "7.6: تطبيق تاني = 0 (مفيش تكرار)");
+
+  saveStudents(getStudents().filter(s => s.id !== newS.id));
+  saveExtraCharges(getExtraCharges().filter(c => c.studentId !== newS.id));
+}
+
+function S8_LateBalanceZero() {
+  resetDB();
+  const newS = {
+    id: generateId("STU"), code: "Z0", name: "طالب صفر",
+    gradeId: "GR1", groupId: "GRP-11", joinDate: todayISO(), status: "active", discount: 0, lateBalance: 0
+  };
+  const students = getStudents();
+  students.push(newS);
+  saveStudents(students);
+
+  const added = getStudents().find(s => s.id === newS.id);
+  assertEqual(Number(added.lateBalance), 0, "8.1: lateBalance = 0");
+  assert(!added.openingBalance, "8.2: مفيش openingBalance");
+
+  saveStudents(getStudents().filter(s => s.id !== newS.id));
+}
+
+function S9_WalletBalanceZero() {
+  resetDB();
+  const newS = {
+    id: generateId("STU"), code: "W0", name: "طالب محفظة صفر",
+    gradeId: "GR2", groupId: "GRP-21", joinDate: todayISO(), status: "active", discount: 0, lateBalance: 0
+  };
+  const students = getStudents();
+  students.push(newS);
+  saveStudents(students);
+
+  const added = getStudents().find(s => s.id === newS.id);
+  assertEqual(Number(added.walletBalance || 0), 0, "9.1: walletBalance = 0");
+
+  saveStudents(getStudents().filter(s => s.id !== newS.id));
+}
+
+function S10_AcademicLookup() {
+  resetDB();
+  const m1 = findAcademicMonthById("2026-09-15");
+  assert(m1 !== null, "10.1: 15/9/2026 في شهر أكاديمي");
+  assertEqual(m1?.name, "سبتمبر", "10.2: الشهر = سبتمبر");
+  assertEqual(m1?.termName, "الترم الأول", "10.3: الترم = الأول");
+
+  const m2 = findAcademicMonthById("2027-03-10");
+  assert(m2 !== null, "10.4: 10/3/2027 في شهر أكاديمي");
+  assertEqual(m2?.name, "مارس", "10.5: الشهر = مارس");
+  assertEqual(m2?.termName, "الترم الثاني", "10.6: الترم = الثاني");
+
+  const m3 = findAcademicMonthById("2027-08-15");
+  assert(m3 === null, "10.7: 15/8/2027 بره أي فترة (قبل افتتاح السنة الجديدة)");
+
+  const m4 = findAcademicMonthById("2026-07-15");
+  assert(m4 === null, "10.8: 15/7/2026 بره (قبل أغسطس)");
+
+  const t1 = findAcademicTermById("2026-11-20");
+  assert(t1 !== null, "10.9: 20/11/2026 في ترم");
+  assertEqual(t1?.name, "الترم الأول", "10.10: الترم = الأول");
+}
+
+function S11_IsCurrentFlag() {
+  resetDB();
+  const years = getAcademicYears();
+  const currents = years.filter(y => y.isCurrent);
+  assertEqual(currents.length, 1, "11.1: سنة واحدة فقط isCurrent");
+
+  const active = getActiveAcademicYear();
+  assert(active !== null, "11.2: getActiveAcademicYear() شغالة");
+  assertEqual(active.id, "AY-2026", "11.3: السنة النشطة = AY-2026");
+
+  // غيّر
+  saveAcademicYears(years.map(y => ({ ...y, isCurrent: y.id === "AY-2026" })));
+  assertEqual(getActiveAcademicYear()?.id, "AY-2026", "11.4: الـ flag محفوظ");
+}
+
+function S12_RolloverLateBalance() {
+  resetDB();
+  const students = getStudents();
+  const grades = getGrades().sort((a, b) => a.order - b.order);
+  const groups = getGroups();
+
+  const s = students.find(x => x.id === "STU-2002");
+  const oldLate = Number(s.lateBalance);
+  assertEqual(oldLate, 100, "12.1: lateBalance قبل = 100");
+
+  // ترحيل
+  const curGrade = grades.find(g => g.id === s.gradeId);
+  const nextGrade = grades.find(g => g.order === (curGrade?.order || 0) + 1);
+  assert(nextGrade !== null, "12.2: فيه سنة تالية");
+
+  const all = getStudents();
+  const st = all.find(x => x.id === s.id);
+  st.gradeId = nextGrade.id;
+  st.groupId = groups.filter(g => g.gradeId === nextGrade.id)[0]?.id || st.groupId;
+  st.lateBalance = oldLate;
+  st.openingBalance = (st.openingBalance || 0) + oldLate;
+  saveStudents(all);
+
+  const after = getStudents().find(x => x.id === s.id);
+  assertEqual(Number(after.lateBalance), oldLate, "12.3: lateBalance فضل = 100");
+  assert(after.openingBalance >= oldLate, `12.4: openingBalance (${after.openingBalance}) >= 100`);
+
+  // رجّع
+  after.gradeId = s.gradeId;
+  after.groupId = s.groupId;
+  after.lateBalance = oldLate;
+  delete after.openingBalance;
+  saveStudents(getStudents());
+}
+
+function S13_YearRolloverLastGrade() {
+  resetDB();
+  const students = getStudents();
+  const grades = getGrades().sort((a, b) => a.order - b.order);
+  const groups = getGroups();
+  const maxOrder = grades[grades.length - 1].order;
+
+  // طالب في آخر سنة (GR3)
+  const s3 = students.find(x => x.id === "STU-2010");
+  assert(s3.gradeId === "GR3", "13.1: الطالب في GR3 (آخر سنة)");
+
+  const all = getStudents();
+  const st = all.find(x => x.id === s3.id);
+  const curGrade = grades.find(g => g.id === st.gradeId);
+  const nextGrade = grades.find(g => g.order === (curGrade?.order || 0) + 1);
+  assert(nextGrade === undefined || nextGrade === null, "13.2: مفيش سنة تالية لآخر سنة");
+
+  // الـ gradeId ما يتغيرش
+  assertEqual(st.gradeId, "GR3", "13.3: الـ gradeId فضل GR3");
+}
+
+function S14_CodeSuggestionAccuracy() {
+  resetDB();
+  const students = getStudents();
+  const groups = getGroups();
+
+  // GRP-11 فيها 3 طلاب (STU-2001, 2002, 2003)
+  const grp11 = groups.find(g => g.id === "GRP-11");
+  const count11 = students.filter(s => s.groupId === "GRP-11").length;
+  assertEqual(count11, 3, "14.1: GRP-11 فيها 3 طلاب");
+
+  const nextCode = suggestStudentCode(students, grp11);
+  assertEqual(nextCode, "114", "14.2: الكود المقترح = 114 (11 + 4)");
+
+  // GRP-31 فيها 2 طلاب
+  const grp31 = groups.find(g => g.id === "GRP-31");
+  const count31 = students.filter(s => s.groupId === "GRP-31").length;
+  assertEqual(count31, 2, "14.3: GRP-31 فيها 2 طلاب");
+  assertEqual(suggestStudentCode(students, grp31), "313", "14.4: الكود المقترح = 313");
+}
+
+function S15_TermRolloverDoesNotAffectLateBalance() {
+  resetDB();
+  const students = getStudents();
+  const groups = getGroups();
+
+  const s = students.find(x => x.id === "STU-2007");
+  const oldLate = Number(s.lateBalance);
+  assertEqual(oldLate, 150, "15.1: lateBalance قبل = 150");
+
+  // نقله لمجموعة أخرى في نفس السنة
+  const others = groups.filter(g => g.gradeId === s.gradeId && g.id !== s.groupId);
+  const all = getStudents();
+  const st = all.find(x => x.id === s.id);
+  st.groupId = others[0].id;
+  saveStudents(all);
+
+  const after = getStudents().find(x => x.id === s.id);
+  assertEqual(Number(after.lateBalance), oldLate, "15.2: lateBalance ما اتغيرش في ترحيل الترم");
+
+  // رجّعه
+  after.groupId = s.groupId;
+  saveStudents(getStudents());
+}
+
+// ═══════════════════════════════════════════════════════════
+// تشغيل كل السيناريوهات
+// ═══════════════════════════════════════════════════════════
+try {
+  S1_CreateAcademicYear();
+  S2_YearRollover();
+  S3_TermRollover();
+  S4_AddStudent();
+  S5_MultipleStudents();
+  S6_StudentDiscount();
+  S7_PendingCharges();
+  S8_LateBalanceZero();
+  S9_WalletBalanceZero();
+  S10_AcademicLookup();
+  S11_IsCurrentFlag();
+  S12_RolloverLateBalance();
+  S13_YearRolloverLastGrade();
+  S14_CodeSuggestionAccuracy();
+  S15_TermRolloverDoesNotAffectLateBalance();
+} catch (e) {
+  results.push({ pass: false, msg: "EXCEPTION: " + e.message, detail: e.stack });
+  totalFail++;
+}
+
+// ────── عرض النتائج ──────
+const summaryBox = document.getElementById("summaryBox");
+const resultsDiv = document.getElementById("testResults");
+
+summaryBox.innerHTML = `
+  <div class="stat"><div class="num pass">${totalPass}</div><div class="label">ناجح</div></div>
+  <div class="stat"><div class="num fail">${totalFail}</div><div class="label">فاشل</div></div>
+  <div class="stat"><div class="num">${totalPass + totalFail}</div><div class="label">الإجمالي</div></div>
+  <div class="stat"><div class="num ${totalFail === 0 ? 'pass' : 'fail'}">${totalFail === 0 ? '100%' : Math.round(totalPass / (totalPass + totalFail) * 100) + '%'}</div><div class="label">نسبة النجاح</div></div>
+`;
+
+resultsDiv.innerHTML = results.map((r, i) => `
+  <div class="test" style="border-right:3px solid ${r.pass ? 'var(--success)' : 'var(--danger)'}">
+    <div class="title">
+      <span class="badge ${r.pass ? 'badge-pass' : 'badge-fail'}">${r.pass ? 'PASS' : 'FAIL'}</span>
+      ${r.msg}
+    </div>
+    ${r.detail ? `<div class="detail">${r.detail}</div>` : ""}
+  </div>
+`).join("");
+
+// Also log to console for headless capture
+console.log("RESULTS:" + JSON.stringify({ totalPass, totalFail, total: totalPass + totalFail, pct: Math.round(totalPass / (totalPass + totalFail) * 100) + "%", failCount: totalFail }));
+console.log("FAILURES:" + JSON.stringify(results.filter(r => !r.pass)));
+</script>
+</body>
+</html>

@@ -3,6 +3,8 @@
 // كل صفحة لها أكشنات داخلية، والمدير يتحكم في كل واحد
 // =========================================================
 
+import { appPath } from "./paths.js";
+
 /** الصفحات القابلة للتحكم — الرئيسية متاحة دائمًا، والإعدادات للمدير فقط */
 export const PERMISSION_PAGES = [
   { id: "session", label: "إدارة الحصة", icon: "📋" },
@@ -116,8 +118,8 @@ export function canPerformAction(session, pageId, actionId) {
 export function canAccessPage(session, pageId) {
   if (!session) return false;
   if (session.role === "admin") return true;
-  if (session.role === "parent") return pageId === "visit";
-  if (session.role === "student") return pageId === "visit";
+  if (session.role === "parent") return pageId === "visit" || pageId === "parent";
+  if (session.role === "student") return pageId === "visit" || pageId === "parent";
   if (pageId === "dashboard") return true;
   if (pageId === "settings") return false;
   if (pageId === "student" || pageId === "student-form" || pageId === "group-students") return (session.permissions || []).includes("students");
@@ -134,10 +136,10 @@ export function canPerformSensitiveAction(session) {
 
 /** أول صفحة متاحة للمستخدم */
 export function firstAccessiblePage(session) {
-  if (!session) return "login.html";
-  if (session.role === "admin") return "dashboard.html";
-  if (session.role === "parent") return "visit.html";
-  if (session.role === "student") return "visit.html";
+  if (!session) return appPath("login.html");
+  if (session.role === "admin") return appPath("staff/dashboard.html");
+  if (session.role === "parent") return appPath("parent/");
+  if (session.role === "student") return appPath("student/");
   const allowed = PERMISSION_PAGES.find((p) => (session.permissions || []).includes(p.id));
-  return allowed ? `${allowed.id}.html` : "dashboard.html";
+  return allowed ? appPath(`staff/${allowed.id}.html`) : appPath("staff/dashboard.html");
 }

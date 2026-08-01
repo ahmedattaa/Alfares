@@ -1,0 +1,750 @@
+﻿<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مستر فارس شعبان — خبير الرياضيات | صانع الأوائل</title>
+<meta name="description" content="مستر فارس شعبان — خبير الرياضيات، صانع الأوائل ورمز التميز. أكثر من 20 عاماً من العطاء، منهجية حديثة، متابعة مستمرة، ونتائج مضمونة.">
+<link rel="stylesheet" href="../assets/css/style.css">
+<script>
+(function(){
+  try {
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('center_active_theme') || 'default');
+  } catch(e) {}
+})();
+</script>
+<style>
+/* ============ Landing Page Styles ============ */
+.lp { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+
+.lp-nav{
+  position: sticky; top:0; z-index:50;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.lp-nav__inner{
+  max-width: 1120px; margin: 0 auto; padding: 14px 20px;
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+}
+.lp-brand{ display:flex; align-items:center; gap:10px; text-decoration:none; }
+.lp-brand__mark{
+  width:42px; height:42px; border-radius:14px;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 60%, black));
+  color:#fff; font-weight:800; font-size:18px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+.lp-brand__text{ line-height:1.2; }
+.lp-brand__name{ font-weight:800; font-size:15px; color:var(--text); }
+.lp-brand__sub{ font-size:11px; color:var(--muted); font-weight:600; }
+.lp-nav__links{ display:flex; gap:6px; align-items:center; }
+.lp-nav__link{ font-size:13.5px; font-weight:700; color:var(--muted); text-decoration:none; padding:8px 12px; border-radius:var(--r-sm); transition:var(--t-fast) var(--ease); }
+.lp-nav__link:hover{ color:var(--primary); background:color-mix(in srgb, var(--primary) 8%, transparent); }
+
+.lp-hero{
+  position:relative; overflow:hidden;
+  background: var(--bg);
+}
+/* Animated gradient mesh */
+.lp-hero::before{
+  content:""; position:absolute; inset:-40%;
+  background:
+    radial-gradient(circle at 22% 28%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 42%),
+    radial-gradient(circle at 78% 22%, color-mix(in srgb, var(--secondary) 16%, transparent), transparent 40%),
+    radial-gradient(circle at 18% 78%, color-mix(in srgb, var(--success) 12%, transparent), transparent 38%),
+    radial-gradient(circle at 82% 82%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 42%);
+  animation: lpMesh 18s ease-in-out infinite alternate;
+  filter: blur(10px);
+}
+@keyframes lpMesh{
+  0%   { transform: translate(0,0) rotate(0deg) scale(1); }
+  50%  { transform: translate(3%,-2%) rotate(3deg) scale(1.06); }
+  100% { transform: translate(-2%,3%) rotate(-2deg) scale(1.03); }
+}
+/* Subtle grid overlay */
+.lp-hero::after{
+  content:""; position:absolute; inset:0; opacity:.35; pointer-events:none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--primary) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--primary) 5%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 50% 30%, black, transparent 75%);
+}
+.lp-hero__inner{
+  max-width: 1120px; margin:0 auto; padding: 84px 20px 60px;
+  text-align:center; position:relative; z-index:2;
+}
+.lp-hero__hello{ font-size:14px; font-weight:700; color:var(--muted); letter-spacing:2px; margin-bottom:12px; display:flex; align-items:center; justify-content:center; gap:12px; }
+.lp-hero__hello::before, .lp-hero__hello::after{ content:""; width:34px; height:1px; background:linear-gradient(90deg, transparent, var(--muted)); opacity:.5; }
+.lp-hero__hello::after{ background:linear-gradient(90deg, var(--muted), transparent); }
+.lp-hero__name{
+  font-size: clamp(36px, 6.5vw, 60px); font-weight:800; letter-spacing:-1px; line-height:1.12; margin:0;
+  background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--secondary) 75%, var(--primary)) 50%, var(--primary) 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:var(--text);
+  animation: lpShimmer 6s ease-in-out infinite;
+}
+@keyframes lpShimmer{ 0%,100%{ background-position:0% 50%; } 50%{ background-position:100% 50%; } }
+.lp-hero__subtitle{
+  font-size: clamp(16px, 2.4vw, 20px); font-weight:700; color:var(--text); margin-top:6px; letter-spacing:.3px;
+}
+.lp-hero__title{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:20px 0 6px; }
+.lp-hero__badge{
+  display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:99px;
+  font-size:13.5px; font-weight:700; color:var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border:1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.lp-hero__badge--gold{ color:#B45309; background: color-mix(in srgb, var(--secondary) 18%, transparent); border-color: color-mix(in srgb, var(--secondary) 45%, transparent); box-shadow: 0 2px 14px color-mix(in srgb, var(--secondary) 22%, transparent); }
+.lp-hero__tagline{ max-width:640px; margin:22px auto 0; color:var(--muted); font-size:16px; line-height:1.9; }
+.lp-hero__actions{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:36px; }
+.lp-hero__actions .btn{ min-width:210px; font-size:15px; padding:15px 28px; border-radius:14px; transition:all var(--t-med) var(--ease); }
+.lp-hero__actions .btn:hover{ transform:translateY(-3px); }
+.lp-hero__actions .btn-primary{ box-shadow: 0 8px 26px color-mix(in srgb, var(--primary) 40%, transparent); }
+.lp-hero__actions .btn-primary:hover{ box-shadow: 0 12px 34px color-mix(in srgb, var(--primary) 50%, transparent); }
+.lp-hero__actions .btn-success{ box-shadow: 0 8px 26px color-mix(in srgb, var(--success) 38%, transparent); }
+.lp-hero__actions .btn-success:hover{ box-shadow: 0 12px 34px color-mix(in srgb, var(--success) 48%, transparent); }
+.lp-hero__note{ margin-top:18px; font-size:12px; color:var(--muted-2); }
+.lp-hero__signature{
+  margin-top:26px; font-family: 'Segoe Script', 'Cairo', cursive; font-size:22px; font-weight:700;
+  color: color-mix(in srgb, var(--primary) 65%, var(--text)); opacity:.8; transform:rotate(-3deg);
+  display:inline-block; animation: lpSign 1.2s cubic-bezier(.2,.8,.3,1.2) both .3s;
+}
+@keyframes lpSign{ from{ opacity:0; transform:rotate(-8deg) translateY(8px) scale(.9); } to{ opacity:.8; transform:rotate(-3deg) translateY(0) scale(1); } }
+
+/* Floating math symbols */
+.lp-math{ position:absolute; font-size:34px; opacity:.10; font-weight:800; user-select:none; pointer-events:none; color:var(--primary); animation:lpFloat 9s ease-in-out infinite; }
+.lp-math--1{ top:12%; right:8%; animation-delay:0s; }
+.lp-math--2{ top:28%; right:16%; font-size:26px; animation-delay:1.4s; }
+.lp-math--3{ top:14%; left:10%; font-size:40px; animation-delay:2.2s; }
+.lp-math--4{ top:40%; left:6%; animation-delay:.7s; }
+.lp-math--5{ bottom:18%; right:5%; animation-delay:3s; }
+.lp-math--6{ bottom:12%; left:14%; font-size:28px; animation-delay:1.9s; }
+@keyframes lpFloat{ 0%,100%{ transform:translateY(0) rotate(0deg); } 50%{ transform:translateY(-16px) rotate(6deg); } }
+
+/* Stats strip */
+.lp-stats{ border-top:1px solid var(--border); background:var(--surface); }
+.lp-stats__inner{ max-width:1120px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:28px 20px; text-align:center; }
+.lp-stat__num{ font-size:30px; font-weight:800; color:var(--primary); line-height:1; }
+.lp-stat__label{ font-size:12.5px; color:var(--muted); font-weight:600; margin-top:6px; }
+
+/* Sections */
+.lp-section{ padding: 72px 20px; }
+.lp-section--alt{ background:var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+.lp-section__inner{ max-width:1120px; margin:0 auto; }
+.lp-section__head{ text-align:center; margin-bottom:44px; }
+.lp-section__title{ font-size: clamp(24px, 4vw, 34px); font-weight:800; color:var(--text); letter-spacing:-.5px; }
+.lp-section__sub{ color:var(--muted); margin-top:8px; font-size:14.5px; }
+
+/* Features grid */
+.lp-features{ display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:18px; }
+.lp-feature{
+  background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:26px 22px;
+  transition: var(--t-med) var(--ease); position:relative; overflow:hidden;
+}
+.lp-feature::before{ content:""; position:absolute; top:0; right:0; left:0; height:3px; background:var(--c,var(--primary)); }
+.lp-feature:hover{ transform:translateY(-4px); box-shadow:var(--shadow-lg); border-color:color-mix(in srgb, var(--primary) 30%, var(--border)); }
+.lp-feature__icon{
+  width:48px; height:48px; border-radius:14px; margin-bottom:14px;
+  background:color-mix(in srgb, var(--c,var(--primary)) 12%, transparent); color:var(--c,var(--primary));
+  display:flex; align-items:center; justify-content:center;
+}
+.lp-feature__icon svg{ width:24px; height:24px; }
+.lp-feature__title{ font-size:16.5px; font-weight:800; color:var(--text); margin-bottom:6px; }
+.lp-feature__desc{ font-size:13.5px; color:var(--muted); line-height:1.8; }
+
+/* Why section */
+.lp-why{ display:grid; grid-template-columns:1.1fr 1fr; gap:40px; align-items:center; }
+.lp-why__quote{ font-size:20px; font-weight:700; line-height:2; color:var(--text); }
+.lp-why__quote span{ color:var(--primary); }
+.lp-why__points{ display:flex; flex-direction:column; gap:14px; }
+.lp-why__point{ display:flex; gap:12px; align-items:flex-start; }
+.lp-why__point-icon{
+  width:34px; height:34px; border-radius:10px; flex-shrink:0;
+  background:color-mix(in srgb, var(--success) 14%, transparent); color:var(--success);
+  display:flex; align-items:center; justify-content:center;
+}
+.lp-why__point-icon svg{ width:18px; height:18px; }
+.lp-why__point-title{ font-weight:800; font-size:15px; color:var(--text); }
+.lp-why__point-desc{ font-size:13px; color:var(--muted); line-height:1.7; margin-top:2px; }
+
+/* Booking preview */
+.lp-booking{
+  border-radius:20px; padding:48px 32px; text-align:center;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 65%, black));
+  color:#fff; position:relative; overflow:hidden;
+}
+.lp-booking::before, .lp-booking::after{ content:""; position:absolute; border-radius:50%; background:rgba(255,255,255,.06); }
+.lp-booking::before{ width:260px; height:260px; top:-90px; left:-70px; }
+.lp-booking::after{ width:180px; height:180px; bottom:-70px; right:-50px; }
+.lp-booking__title{ font-size:26px; font-weight:800; position:relative; z-index:1; }
+.lp-booking__desc{ opacity:.85; margin-top:10px; font-size:14.5px; position:relative; z-index:1; max-width:520px; margin-inline:auto; line-height:1.8; }
+.lp-booking__btn{ margin-top:26px; position:relative; z-index:1; background:#fff; color:var(--primary); font-size:15px; font-weight:800; padding:14px 34px; border-radius:14px; border:none; cursor:pointer; transition:var(--t-med) var(--ease); box-shadow:0 6px 20px rgba(0,0,0,.18); }
+.lp-booking__btn:hover{ transform:translateY(-2px); box-shadow:0 10px 26px rgba(0,0,0,.25); }
+.lp-booking__soon{ position:relative; z-index:1; display:inline-flex; align-items:center; gap:6px; margin-top:14px; font-size:12.5px; font-weight:700; opacity:.85; background:rgba(255,255,255,.16); padding:6px 14px; border-radius:99px; }
+
+/* Contact */
+.lp-contact{ display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:16px; }
+.lp-contact-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px;
+  display:flex; flex-direction:column; align-items:center; text-align:center; gap:6px;
+  transition:var(--t-med) var(--ease);
+}
+.lp-contact-card:hover{ transform:translateY(-3px); box-shadow:var(--shadow-md); }
+.lp-contact-card__icon{ width:44px; height:44px; border-radius:12px; background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary); display:flex; align-items:center; justify-content:center; margin-bottom:6px; }
+.lp-contact-card__icon svg{ width:22px; height:22px; }
+.lp-contact-card__label{ font-size:12px; color:var(--muted); font-weight:700; }
+.lp-contact-card__value{ font-size:15px; font-weight:800; color:var(--text); }
+.lp-contact-card__value a{ color:var(--text); text-decoration:none; }
+.lp-contact-card__value a:hover{ color:var(--primary); }
+
+/* Social */
+.lp-social{ margin-top:26px; text-align:center; }
+.lp-social__title{ font-size:14px; font-weight:700; color:var(--text); margin-bottom:14px; display:flex; align-items:center; justify-content:center; gap:12px; }
+.lp-social__title::before, .lp-social__title::after{ content:""; width:40px; height:1px; background:linear-gradient(90deg, transparent, var(--muted)); opacity:.5; }
+.lp-social__title::after{ background:linear-gradient(90deg, var(--muted), transparent); }
+.lp-social__links{ display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+.lp-social__link{
+  width:46px; height:46px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+  background:var(--surface); border:1px solid var(--border); color:var(--text);
+  transition:var(--t-med) var(--ease); text-decoration:none;
+}
+.lp-social__link:hover{ transform:translateY(-4px) scale(1.06); border-color:var(--primary); }
+.lp-social__link svg{ width:22px; height:22px; }
+.lp-social__link--facebook:hover{ background:#1877F2; border-color:#1877F2; color:#fff; box-shadow:0 8px 20px rgba(24,119,242,.35); }
+.lp-social__link--tiktok:hover{ background:#000; border-color:#000; color:#fff; box-shadow:0 8px 20px rgba(0,0,0,.35); }
+.lp-social__link--instagram:hover{ background:linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%); border-color:transparent; color:#fff; box-shadow:0 8px 20px rgba(220,39,67,.35); }
+.lp-social__link--youtube:hover{ background:#FF0000; border-color:#FF0000; color:#fff; box-shadow:0 8px 20px rgba(255,0,0,.35); }
+.lp-social__link--telegram:hover{ background:#229ED9; border-color:#229ED9; color:#fff; box-shadow:0 8px 20px rgba(34,158,217,.35); }
+.lp-social__link--snapchat:hover{ background:#FFFC00; border-color:#FFFC00; color:#000; box-shadow:0 8px 20px rgba(255,252,0,.4); }
+
+/* Footer */
+.lp-footer{ border-top:1px solid var(--border); background:var(--surface); padding:32px 20px; text-align:center; }
+.lp-footer__inner{ max-width:1120px; margin:0 auto; }
+.lp-footer__brand{ font-weight:800; font-size:15px; color:var(--text); }
+.lp-footer__copy{ font-size:12.5px; color:var(--muted); margin-top:8px; }
+.lp-footer__admin{ margin-top:14px; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted-2); text-decoration:none; }
+.lp-footer__admin:hover{ color:var(--primary); }
+.lp-footer__admin svg{ width:13px; height:13px; }
+
+/* Reveal on scroll */
+[data-reveal]{ opacity:0; transform:translateY(28px); transition:opacity .7s var(--ease), transform .7s var(--ease); will-change:opacity, transform; }
+[data-reveal].is-visible{ opacity:1; transform:none; }
+[data-reveal="left"]{ transform:translateX(36px); }
+[data-reveal="left"].is-visible{ transform:none; }
+[data-reveal="right"]{ transform:translateX(-36px); }
+[data-reveal="right"].is-visible{ transform:none; }
+[data-reveal="scale"]{ transform:scale(.92); }
+[data-reveal="scale"].is-visible{ transform:none; }
+
+/* Feature card glow + shine sweep */
+.lp-feature{ transform:translateZ(0); }
+.lp-feature::after{
+  content:""; position:absolute; top:0; right:-80%; width:50%; height:100%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 55%, transparent), transparent);
+  transform: skewX(-20deg); transition:right .8s var(--ease); pointer-events:none;
+}
+.lp-feature:hover::after{ right:130%; }
+.lp-feature__icon{ transition:transform var(--t-med) var(--ease); }
+.lp-feature:hover .lp-feature__icon{ transform:scale(1.1) rotate(-6deg); }
+
+/* Stat shimmer */
+.lp-stat{ position:relative; }
+.lp-stat__num{
+  font-size:30px; font-weight:800; color:var(--primary); line-height:1;
+  display:inline-block;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--secondary) 70%, var(--primary)));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:var(--primary);
+}
+.lp-stat__plus{ -webkit-text-fill-color:var(--primary); }
+.lp-stat__label{ font-size:12.5px; color:var(--muted); font-weight:600; margin-top:6px; }
+
+/* Booking shine */
+.lp-booking{ transform:translateZ(0); }
+.lp-booking::after{ content:""; position:absolute; top:-150%; left:-60%; width:60px; height:400%; background:rgba(255,255,255,.12); transform:rotate(25deg); animation:lpShine 5s ease-in-out infinite; }
+@keyframes lpShine{ 0%,60%{ left:-60%; } 100%{ left:130%; } }
+.lp-booking__btn{ position:relative; z-index:1; background:#fff; color:var(--primary); font-size:15px; font-weight:800; padding:14px 34px; border-radius:14px; border:none; cursor:pointer; transition:var(--t-med) var(--ease); box-shadow:0 6px 20px rgba(0,0,0,.18); }
+.lp-booking__btn:hover{ transform:translateY(-3px) scale(1.03); box-shadow:0 12px 30px rgba(0,0,0,.28); }
+.lp-booking__form{
+  max-width:420px; margin:28px auto 0; display:grid; gap:16px; text-align:right;
+  padding:26px; border-radius:20px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border:1px solid color-mix(in srgb, var(--primary) 16%, transparent);
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--primary) 10%, transparent);
+  backdrop-filter: blur(8px);
+}
+.lp-booking__field{ display:grid; gap:6px; }
+.lp-booking__field label{ font-size:13px; font-weight:700; color:var(--text); }
+.lp-booking__field input, .lp-booking__field select{
+  width:100%; box-sizing:border-box; padding:11px 14px; border-radius:11px; font-family:inherit; font-size:14px;
+  border:1.5px solid var(--border); background:var(--bg); color:var(--text);
+  transition:border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.lp-booking__field input:focus, .lp-booking__field select:focus{
+  outline:none; border-color:var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+.lp-booking__form .lp-booking__btn{ grid-column:1/-1; justify-self:center; min-width:180px; }
+.lp-booking__msg{ margin-top:18px; font-size:14px; font-weight:700; padding:12px 18px; border-radius:12px; color:var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); border:1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+.lp-booking__msg.is-error{ color:var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+
+/* Section heading accent */
+.lp-section__head{ position:relative; }
+.lp-section__title::after{
+  content:""; display:block; width:64px; height:4px; margin:14px auto 0;
+  border-radius:99px;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--secondary) 80%, var(--primary)));
+}
+
+@media (max-width: 768px){
+  .lp-nav__links{ display:none; }
+  .lp-hero__inner{ padding-top:60px; }
+  .lp-stats__inner{ grid-template-columns:repeat(2,1fr); gap:22px; }
+  .lp-why{ grid-template-columns:1fr; gap:28px; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .lp-math{ animation:none; }
+}
+</style>
+</head>
+<body data-page="landing">
+
+<div class="lp" id="lpRoot">
+
+  <!-- Navbar -->
+  <nav class="lp-nav">
+    <div class="lp-nav__inner">
+      <a class="lp-brand" href="#top">
+        <div class="lp-brand__mark" id="lpBrandMark">ف</div>
+        <div class="lp-brand__text">
+          <div class="lp-brand__name" id="lpBrandName">مستر فارس شعبان</div>
+          <div class="lp-brand__sub">خبير الرياضيات — صانع الأوائل</div>
+        </div>
+      </a>
+      <div class="lp-nav__links">
+        <a class="lp-nav__link" href="#features">المميزات</a>
+        <a class="lp-nav__link" href="#why">لماذا نحن</a>
+        <a class="lp-nav__link" href="#booking">الحجز</a>
+        <a class="lp-nav__link" href="#contact">تواصل معنا</a>
+        <a class="btn btn-primary btn-sm" href="../login.html?role=admin">دخول الإدارة</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header class="lp-hero" id="top">
+    <div class="lp-math lp-math--1">π</div>
+    <div class="lp-math lp-math--2">√</div>
+    <div class="lp-math lp-math--3">∞</div>
+    <div class="lp-math lp-math--4">∑</div>
+    <div class="lp-math lp-math--5">∫</div>
+    <div class="lp-math lp-math--6">θ</div>
+
+    <div class="lp-hero__inner">
+      <div class="lp-hero__hello">أهلاً بك في عالم الأرقام والتفوق</div>
+      <h1 class="lp-hero__name">مستر فارس شعبان</h1>
+      <div class="lp-hero__subtitle">خبير الرياضيات · صانع الأوائل · رمز التميز</div>
+      <div class="lp-hero__title">
+        <span class="lp-hero__badge lp-hero__badge--gold">صانع الأوائل</span>
+        <span class="lp-hero__badge">+20 عاماً من الخبرة</span>
+        <span class="lp-hero__badge">منهج الفارس</span>
+      </div>
+      <p class="lp-hero__tagline">
+        مع منهجية تدريس حديثة تعتمد على الفهم العميق بدلاً من الحفظ،
+        أُعدّ جيلاً من الأوائل يحصد أعلى الدرجات في مادة الرياضيات.
+        لأن التفوق ليس حظاً… بل نظام.
+      </p>
+
+      <div class="lp-hero__actions">
+        <a class="btn btn-primary" href="../login.html?role=admin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          دخول الإدارة
+        </a>
+        <a class="btn btn-success" id="lpParentBtn" href="../login.html?role=parent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          متابعة ولي الأمر
+        </a>
+        <a class="btn btn-outline" id="lpStudentBtn" href="../login.html?role=student">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></svg>
+          بوابة الطالب
+        </a>
+      </div>
+      <div class="lp-hero__note" id="lpHeroNote">كل واحد بيدخل من هنا على بوابته: الأستاذ للوحة التحكم، الطالب لبوابته، وولي الأمر للمتابعة</div>
+      <div class="lp-hero__signature">م. فارس شعبان</div>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="lp-stats">
+    <div class="lp-stats__inner">
+      <div class="lp-stat" data-reveal="scale"><div class="lp-stat__num"><span class="lp-count" data-count="20">0</span><span class="lp-stat__plus">+</span></div><div class="lp-stat__label">عاماً من الخبرة</div></div>
+      <div class="lp-stat" data-reveal="scale" data-reveal-delay="1"><div class="lp-stat__num"><span class="lp-count" data-count="500">0</span><span class="lp-stat__plus">+</span></div><div class="lp-stat__label">طالب متفوق</div></div>
+      <div class="lp-stat" data-reveal="scale" data-reveal-delay="2"><div class="lp-stat__num"><span class="lp-count" data-count="98">0</span><span class="lp-stat__plus">%</span></div><div class="lp-stat__label">نسبة النجاح</div></div>
+      <div class="lp-stat" data-reveal="scale" data-reveal-delay="3"><div class="lp-stat__num"><span class="lp-count" data-count="40">0</span><span class="lp-stat__plus">+</span></div><div class="lp-stat__label">طالب أوائل</div></div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section class="lp-section" id="features">
+    <div class="lp-section__inner">
+      <div class="lp-section__head" data-reveal>
+        <h2 class="lp-section__title">ليه مستر فارس؟</h2>
+        <p class="lp-section__sub">منهجية متكاملة توصلك لأعلى الدرجات في مادة الرياضيات</p>
+      </div>
+      <div class="lp-features">
+        <div class="lp-feature" style="--c:var(--primary);" data-reveal data-reveal-delay="0">
+          <div class="lp-feature__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8-5-3.6-5 3.6 1.9-5.8L4 8.8h6.1z"/></svg>
+          </div>
+          <div class="lp-feature__title">الفهم العميق للرياضيات</div>
+          <div class="lp-feature__desc">شرح مبسط لكل فكرة رياضية بأسلوب يبني الأساس القوي ويربط المفاهيم ببعضها، بدلاً من الحفظ والتلقين.</div>
+        </div>
+
+        <div class="lp-feature" style="--c:var(--success);" data-reveal data-reveal-delay="1">
+          <div class="lp-feature__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div class="lp-feature__title">متابعة دورية للطالب</div>
+          <div class="lp-feature__desc">امتحانات أسبوعية وحضور محسوب بدقة، مع تقارير أداء مستمرة للأولياء — عشان نلحق أي تقصير فوراً.</div>
+        </div>
+
+        <div class="lp-feature" style="--c:var(--warning);" data-reveal data-reveal-delay="2">
+          <div class="lp-feature__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="lp-feature__title">حل تدريبات مكثف</div>
+          <div class="lp-feature__desc">بنك أسئلة شامل يغطي كل الأفكار المتوقعة في الامتحانات، من الأسهل للأصعب، لضمان الثقة في أي سؤال.</div>
+        </div>
+
+        <div class="lp-feature" style="--c:var(--danger);" data-reveal data-reveal-delay="3">
+          <div class="lp-feature__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div class="lp-feature__title">تصحيح فوري وأخطاء تُعالج</div>
+          <div class="lp-feature__desc">تقييم دقيق لكل امتحان مع تحليل نقاط الضعف والقوة، وخطة تعويض لسد أي فجوة قبل فوات الأوان.</div>
+        </div>
+
+        <div class="lp-feature" style="--c:var(--primary);" data-reveal data-reveal-delay="4">
+          <div class="lp-feature__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.7 5.8 6.3.8-4.7 4.3 1.3 6.1-5.6-3-5.6 3 1.3-6.1L3 9.6l6.3-.8z"/></svg>
+          </div>
+          <div class="lp-feature__title">صانع الأوائل</div>
+          <div class="lp-feature__desc">سجل حافل من الطلاب الأوائل على مستوى المدرسة والإدارة، بمنهجية تحويل المتفوق العادي إلى أوائل.</div>
+        </div>
+
+        <div class="lp-feature" style="--c:var(--success);" data-reveal data-reveal-delay="5">
+          <div class="lp-feature__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+          </div>
+          <div class="lp-feature__title">تحفيز وثقة</div>
+          <div class="lp-feature__desc">بيئة تعليمية إيجابية تحول الخوف من الرياضيات إلى حب لها، وتبني شخصية الطالب المتفوق الواثق.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why -->
+  <section class="lp-section lp-section--alt" id="why">
+    <div class="lp-section__inner">
+      <div class="lp-why">
+        <div class="lp-why__quote" data-reveal="right">
+          "الرياضيات مادة تُفهم وليست مادة تُحفظ.<br>
+          <span>الطالب اللي بيفهم، مش بيحتاج يحفظ… وبيديها في الامتحان.</span><br>
+          ومن هنا بُني منهجي: تفهم → تتدرب → تتفوق."
+        </div>
+        <div class="lp-why__points">
+          <div class="lp-why__point" data-reveal="left" data-reveal-delay="0">
+            <div class="lp-why__point-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <div>
+              <div class="lp-why__point-title">متابعة مستمرة أول بأول</div>
+              <div class="lp-why__point-desc">حضور مسجل لكل حصة وإشعار فوري لولي الأمر بأي تغيير في مستوى الطالب.</div>
+            </div>
+          </div>
+          <div class="lp-why__point" data-reveal="left" data-reveal-delay="1">
+            <div class="lp-why__point-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <div>
+              <div class="lp-why__point-title">امتحانات شهرية وشاملة</div>
+              <div class="lp-why__point-desc">قياس حقيقي لمستوى الطالب مع تحليل مقارن داخل المجموعة والسنتر كله.</div>
+            </div>
+          </div>
+          <div class="lp-why__point" data-reveal="left" data-reveal-delay="2">
+            <div class="lp-why__point-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <div>
+              <div class="lp-why__point-title">تواصل مباشر مع ولي الأمر</div>
+              <div class="lp-why__point-desc">رسائل واتساب تلقائية بالحضور والغياب والنتائج، فتعرف كل جديد بدون ما تسأل.</div>
+            </div>
+          </div>
+          <div class="lp-why__point" data-reveal="left" data-reveal-delay="3">
+            <div class="lp-why__point-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <div>
+              <div class="lp-why__point-title">نظام تحفيز ومكافآت</div>
+              <div class="lp-why__point-desc">مكافآت مالية ورصيد محفظة لأوائل الامتحانات — التعزيز الإيجابي يصنع الفرق.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Booking -->
+  <section class="lp-section" id="booking" style="display:none;">
+    <div class="lp-section__inner">
+      <div class="lp-booking">
+        <h2 class="lp-booking__title">احجز مكانك في السنتر</h2>
+        <p class="lp-booking__desc">
+          الأماكن محدودة في كل مجموعة لضمان جودة المتابعة.
+          املأ البيانات وسيتم التواصل معك لتأكيد الحجز.
+        </p>
+        <form id="lpBookingForm" class="lp-booking__form" autocomplete="off">
+          <div class="lp-booking__field">
+            <label for="bkName">اسم الطالب</label>
+            <input type="text" id="bkName" placeholder="اكتب اسم الطالب" required>
+          </div>
+          <div class="lp-booking__field">
+            <label for="bkPhone">رقم ولي الأمر</label>
+            <input type="tel" id="bkPhone" placeholder="01xxxxxxxxx" pattern="01[0-9]{9}" required>
+          </div>
+          <div class="lp-booking__field">
+            <label for="bkGroup">المجموعة المطلوبة</label>
+            <select id="bkGroup" required>
+              <option value="">— اختر المجموعة —</option>
+              <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
+              <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
+              <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
+              <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
+            </select>
+          </div>
+          <button type="submit" class="lp-booking__btn">احجز الآن</button>
+        </form>
+        <div class="lp-booking__msg" id="lpBookingMsg" style="display:none;"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section class="lp-section lp-section--alt" id="contact">
+    <div class="lp-section__inner">
+      <div class="lp-section__head">
+        <h2 class="lp-section__title">تواصل معنا</h2>
+        <p class="lp-section__sub">نسعد بالإجابة على أي استفسار</p>
+      </div>
+      <div class="lp-contact">
+        <div class="lp-contact-card" data-reveal data-reveal-delay="0">
+          <div class="lp-contact-card__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.9.6 2.9.7a2 2 0 0 1 1.7 2z"/></svg>
+          </div>
+          <div class="lp-contact-card__label">الهاتف</div>
+          <div class="lp-contact-card__value"><a id="lpPhone" href="tel:01000000000">01000000000</a></div>
+        </div>
+        <div class="lp-contact-card" data-reveal data-reveal-delay="1">
+          <div class="lp-contact-card__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          </div>
+          <div class="lp-contact-card__label">العنوان</div>
+          <div class="lp-contact-card__value" id="lpAddress">الفيوم، مصر</div>
+        </div>
+        <div class="lp-contact-card" data-reveal data-reveal-delay="2">
+          <div class="lp-contact-card__icon" style="color:var(--success);">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width:24px;height:24px;"><path d="M17.47 14.38c-.3-.15-1.77-.87-2.04-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.5 0 1.47 1.07 2.9 1.22 3.1.15.2 2.1 3.2 5.1 4.49.71.3 1.27.49 1.7.63.72.23 1.37.2 1.88.12.57-.08 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35zM12.05 21.79h-.02c-2.66 0-5.28-.72-7.57-2.08l-.54-.32-5.62 1.47 1.5-5.48-.35-.56a9.7 9.7 0 0 1-1.49-5.22c0-5.37 4.37-9.74 9.76-9.74 2.61 0 5.06 1.02 6.9 2.86a9.69 9.69 0 0 1 2.85 6.91c0 5.37-4.38 9.73-9.76 9.73zm8.46-18.2A11.64 11.64 0 0 0 12.04.24C5.5.24.14 5.6.14 12.13c0 2.1.55 4.15 1.59 5.96L.1 24l6-1.57a11.86 11.86 0 0 0 5.94 1.52h.01c6.53 0 11.86-5.36 11.86-11.89 0-3.18-1.24-6.16-3.4-8.47z"/></svg>
+          </div>
+          <div class="lp-contact-card__label">واتساب</div>
+          <div class="lp-contact-card__value"><a id="lpWhatsApp" href="#" target="_blank" rel="noopener">راسلنا على واتساب</a></div>
+        </div>
+      </div>
+      <div class="lp-social" id="lpSocial" style="display:none;" data-reveal>
+        <div class="lp-social__title">تابعنا على السوشيال</div>
+        <div class="lp-social__links" id="lpSocialLinks"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="lp-footer">
+    <div class="lp-footer__inner">
+      <div class="lp-footer__brand" id="lpFooterName">سنتر الفارس التعليمي</div>
+      <div class="lp-footer__copy">© <span id="lpYear">2026</span> جميع الحقوق محفوظة — مستر فارس شعبان | صانع الأوائل</div>
+      <a class="lp-footer__admin" href="../login.html?role=admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        دخول الإدارة — لوحة التحكم
+      </a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  var parentEnabled = true;
+  var studentEnabled = true;
+  var bookingEnabled = true;
+  var centerName = 'سنتر الفارس التعليمي';
+  var address = 'الفيوم، مصر';
+  var phone = '01000000000';
+  var whatsapp = '';
+  var socialLinks = {};
+  try {
+    var raw = localStorage.getItem('center_settings');
+    if (raw) {
+      var s = JSON.parse(raw);
+      if (s.centerName) centerName = s.centerName;
+      if (s.address) address = s.address;
+      if (s.phone) phone = s.phone;
+      if (s.whatsapp) whatsapp = s.whatsapp;
+      if (s.socialLinks) socialLinks = s.socialLinks || {};
+      parentEnabled = s.parentPortalEnabled !== false;
+      studentEnabled = s.studentPortalEnabled !== false;
+      bookingEnabled = s.bookingEnabled !== false;
+    }
+  } catch(e) {}
+
+  // لو المستخدم مسجل بالفعل — حوّل الأزرار إلى «الدخول للوحة»
+  var loggedIn = false;
+  var sessionRole = null;
+  try {
+    var sessRaw = localStorage.getItem('center_session');
+    if (sessRaw) { var sess = JSON.parse(sessRaw); loggedIn = true; sessionRole = sess.role || null; }
+  } catch(e) {}
+  if (loggedIn) {
+    var dest = sessionRole === 'parent' ? '../parent/' : (sessionRole === 'student' ? '../student/' : '../staff/dashboard.html');
+    var label = sessionRole === 'parent' ? 'متابعة أولادي' : (sessionRole === 'student' ? 'ملفي الدراسي' : 'لوحة التحكم');
+    var adminBtn = document.querySelector('.lp-nav__links .btn-primary');
+    if (adminBtn) { adminBtn.href = dest; adminBtn.textContent = label; }
+    var heroAdmin = document.querySelector('.lp-hero__actions .btn-primary');
+    if (heroAdmin) { heroAdmin.href = dest; heroAdmin.textContent = '↩ الدخول إلى ' + label; }
+    var footerAdmin = document.querySelector('.lp-footer__admin');
+    if (footerAdmin) { footerAdmin.href = dest; }
+  }
+
+  var note = document.getElementById('lpHeroNote');
+  var hiddenMsg = [];
+  var el = document.getElementById('lpParentBtn');
+  if (el && !parentEnabled) { el.style.display = 'none'; hiddenMsg.push('متابعة ولي الأمر غير متاحة حالياً'); }
+  var studentBtn = document.getElementById('lpStudentBtn');
+  if (studentBtn && !studentEnabled) { studentBtn.style.display = 'none'; hiddenMsg.push('بوابة الطالب غير متاحة حالياً'); }
+  if (note && hiddenMsg.length) note.textContent = hiddenMsg.join(' — ') + '، والدخول للإدارة من الصفحة الرئيسية';
+
+  var bookingSec = document.getElementById('booking');
+  if (bookingSec && bookingEnabled) bookingSec.style.display = '';
+  if (bookingSec && !bookingEnabled) bookingSec.style.display = 'none';
+
+  var mark = document.getElementById('lpBrandMark');
+  if (mark && centerName) {
+    var words = centerName.replace(/[^\u0600-\u06FF\s]/g, '').trim().split(/\s+/);
+    mark.textContent = words.length > 1 ? words[0].charAt(0) + words[1].charAt(0) : centerName.charAt(0);
+  }
+  var footer = document.getElementById('lpFooterName');
+  if (footer && centerName) footer.textContent = centerName;
+  var addr = document.getElementById('lpAddress');
+  if (addr && address) addr.textContent = address;
+  var ph = document.getElementById('lpPhone');
+  if (ph && phone) { ph.textContent = phone; ph.href = 'tel:' + phone; }
+  var waNum = whatsapp || phone;
+  var wa = document.getElementById('lpWhatsApp');
+  if (wa && waNum) {
+    var digits = String(waNum).replace(/\D/g, '');
+    if (digits.length === 10 && digits[0] === '1') digits = '2' + digits;
+    else if (digits.length === 11 && digits[0] === '0') digits = '2' + digits.slice(1);
+    wa.href = 'https://wa.me/' + digits;
+    wa.textContent = 'راسلنا على واتساب';
+  }
+
+  var SOCIAL_DEFS = {
+    facebook: { name: 'فيسبوك', cls: 'facebook', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07c0 6.02 4.39 11.02 10.13 11.93v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.26h3.33l-.53 3.49h-2.8V24C19.61 23.09 24 18.09 24 12.07z"/></svg>' },
+    tiktok: { name: 'تيك توك', cls: 'tiktok', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64c.3 0 .58.05.86.13V9.4a6.33 6.33 0 0 0-1-.08 6.34 6.34 0 1 0 5.65 9.08 6.27 6.27 0 0 0 .69-2.85V8.78a8.2 8.2 0 0 0 4.77 1.52V6.86a4.85 4.85 0 0 1-1.36-.17z"/></svg>' },
+    instagram: { name: 'انستجرام', cls: 'instagram', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>' },
+    youtube: { name: 'يوتيوب', cls: 'youtube', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.55 12 3.55 12 3.55s-7.5 0-9.38.5A3.02 3.02 0 0 0 .5 6.19C0 8.07 0 12 0 12s0 3.93.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.5 9.38.5 9.38.5s7.5 0 9.38-.5a3.02 3.02 0 0 0 2.12-2.14C24 15.93 24 12 24 12s0-3.93-.5-5.81zM9.55 15.57V8.43L15.82 12l-6.27 3.57z"/></svg>' },
+    telegram: { name: 'تيليجرام', cls: 'telegram', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.94 0A12 12 0 1 0 24 12 12 12 0 0 0 11.94 0zm5.99 8.35-1.88 8.87c-.14.63-.52.78-1.05.48l-2.9-2.14-1.4 1.35c-.15.16-.28.29-.58.29l.2-2.96 5.39-4.87c.23-.21-.05-.32-.36-.11l-6.66 4.19-2.87-.9c-.62-.19-.64-.62.13-.92l11.23-4.33c.51-.19.96.11.8.95z"/></svg>' },
+    snapchat: { name: 'سناب شات', cls: 'snapchat', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.2 23.6c-.6 0-1.2-.1-1.8-.4-.4-.2-.9-.4-1.3-.3-1.2.1-2.3.5-3.5.2-1.4-.4-1.5-1.6-1.5-2.8 0-1.5.6-2.3.9-3.5.1-.4-.2-.7-.5-.9-1.3-.7-2.4-1.8-2.9-3.3-.2-.7-.3-1.5.1-2 .3-.4.9-.4 1.4-.3.5.1 1 .3 1.5.4.3.1.6-.1.8-.4C5 8.8 4.6 6.9 4.6 5.1 4.6 2.3 8 0 12.2 0s7.6 2.3 7.6 5.1c0 1.8-.4 3.7-1.4 5.9.2.3.5.5.8.4.5-.1 1-.3 1.5-.4.5-.1 1.1-.1 1.4.3.4.5.3 1.3.1 2-.5 1.5-1.6 2.6-2.9 3.3-.3.2-.6.5-.5.9.3 1.2.9 2 .9 3.5 0 1.2-.1 2.4-1.5 2.8-1.2.3-2.3-.1-3.5-.2-.4 0-.9.1-1.3.3-.6.3-1.2.4-1.8.4z"/></svg>' }
+  };
+  var socialEl = document.getElementById('lpSocialLinks');
+  var socialKeys = Object.keys(socialLinks).filter(function(k){ return socialLinks[k] && SOCIAL_DEFS[k]; });
+  if (socialKeys.length && socialEl) {
+    socialEl.innerHTML = socialKeys.map(function(k){
+      var def = SOCIAL_DEFS[k];
+      return '<a class="lp-social__link lp-social__link--' + def.cls + '" href="' + String(socialLinks[k]).replace(/"/g, '') + '" target="_blank" rel="noopener" title="' + def.name + '">' + def.svg + '</a>';
+    }).join('');
+    var socialWrap = document.getElementById('lpSocial');
+    if (socialWrap) socialWrap.style.display = '';
+  }
+
+  document.getElementById('lpYear').textContent = new Date().getFullYear();
+
+  // عداد الأرقام عند الظهور
+  function animateCount(el){
+    var target = parseInt(el.getAttribute('data-count'), 10);
+    var dur = 1400, start = null;
+    function step(ts){
+      if (!start) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * eased).toLocaleString('en');
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // إظهار العناصر عند التمرير
+  var revealEls = document.querySelectorAll('[data-reveal]');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (!en.isIntersecting) return;
+        var d = parseInt(en.target.getAttribute('data-reveal-delay') || '0', 10);
+        setTimeout(function(){ en.target.classList.add('is-visible'); }, d * 120);
+        en.target.querySelectorAll('.lp-count').forEach(animateCount);
+        io.unobserve(en.target);
+      });
+    }, { threshold: .15 });
+    revealEls.forEach(function(el2){ io.observe(el2); });
+  } else {
+    revealEls.forEach(function(el2){ el2.classList.add('is-visible'); });
+    document.querySelectorAll('.lp-count').forEach(animateCount);
+  }
+
+  // نموذج الحجز — يُحفظ كطلب انتظار ويظهر للإدارة في لوحة التحكم
+  var form = document.getElementById('lpBookingForm');
+  if (form) {
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var name = document.getElementById('bkName').value.trim();
+      var phoneV = document.getElementById('bkPhone').value.trim();
+      var group = document.getElementById('bkGroup').value;
+      if (!name || !phoneV || !group) return;
+      var req = {
+        id: 'bk_' + Date.now(),
+        name: name, phone: phoneV, group: group,
+        createdAt: new Date().toISOString(),
+        status: 'pending'
+      };
+      var list = [];
+      try {
+        var stored = localStorage.getItem('booking_requests');
+        if (stored) list = JSON.parse(stored) || [];
+      } catch(e) {}
+      list.push(req);
+      try { localStorage.setItem('booking_requests', JSON.stringify(list)); } catch(e) {}
+      var msg = document.getElementById('lpBookingMsg');
+      msg.className = 'lp-booking__msg';
+      msg.style.display = '';
+      msg.textContent = 'تم استلام طلب الحجز بنجاح ✔ سيتم التواصل معك لتأكيد المكان.';
+      form.reset();
+      setTimeout(function(){ msg.style.display = 'none'; }, 6000);
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

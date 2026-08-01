@@ -20,9 +20,16 @@
 </div>
 
 <script type="module">
-  import { seedIfNeeded, isLoggedIn } from "./assets/js/storage.js";
+  import { seedIfNeeded, isLoggedIn, getSession } from "./assets/js/storage.js";
   await seedIfNeeded();
-  window.location.replace(isLoggedIn() ? "dashboard.html" : "landing.html");
+  if (isLoggedIn()) {
+    const role = getSession()?.role;
+    if (role === "student") window.location.replace("student/");
+    else if (role === "parent") window.location.replace("parent/");
+    else window.location.replace("staff/dashboard.html");
+  } else {
+    window.location.replace("site/");
+  }
 </script>
 </body>
 </html>

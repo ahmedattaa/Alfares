@@ -30,24 +30,50 @@ http://localhost:8080
 
 ## هيكل المشروع
 
-```
-/index.html          نقطة الدخول (تحويل تلقائى لتسجيل الدخول أو الرئيسية)
-/login.html           تسجيل الدخول
-/dashboard.html        الرئيسية (إحصائيات عامة)
-/reception.html        استقبال الطلاب (تسجيل حضور/غياب سريع)
-/students.html         إدارة الطلاب (بحث/فلترة/إضافة/تعديل/حذف)
-/student.html          تفاصيل طالب معين (?id=STU-xxxx)
-/followup.html         متابعة أداء الطلاب
-/exams.html            الامتحانات ودرجاتها
-/finance.html          اليومية المالية
-/settings.html         إعدادات السنتر
-/404.html              صفحة الخطأ
+المشروع مقسم لـ **4 مناطق** (كل منطقة بتكبر لوحدها)، مع أصول مشتركة ثابتة في الجذر:
 
-/assets/css/style.css   Design System موحد لكل الصفحات
-/assets/js/             ملفات JS مقسمة (وحدات ES6): storage, ui, icons, helpers, app
-                        + ملف منطق خاص بكل صفحة
-/assets/mock/*.json     بيانات تجريبية (تُنسخ تلقائيًا إلى LocalStorage عند أول تشغيل)
 ```
+/                    نقطة الدخول + الصفحات المشتركة
+  index.html           توجيه تلقائي حسب الدور (موظف / ولي أمر / طالب)
+  login.html           تسجيل الدخول المشترك
+  404.html             صفحة الخطأ
+  assets/              الأصول المشتركة (ثابتة في الجذر)
+    css/style.css        Design System موحد لكل الصفحات
+    js/                  وحدات ES6: storage, ui, icons, helpers, app, ...
+    mock/*.json          بيانات تجريبية (تُنسخ تلقائيًا إلى LocalStorage)
+
+/staff/              منطقة المتابعة والإدارة (داخل السنتر)
+  dashboard.html         الرئيسية (إحصائيات عامة)
+  quick-attendance.html  حضور الطلاب (سريع)
+  session.html           إدارة الحصة
+  visit.html             لوحة ولي الأمر (داخل السنتر)
+  students.html          إدارة الطلاب
+  student.html           تفاصيل طالب (?id=STU-xxxx)
+  student-form.html      إضافة/تعديل طالب
+  group-students.html    طلاب مجموعة
+  followup.html          متابعة أداء الطلاب
+  teacher-insights.html  لوحة المعلم
+  exams.html             الامتحانات ودرجاتها
+  finance.html           اليومية المالية
+  shift.html             الصندوق (تقفيل الوردية)
+  rollover.html          ترحيل الطلاب
+  settings.html          إعدادات السنتر
+  attendance-tracker.html متابعة الحضور والغياب
+
+/parent/             منطقة ولي الأمر (بوابة خارجية للعرض فقط)
+  index.html           بوابة ولي الأمر
+
+/site/               منطقة الويب سايت (المنصة العامة + نقطة الدخول)
+  index.html           الصفحة التسويقية + أزرار الدخول للجميع (تظهر حسب إعدادات البوابات)
+
+/student/            منطقة منصة الطالب
+  index.html           بوابة الطالب (عرض ملفه الدراسي — نفس وحدة parent-portal.js)
+
+/scripts/tests/      أدوات واختبارات (test-scenarios, test-output, inject-test-data)
+```
+
+للرؤية الكاملة للمشروع و خطة النمو على المدى البعيد: شوف **`ARCHITECTURE.md`**.
+
 
 ## كيف تعمل البيانات؟
 

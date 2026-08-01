@@ -7,6 +7,7 @@ import { redirectIfLoggedIn } from "./app.js";
 import { toast } from "./ui.js";
 import { initials, fakeDelay } from "./helpers.js";
 import { applyCurrentTheme } from "./themes.js";
+import { appPath } from "./paths.js";
 
 /* ---- Modes ---- */
 const MODES = {
@@ -176,7 +177,7 @@ async function handleParentLogin() {
   toast(students.length === 1
     ? `مرحبًا بعودتك ولي أمر ${students[0].name}`
     : `مرحبًا بعودتك، لديك ${students.length} أبناء مسجلين`, "success");
-  finalizeLogin(session, "visit.html");
+  finalizeLogin(session);
 }
 
 async function handleStudentLogin() {
@@ -201,7 +202,7 @@ async function handleStudentLogin() {
 
   const { students } = result;
   toast(`مرحبًا بعودتك، ${students[0].name}`, "success");
-  finalizeLogin(result.session, "visit.html");
+  finalizeLogin(result.session);
 }
 
 /* ---- Helpers ---- */
@@ -219,7 +220,13 @@ async function finalizeLogin(session, redirectUrl) {
   applyCurrentTheme();
   await fakeDelay(300);
   await flushPendingWrites();
-  window.location.href = redirectUrl || "dashboard.html";
+  window.location.href = redirectUrl || portalTargetFor(session);
+}
+
+function portalTargetFor(session) {
+  if (session?.role === "student") return appPath("student/");
+  if (session?.role === "parent") return appPath("parent/");
+  return appPath("staff/dashboard.html");
 }
 
 bootstrap();

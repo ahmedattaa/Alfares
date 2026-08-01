@@ -35,6 +35,7 @@ import { suggestGroupCode, gradeName } from "./lookups.js";
 import { PERMISSION_PAGES, PAGE_ACTIONS, canPerformSensitiveAction, canPerformAction } from "./permissions.js";
 import { WEEKDAY_OPTIONS, formatDaysAr, formatTimeAr } from "./schedule.js";
 import { TEMPLATE_REGISTRY, CATEGORIES, getTemplateBody, saveTemplateOverride, resetTemplate, resetAllTemplates, getAllOverrides } from "./whatsapp-templates.js";
+import { appPath } from "./paths.js";
 
 const TABS = [
   { id: "center", label: "بيانات السنتر", icon: icons.settings },
@@ -121,18 +122,57 @@ function renderCenterTab(box) {
           <div class="form-grid">
             <div class="field">
               <label class="field__label">رقم الهاتف</label>
-              <input class="input" name="phone" value="${escapeHTML(settings.phone || "")}">
+              <input class="input" name="phone" value="${escapeHTML(settings.phone || "")}" placeholder="01xxxxxxxxx">
+              <div class="field__hint">يظهر في الصفحة الرئيسية وبيتفتح الاتصال مباشرة عند الضغط.</div>
             </div>
             <div class="field">
-              <label class="field__label">العملة</label>
-              <input class="input" name="currency" value="${escapeHTML(settings.currency || "ج.م")}">
+              <label class="field__label">رقم الواتساب</label>
+              <input class="input" name="whatsapp" value="${escapeHTML(settings.whatsapp || "")}" placeholder="01xxxxxxxxx">
+              <div class="field__hint">لو فاضي، هيتحسب تلقائياً من رقم الهاتف.</div>
             </div>
+          </div>
+          <div class="field">
+            <label class="field__label">العملة</label>
+            <input class="input" name="currency" value="${escapeHTML(settings.currency || "ج.م")}" style="max-width:200px;">
           </div>
           <button class="btn btn-primary" type="submit">${icons.check} حفظ التغييرات</button>
         </form>
       </div>
 
       <div>
+        <div class="card card-pad" style="margin-bottom:16px;">
+          <div class="card__head"><div class="card__title">🔗 روابط السوشيال</div></div>
+          <form id="socialForm">
+            <div class="form-grid">
+              <div class="field">
+                <label class="field__label">فيسبوك</label>
+                <input class="input" name="facebook" value="${escapeHTML(settings.socialLinks?.facebook || "")}" placeholder="https://facebook.com/...">
+              </div>
+              <div class="field">
+                <label class="field__label">تيك توك</label>
+                <input class="input" name="tiktok" value="${escapeHTML(settings.socialLinks?.tiktok || "")}" placeholder="https://tiktok.com/...">
+              </div>
+              <div class="field">
+                <label class="field__label">انستجرام</label>
+                <input class="input" name="instagram" value="${escapeHTML(settings.socialLinks?.instagram || "")}" placeholder="https://instagram.com/...">
+              </div>
+              <div class="field">
+                <label class="field__label">يوتيوب</label>
+                <input class="input" name="youtube" value="${escapeHTML(settings.socialLinks?.youtube || "")}" placeholder="https://youtube.com/...">
+              </div>
+              <div class="field">
+                <label class="field__label">تيليجرام</label>
+                <input class="input" name="telegram" value="${escapeHTML(settings.socialLinks?.telegram || "")}" placeholder="https://t.me/...">
+              </div>
+              <div class="field">
+                <label class="field__label">سناب شات</label>
+                <input class="input" name="snapchat" value="${escapeHTML(settings.socialLinks?.snapchat || "")}" placeholder="https://snapchat.com/...">
+              </div>
+            </div>
+            <button class="btn btn-primary" type="submit">${icons.check} حفظ الروابط</button>
+            <div class="field__hint" style="margin-top:8px;">الروابط اللي فيها بيانات هي اللي بتظهر في الصفحة الرئيسية ضمن «تابعنا على السوشيال».</div>
+          </form>
+        </div>
         <div class="card card-pad" style="margin-bottom:16px;">
           <div class="card__head"><div class="card__title">الحساب الحالى</div></div>
           <div class="field">
@@ -201,9 +241,24 @@ function renderCenterTab(box) {
   document.getElementById("centerForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
+    data.whatsapp = (data.whatsapp || "").trim();
+    data.phone = (data.phone || "").trim();
     saveSettings({ ...settings, ...data });
     Sounds.save();
     toast("تم حفظ بيانات السنتر بنجاح", "success");
+  });
+
+  document.getElementById("socialForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    const socialLinks = {};
+    for (const key of Object.keys(data)) {
+      const val = (data[key] || "").trim();
+      if (val) socialLinks[key] = val;
+    }
+    saveSettings({ ...settings, ...getSettings(), socialLinks });
+    Sounds.save();
+    toast("تم حفظ روابط السوشيال بنجاح", "success");
   });
 
   document.getElementById("soundToggle")?.addEventListener("change", (e) => {
@@ -1825,7 +1880,7 @@ function renderDangerTab(box) {
     if (!ok) return;
     await resetAllData();
     toast("تم إعادة ضبط النظام، جارٍ إعادة التحميل...", "success");
-    setTimeout(() => (window.location.href = "login.html"), 1000);
+    setTimeout(() => (window.location.href = appPath("login.html")), 1000);
   });
 }
 
