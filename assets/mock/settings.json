@@ -4,6 +4,7 @@
   "address": "الفيوم، مصر",
   "phone": "01000000000",
   "currency": "ج.م",
+  "subjectId": "SUB-2",
   "users": [
     {
       "username": "admin",

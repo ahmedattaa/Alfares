@@ -1,7 +1,7 @@
 // =========================================================
-// بوابة ولي الأمر / الطالب — صفحة خارجية بعد تسجيل الدخول
-// وضع العرض فقط: الخط الزمني · ملف الطالب · الحضور · المالية (عرض) ·
-// الدرجات والترتيب · المتابعة · التواصل مع المستر + الجدول
+// بوابة العائلة — Family Portal
+// صفحة خارجية بعد تسجيل الدخول — وضع العرض فقط
+// نظرة عامة · آخر التحديثات (فيد موحد) · التفاصيل (حضور · مالية · درجات) · ملف الطالب
 // لا تحتوي على أي إجراءات تحصيل أو تعديل — إدارة كاملة داخل السنتر
 // =========================================================
 
@@ -11,12 +11,16 @@ import {
   getStudents, getGroups, getGrades, getStudentStatuses,
   getAttendance, getPayments, getExams, getExtraCharges,
   getWalletTransactions, getFollowupLogs, getLastFollowupLog,
+  getSubjects, getTopics, getQuestions, getExamAnswersForStudent,
+  getAchievementsForStudent, getEscalationLogsForStudent,
   getSettings, getWhatsApp, isFeatureEnabled,
-  isParentPortalEnabled, isStudentPortalEnabled,
+  isParentPortalEnabled, isStudentPortalEnabled, getTeachingSubject,
 } from "./storage.js";
-import { escapeHTML, formatMoney, todayISO, formatDateAr, initials } from "./helpers.js";
+import { escapeHTML, formatMoney, todayISO, formatDateAr, initials, addDays } from "./helpers.js";
 import { gradeName, findGroup, dueAmount } from "./lookups.js";
+import { computeHealthScore, getHealthColor, getHealthLabel } from "./health-score.js";
 import { isStudentLocked } from "./attendance-service.js";
+import { parentUpdate } from "./remediation-service.js";
 import { computeFinanceBreakdown } from "./finance-panel.js";
 import { toast } from "./ui.js";
 import { formatTimeAr, formatDaysAr, WEEKDAY_OPTIONS } from "./schedule.js";
@@ -24,13 +28,10 @@ import { buildWhatsAppLink } from "./whatsapp.js";
 import { appPath } from "./paths.js";
 
 const TABS = [
-  { id: "timeline",   label: "الخط الزمني",     icon: icons.clock },
-  { id: "profile",    label: "ملف الطالب",      icon: icons.users },
-  { id: "attendance", label: "تسجيل الحضور",    icon: icons.check },
-  { id: "finance",    label: "الإدارة المالية",  icon: icons.wallet },
-  { id: "grades",     label: "الدرجات والحضور", icon: icons.chart },
-  { id: "followup",   label: "المتابعة",        icon: icons.clipboard },
-  { id: "contact",    label: "التواصل والجدول", icon: icons.whatsapp },
+  { id: "overview", label: "نظرة عامة",      icon: icons.radar },
+  { id: "updates",  label: "آخر التحديثات",   icon: icons.clock },
+  { id: "details",  label: "التفاصيل",        icon: icons.chart },
+  { id: "profile",  label: "ملف الطالب",      icon: icons.users },
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -77,7 +78,7 @@ function renderShell() {
             <div class="pp-brand__mark">${initials(centerName)}</div>
             <div style="min-width:0">
               <div class="pp-brand__name">${escapeHTML(centerName)}</div>
-              <div class="pp-brand__sub">${isStudent ? "بوابة الطالب" : "بوابة ولي الأمر"}</div>
+              <div class="pp-brand__sub">${isStudent ? "بوابة الطالب" : "بوابة العائلة · Family Portal"}</div>
             </div>
           </div>
           <div class="pp-header__user">
@@ -109,7 +110,7 @@ function renderShell() {
 const content = await initPortal();
 
 let selectedStudentId = null;
-let activeTab = "profile";
+let activeTab = "overview";
 
 const session = getSession();
 const isStudent = session?.role === "student";
@@ -139,7 +140,7 @@ function render() {
   content.innerHTML = `
     <div class="pp-page-head">
       <div class="pp-page-title">${showDashboard ? icons.grid + " لوحة العائلة" : isStudent ? icons.shield + " ملفي الدراسي" : icons.shield + " متابعة ابنك"}</div>
-      <div class="pp-page-subtitle">${showDashboard ? "جميع أبنائك المسجلين في السنتر — اختر أحدهم لعرض تفاصيله" : isStudent ? "متابعة درجاتك وحضورك وملفك الدراسي وترتيبك" : "ملف ابنك كامل — درجاته وحضوره وترتيبه وملاحظات المتابعة"}</div>
+      <div class="pp-page-subtitle">${showDashboard ? "جميع أبنائك المسجلين في السنتر — اختر أحدهم لعرض تفاصيله" : isStudent ? "متابعة درجاتك وحضورك وملفك الدراسي وترتيبك" : "نظرة عامة على وضع ابنك في دقيقة — الصحة، الحضور، الدرجات، والمتابعة"}</div>
       ${!showDashboard ? `<div class="pp-readonly-note">${icons.info} وضع العرض فقط — لا يمكن تعديل أو تحصيل أي مبالغ من هنا</div>` : ""}
     </div>
     ${showDashboard ? renderFamilyDashboardHTML() : `<div id="ppStudentZone"></div>`}
@@ -230,7 +231,7 @@ function selectStudent(id) {
     return;
   }
   selectedStudentId = id;
-  activeTab = "profile";
+  activeTab = "overview";
   render();
 }
 
@@ -255,7 +256,7 @@ function renderStudentZone() {
   const inits = initials(student.name || "?");
 
   zone.innerHTML = `
-    ${showBack ? `<div style="margin-bottom:12px;"><button class="btn btn-ghost btn-sm" id="ppBackBtn" style="gap:4px;font-size:12.5px;"><span style="font-size:18px;">›</span> العودة لجميع الأبناء</button></div>` : ""}
+    ${showBack ? `<div style="margin-bottom:14px;"><button class="pp-back-btn" id="ppBackBtn"><span class="pp-back-btn__arrow">›</span> العودة لجميع الأبناء</button></div>` : ""}
     <div class="vst-profile-card">
       <div class="vst-profile-card__header">
         <div class="vst-profile-card__avatar">${escapeHTML(inits)}</div>
@@ -277,15 +278,17 @@ function renderStudentZone() {
       </div>
     </div>
 
-    <div class="vst-tabs">
-      ${TABS.map((t) => `
-        <button class="vst-tab ${activeTab === t.id ? "is-active" : ""}" data-tab="${t.id}">
-          ${t.icon ? `<span class="vst-tab__icon">${t.icon}</span>` : ""}${t.label}
-        </button>
-      `).join("")}
-    </div>
+    <div class="vst-layout">
+      <div class="vst-tabs">
+        ${TABS.map((t) => `
+          <button class="vst-tab ${activeTab === t.id ? "is-active" : ""}" data-tab="${t.id}">
+            ${t.icon ? `<span class="vst-tab__icon">${t.icon}</span>` : ""}${t.label}
+          </button>
+        `).join("")}
+      </div>
 
-    <div id="ppTabContent"></div>
+      <div id="ppTabContent"></div>
+    </div>
   `;
 
   zone.querySelectorAll(".vst-tab").forEach((btn) =>
@@ -306,13 +309,122 @@ function renderTabContent() {
   const student = getStudents().find((s) => s.id === selectedStudentId);
   if (!student || !box) return;
 
-  if (activeTab === "timeline")   return renderTimelineTab(box, student);
-  if (activeTab === "profile")    return renderProfileTab(box, student);
-  if (activeTab === "attendance") return renderAttendanceTab(box, student);
-  if (activeTab === "finance")    return renderFinanceTab(box, student);
-  if (activeTab === "grades")     return renderGradesTab(box, student);
-  if (activeTab === "followup")   return renderFollowupTab(box, student);
-  if (activeTab === "contact")    return renderContactTab(box, student);
+  if (activeTab === "overview") return renderOverviewTab(box, student);
+  if (activeTab === "updates")  return renderUpdatesTab(box, student);
+  if (activeTab === "details")  return renderDetailsTab(box, student);
+  if (activeTab === "profile")  return renderProfileTab(box, student);
+}
+
+// آخر التحديثات — فيد موحد: تواصل + متابعة الإدارة + الخط الزمني بفلاتر
+function renderUpdatesTab(box, student) {
+  const followups = getFollowupLogs().filter((l) => l.studentId === student.id).reverse().slice(0, 30);
+  const escalations = getEscalationLogsForStudent(student.id).slice(-5).reverse();
+  const achievements = getAchievementsForStudent(student.id).slice(-5).reverse();
+
+  const settings = getSettings();
+  const centerName = settings.centerName || "سنتر تعليمي";
+  const centerPhone = settings.phone || "";
+  const waPhone = getWhatsApp() || centerPhone;
+  const waMessage = `السلام عليكم ورحمة الله،\nأنا ${isStudent ? "الطالب" : "ولي أمر"} ${student.name} (كود: ${student.code || "—"})\nأود التواصل بخصوص ${isStudent ? "ملفي" : "ملف"} الدراسي.`;
+
+  const events = buildTimelineEvents(student);
+  events.sort((a, b) => ((b.date || "") + (b.time || "99:99")).localeCompare((a.date || "") + (a.time || "99:99")));
+
+  box.innerHTML = `
+    <div class="card card-pad">
+      <div class="card__head"><div class="card__title">${icons.whatsapp} تواصل مع المستر</div></div>
+      ${waPhone ? `
+      <div class="pp-contact-grid">
+        <a class="pp-contact-card pp-contact-card--wa" href="${buildWhatsAppLink(waPhone, waMessage)}" target="_blank" rel="noopener">
+          <div class="pp-contact-card__icon">${icons.whatsapp}</div>
+          <div>
+            <div class="pp-contact-card__title">واتساب — ${escapeHTML(centerName)}</div>
+            <div class="pp-contact-card__sub">${escapeHTML(waPhone)} · رسالة جاهزة باسم الطالب</div>
+          </div>
+          <span class="pp-contact-card__go">${icons.arrowLeft}</span>
+        </a>
+        ${centerPhone ? `
+        <a class="pp-contact-card pp-contact-card--call" href="tel:${encodeURIComponent(centerPhone)}">
+          <div class="pp-contact-card__icon">${icons.phone}</div>
+          <div>
+            <div class="pp-contact-card__title">اتصال هاتفي بالسنتر</div>
+            <div class="pp-contact-card__sub">${escapeHTML(centerPhone)}</div>
+          </div>
+          <span class="pp-contact-card__go">${icons.arrowLeft}</span>
+        </a>` : ""}
+      </div>
+      <div class="pp-note-hint">${icons.info} يتواصل معك فريق السنتر لمعرفة آخر المستجدات على مدار العام</div>
+      ` : `<div class="text-muted" style="padding:16px; text-align:center;">لم تُسجَّل بيانات تواصل للسنتر — اسأل الإدارة داخل السنتر</div>`}
+    </div>
+
+    <div class="card card-pad" style="margin-top:16px;">
+      <div class="card__head"><div class="card__title">${icons.users} ماذا تفعل الإدارة؟</div></div>
+      ${fpTreatmentBlock(followups, escalations, achievements)}
+    </div>
+
+    <div class="pp-feed-head" style="margin-top:16px;">
+      <div class="pp-feed-title">${icons.clock} آخر التحديثات</div>
+      <div class="pp-feed-filters">
+        <button class="pp-filter-btn is-active" data-filter="all">الكل</button>
+        <button class="pp-filter-btn" data-filter="attendance">الحضور</button>
+        <button class="pp-filter-btn" data-filter="exam">الامتحانات</button>
+        <button class="pp-filter-btn" data-filter="finance">المالية</button>
+        <button class="pp-filter-btn" data-filter="followup">المتابعة</button>
+      </div>
+    </div>
+    <div id="ppFeedBox"></div>
+  `;
+
+  const feedBox = document.getElementById("ppFeedBox");
+  if (feedBox) renderTimelineFeed(feedBox, events, "all");
+
+  box.querySelectorAll(".pp-filter-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      box.querySelectorAll(".pp-filter-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
+      if (feedBox) renderTimelineFeed(feedBox, events, btn.dataset.filter);
+    })
+  );
+}
+
+// التفاصيل — ثلاثة أقسام قابلة للطي (الحضور / الدرجات والترتيب / المالية)
+let ppOpenSection = null;
+
+function renderDetailsTab(box, student) {
+  box.innerHTML = `
+    <div class="pp-acc">
+      <details class="pp-acc__item" ${ppOpenSection === "attendance" ? "open" : ""}>
+        <summary class="pp-acc__head">
+          <span class="pp-acc__icon" style="color:var(--success);">${icons.check}</span>
+          <span class="pp-acc__title">الحضور والسجل</span>
+          <span class="pp-acc__chev">▾</span>
+        </summary>
+        <div class="pp-acc__body" id="ppDetAttendance"></div>
+      </details>
+      <details class="pp-acc__item" ${ppOpenSection === "grades" ? "open" : ""}>
+        <summary class="pp-acc__head">
+          <span class="pp-acc__icon" style="color:var(--warning);">${icons.chart}</span>
+          <span class="pp-acc__title">الدرجات والترتيب</span>
+          <span class="pp-acc__chev">▾</span>
+        </summary>
+        <div class="pp-acc__body" id="ppDetGrades"></div>
+      </details>
+      <details class="pp-acc__item" ${ppOpenSection === "finance" ? "open" : ""}>
+        <summary class="pp-acc__head">
+          <span class="pp-acc__icon" style="color:var(--danger);">${icons.wallet}</span>
+          <span class="pp-acc__title">المالية والمستحقات</span>
+          <span class="pp-acc__chev">▾</span>
+        </summary>
+        <div class="pp-acc__body" id="ppDetFinance"></div>
+      </details>
+    </div>
+  `;
+
+  const att = document.getElementById("ppDetAttendance");
+  const gra = document.getElementById("ppDetGrades");
+  const fin = document.getElementById("ppDetFinance");
+  if (att) renderAttendanceTab(att, student);
+  if (gra) renderGradesTab(gra, student);
+  if (fin) renderFinanceTab(fin, student);
 }
 
 function detailRow(label, value) {
@@ -320,15 +432,457 @@ function detailRow(label, value) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  تبويب ٠ — نظرة عامة (Family Overview) — فحص الدقيقة الواحدة
+// ═══════════════════════════════════════════════════════════
+
+function renderOverviewTab(box, student) {
+  const h = computeHealthScore(student.id);
+  const healthColor = getHealthColor(h.total);
+  const healthLabel = getHealthLabel(h.total);
+  const analytics = computeComparativeAnalytics(student);
+  const rank = computeStudentRank(student);
+  const narrative = fpNarrative(student, h, analytics);
+  const mastery = masteryBySubject(student.id);
+  const mistakeT = mistakeTopics(student.id);
+  const weekEvents = fpWeekEvents(student).slice(0, 3);
+  const followups = getFollowupLogs().filter((l) => l.studentId === student.id).reverse().slice(0, 4);
+  const escalations = getEscalationLogsForStudent(student.id).slice(-3).reverse();
+  const achievements = getAchievementsForStudent(student.id).slice(-3).reverse();
+  const debt = Number(student.lateBalance || 0);
+  const locked = isStudentLocked(student);
+  const wallet = isFeatureEnabled("wallet") ? Number(student.walletBalance || 0) : 0;
+  const netDue = Math.max(0, debt - wallet);
+
+  box.innerHTML = `
+    <div class="card card-pad fp-card-health">
+      <div class="card__head">
+        <div class="card__title">${icons.radar} مؤشر صحة الطالب التعليمية</div>
+        ${fpHealthChip(h.total, healthColor, healthLabel)}
+      </div>
+      ${healthIndicatorHTML(h, healthColor, healthLabel)}
+    </div>
+
+    ${narrative.length ? `
+    <div class="card card-pad fp-narrative" style="margin-top:16px;">
+      <div class="card__head"><div class="card__title">${icons.radar} ملخص ذكي</div></div>
+      <div class="vst-statements">
+        ${narrative.map((s) => `
+          <div class="vst-statement vst-statement--${s.tone}">
+            <span class="vst-statement__emoji">${s.emoji}</span>
+            <span>${escapeHTML(s.text)}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>` : ""}
+
+    ${(() => { try { const up = parentUpdate(student.id); return `
+      <div class="card card-pad" style="margin-top:16px; border-right:3px solid var(--primary);">
+        <div class="card__head"><div class="card__title">💬 رسالة داعمة</div></div>
+        <div style="font-size:14.5px; font-weight:800; margin-bottom:8px;">${escapeHTML(up.headline)}</div>
+        <ul style="margin:0; padding-right:18px; line-height:1.9; font-size:13.5px; color:var(--text);">
+          ${up.messageLines.map((l) => `<li>${escapeHTML(l)}</li>`).join("")}
+        </ul>
+      </div>`; } catch (e) { console.error(e); return ""; } })()}
+
+    <div class="fp-cards" style="margin-top:16px;">
+      ${fpStatusCards(student, h, rank, analytics)}
+    </div>
+
+    ${fpFinanceStripHTML(student, locked, netDue)}
+
+    ${fpQuickActionsHTML()}
+
+    <div class="fp-grid-2" style="margin-top:16px;">
+      <div class="card card-pad">
+        <div class="card__head">
+          <div class="card__title">${icons.clipboard} ماذا حدث هذا الأسبوع؟</div>
+          <button class="pp-goto-btn pp-goto-btn--link" data-goto="updates">عرض الكل</button>
+        </div>
+        ${fpWeekTimelineHTML(weekEvents)}
+      </div>
+      <div>
+        ${fpSkillsBlock(mastery, mistakeT)}
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-top:16px;">
+      <div class="card__head">
+        <div class="card__title">${icons.users} ماذا تفعل الإدارة؟</div>
+        <button class="pp-goto-btn pp-goto-btn--link" data-goto="updates">التفاصيل</button>
+      </div>
+      ${fpTreatmentShort(escalations, followups, achievements)}
+    </div>
+  `;
+
+  box.querySelectorAll("[data-goto]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (btn.dataset.open) ppOpenSection = btn.dataset.open;
+      activeTab = btn.dataset.goto;
+      renderStudentZone();
+    })
+  );
+}
+
+function fpHealthChip(score, color, label) {
+  const isOrange = label === "محتاج متابعة";
+  const css = isOrange ? "var(--warning)" : color === "success" ? "var(--success)" : "var(--danger)";
+  const emoji = color === "success" ? "🟢" : isOrange ? "🟠" : "🔴";
+  return `<span class="fp-health-chip" style="background:color-mix(in srgb, ${css} 12%, transparent); color:${css};"><span style="font-size:14px;">${emoji}</span> ${label}</span>`;
+}
+
+function healthIndicatorHTML(h, color, label) {
+  const isOrange = label === "محتاج متابعة";
+  const css = isOrange ? "var(--warning)" : color === "success" ? "var(--success)" : "var(--danger)";
+  const emoji = color === "success" ? "🟢" : isOrange ? "🟠" : "🔴";
+  const msg = color === "success"
+    ? "ابنك ماشي كويس — واصلوا على نفس المستوى"
+    : isOrange
+      ? "ابنك محتاج شوية متابعة — لسه في الحلبة"
+      : "ابنك في خطر — لازم تدخل سريع من الإدارة";
+  const deg = Math.max(0, Math.min(100, h.total)) * 3.6;
+  return `
+    <div class="fp-health">
+      <div class="fp-health__gauge">
+        <svg viewBox="0 0 120 120" class="fp-health__svg">
+          <defs>
+            <linearGradient id="hpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:${css}"/>
+              <stop offset="100%" style="stop-color:${color === "success" ? "var(--secondary)" : "var(--primary)"}"/>
+            </linearGradient>
+          </defs>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="11"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="url(#hpGrad)" stroke-width="11" stroke-linecap="round"
+                  stroke-dasharray="${(deg / 360) * (2 * Math.PI * 50)} ${2 * Math.PI * 50}"
+                  transform="rotate(-90 60 60)"/>
+        </svg>
+        <div class="fp-health__gauge-inner">
+          <div class="fp-health__score" style="color:${css};">${h.total}</div>
+          <div class="fp-health__max">/100</div>
+        </div>
+      </div>
+      <div class="fp-health__info">
+        <div class="fp-health__emoji">${emoji}</div>
+        <div class="fp-health__label" style="color:${css};">${label}</div>
+        <div class="fp-health__sub">${msg}</div>
+        <div class="fp-health__break">
+          <div class="fp-health__b"><span>الحضور</span><b>${h.attendanceRate}%</b></div>
+          <div class="fp-health__b"><span>الدرجات</span><b>${h.hasExams ? h.examAvg + "%" : "—"}</b></div>
+          <div class="fp-health__b"><span>السلوك</span><b>${h.behaviorScore}/20</b></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function fpAttendanceWindow(studentId) {
+  const all = getAttendance().filter((a) => a.studentId === studentId && a.category === "attendance");
+  const last30 = all.filter((a) => (Date.now() - new Date(a.date).getTime()) / 86400000 <= 30);
+  return last30.length >= 2 ? last30 : all;
+}
+
+function fpStatusCards(student, h, rank, analytics) {
+  const statuses = getStudentStatuses();
+  const presentIds = new Set(statuses.filter((s) => s.presence === "present").map((s) => s.id));
+  const last30 = fpAttendanceWindow(student.id);
+  const present = last30.filter((a) => presentIds.has(a.statusId)).length;
+  const absent = last30.length - present;
+  const attRate = last30.length ? Math.round((present / last30.length) * 100) : 0;
+
+  const avg = analytics?.overallStudentAvg ?? h.examAvg;
+  const answers = getExamAnswersForStudent(student.id);
+  const correct = answers.filter((a) => a.isCorrect).length;
+  const accuracy = answers.length ? Math.round((correct / answers.length) * 100) : null;
+
+  const rankText = qualifyRankText(rank);
+
+  const items = [
+    { icon: icons.check, value: `${attRate}%`, label: "نسبة الحضور", sub: `${present} حضور من ${last30.length}${last30.length < 10 ? " سجل" : ""}`, tone: attRate >= 70 ? "success" : attRate >= 40 ? "warning" : "danger" },
+    { icon: icons.x, value: `${absent}`, label: "أيام الغياب", sub: "إجمالي الغياب المسجل", tone: absent === 0 ? "success" : absent <= 2 ? "warning" : "danger" },
+    { icon: icons.chart, value: avg != null ? `${avg}%` : "—", label: "متوسط الامتحانات", sub: analytics ? `المجموعة ${analytics.overallGroupAvg}%` : "", tone: avg == null ? "muted" : avg >= 60 ? "success" : avg >= 40 ? "warning" : "danger" },
+    { icon: icons.grid, value: rankText, label: "الترتيب", sub: "داخل مجموعته", tone: rank?.group ? (rank.group.percentile >= 75 ? "success" : rank.group.percentile >= 40 ? "warning" : "danger") : "muted" },
+  ];
+  if (accuracy != null) items.push({ icon: icons.shield, value: `${accuracy}%`, label: "دقة التدريب", sub: `${correct}/${answers.length} سؤال`, tone: accuracy >= 60 ? "success" : accuracy >= 40 ? "warning" : "danger" });
+
+  return items.map((it) => `
+    <div class="fp-card" style="--c:var(--${it.tone});">
+      <div class="fp-card__icon">${it.icon}</div>
+      <div class="fp-card__body">
+        <div class="fp-card__value">${it.value}</div>
+        <div class="fp-card__label">${escapeHTML(it.label)}</div>
+        ${it.sub ? `<div class="fp-card__sub">${escapeHTML(it.sub)}</div>` : ""}
+      </div>
+    </div>`).join("");
+}
+
+function qualifyRankText(rank) {
+  if (!rank?.group) return "—";
+  const p = rank.group.percentile;
+  if (p >= 85) return "من الأوائل";
+  if (p >= 60) return "فوق المتوسط";
+  if (p >= 40) return "حول المتوسط";
+  return "محتاج مجهود";
+}
+
+function fpFinanceStripHTML(student, locked, netDue) {
+  const state = locked || netDue > 0 ? "debt" : "cleared";
+  const icon = locked || netDue > 0 ? icons.alert : icons.check;
+  const title = locked ? "الطالب مقفول حالياً" : netDue > 0 ? "عليه مبلغ مستحق" : "الحساب المالي سليم";
+  const sub = locked
+    ? "مقفول بسبب غياب متكرر — يرجى التواصل مع الإدارة لفك القفل"
+    : netDue > 0
+      ? `المطلوب حالياً ${formatMoney(netDue)} — تواصل مع الإدارة للتسوية`
+      : "لا توجد مستحقات عليه الآن";
+  const amount = netDue > 0
+    ? `<div class="pp-due__amount">${formatMoney(netDue)}</div>`
+    : `<div class="pp-due__amount is-zero">${icons.check} مصفّى</div>`;
+  return `
+    <div class="pp-due ${state === "debt" ? "pp-due--debt" : "pp-due--cleared"}" style="margin-top:16px;">
+      <div class="pp-due__head">
+        <div class="pp-due__icon">${icon}</div>
+        <div class="pp-due__info">
+          <div class="pp-due__title">${title}</div>
+          <div class="pp-due__sub">${sub}</div>
+        </div>
+        ${amount}
+      </div>
+      <div style="padding:12px 18px 16px;">
+        <button class="btn btn-outline btn-sm pp-goto-btn" data-goto="details" data-open="finance">${icons.wallet} عرض كل الحركات</button>
+      </div>
+    </div>`;
+}
+
+function fpQuickActionsHTML() {
+  return `
+    <div class="fp-quick-actions">
+      <button class="pp-goto-btn" data-goto="updates">${icons.clock}<span>آخر التحديثات</span></button>
+      <button class="pp-goto-btn" data-goto="details">${icons.chart}<span>التفاصيل</span></button>
+      <button class="pp-goto-btn" data-goto="profile">${icons.users}<span>ملف الطالب</span></button>
+    </div>`;
+}
+
+function fpTreatmentShort(escalations, followups, achievements) {
+  const total = escalations.length + followups.length + achievements.length;
+  if (!total) {
+    return `<div class="text-muted" style="padding:16px; text-align:center; font-size:13px;">لا توجد متابعة مسجلة بعد — سجلها المدرس أو الإدارة أثناء الجلسات</div>`;
+  }
+  const parts = [];
+  if (escalations.length) parts.push("🚨 تنبيه تصعيد");
+  if (followups.length) parts.push(`📝 ${followups.length} ملاحظة متابعة`);
+  if (achievements.length) parts.push("🏆 إنجاز");
+  const last = [...escalations, ...followups, ...achievements]
+    .sort((a, b) => ((b.date || "") + (b.time || "")).localeCompare((a.date || "") + (a.time || "")))[0];
+  const lastText = last.text || last.reason || (last.examTitle ? `تحسّن في ${last.examTitle}` : "إجراء إداري");
+  return `
+    <div class="fp-treat-short">
+      <div class="fp-treat-short__line">${parts.join(" · ")}</div>
+      <div class="fp-treat-short__last">آخرها: ${escapeHTML(String(lastText).slice(0, 140))} — ${last.date ? formatDateAr(String(last.date).slice(0, 10)) : ""}</div>
+    </div>`;
+}
+
+function fpNarrative(student, h, analytics) {
+  const out = [];
+  const statuses = getStudentStatuses();
+  const presentIds = new Set(statuses.filter((s) => s.presence === "present").map((s) => s.id));
+  const attWin = fpAttendanceWindow(student.id);
+  const absent = attWin.filter((a) => !presentIds.has(a.statusId)).length;
+
+  const answers = getExamAnswersForStudent(student.id);
+  const mastery = masteryBySubject(student.id);
+
+  if (h.hasExams && analytics) {
+    const gAvg = analytics.overallGroupAvg;
+    const sAvg = analytics.overallStudentAvg;
+    if (sAvg >= gAvg + 5) out.push({ tone: "success", emoji: "📈", text: `متوسط درجات ${h.examCount} امتحان ${sAvg}% أعلى من متوسط المجموعة (${gAvg}%)` });
+    else if (sAvg <= gAvg - 5) out.push({ tone: "warning", emoji: "📉", text: `متوسط درجات ${h.examCount} امتحان ${sAvg}% أقل من متوسط المجموعة (${gAvg}%)` });
+    else out.push({ tone: "primary", emoji: "📊", text: `متوسط درجات ${h.examCount} امتحان ${sAvg}% قريب من متوسط المجموعة (${gAvg}%)` });
+  }
+  if (h.attendanceRate >= 85) out.push({ tone: "success", emoji: "✅", text: `الالتزام بالحضور ممتاز (${h.attendanceRate}%)${absent ? ` — ${absent} غياب فقط` : ""}` });
+  else if (absent > 0) out.push({ tone: "warning", emoji: "⚠️", text: `سُجّل ${absent} غياب${attWin.length < 10 ? " في السجل" : " خلال آخر 30 يوم"} — الالتزام بالحضور أساس التحسن` });
+
+  if (answers.length) {
+    const correct = answers.filter((a) => a.isCorrect).length;
+    const acc = Math.round((correct / answers.length) * 100);
+    out.push({ tone: acc >= 60 ? "primary" : "warning", emoji: "🎯", text: `حلّ ${answers.length} سؤالاً في بنك الأسئلة بدقة ${acc}% — التدريب العملي يبني الثقة` });
+  }
+  if (mastery?.length) {
+    const weak = [...mastery].sort((a, b) => a.pct - b.pct)[0];
+    if (weak && weak.pct < 60) out.push({ tone: "danger", emoji: "🎯", text: `أضعف مادة: ${weak.sub.name} (${weak.pct}%) — ننصح بمراجعة مواضيعها هذا الأسبوع` });
+  }
+  const ach = getAchievementsForStudent(student.id);
+  if (ach.length) {
+    const last = ach[0];
+    out.push({ tone: "success", emoji: "🏆", text: last.examTitle ? `إنجاز حديث: ${last.examTitle} — وصل إلى ${last.newPct}%` : `حقق إنجازاً حديثاً (${last.newPct}%)` });
+  }
+  return out;
+}
+
+function fpWeekEvents(student) {
+  const cutoff = addDays(todayISO(), -7);
+  return buildTimelineEvents(student)
+    .filter((e) => e.date >= cutoff)
+    .sort((a, b) => (a.date + (a.time || "") < b.date + (b.time || "") ? 1 : -1))
+    .slice(0, 12);
+}
+
+function fpWeekTimelineHTML(events) {
+  if (!events.length) {
+    return `<div class="text-muted" style="padding:16px; text-align:center; font-size:13px;">لا توجد أحداث خلال الأسبوع الأخير</div>`;
+  }
+  const today = todayISO();
+  return `
+    <div class="fp-week">
+      ${events.map((ev) => `
+        <div class="fp-week__row">
+          <div class="fp-week__dot" style="background:${ev.tone === "success" ? "var(--success)" : ev.tone === "danger" ? "var(--danger)" : ev.tone === "warning" ? "var(--warning)" : "var(--primary)"};"></div>
+          <div class="fp-week__body">
+            <div class="fp-week__title">${ev.emoji || ev.icon || ""} ${escapeHTML(ev.title)}</div>
+            <div class="fp-week__desc">${escapeHTML(ev.desc)}</div>
+          </div>
+          <div class="fp-week__date">${ev.date === today ? "اليوم" : formatDateAr(ev.date)}</div>
+        </div>`).join("")}
+    </div>`;
+}
+
+function masteryBySubject(studentId) {
+  const answers = getExamAnswersForStudent(studentId);
+  if (!answers.length) return null;
+  const allQuestions = getQuestions();
+  const teaching = getTeachingSubject();
+  const teachingQids = teaching ? new Set(allQuestions.filter((q) => q.subjectId === teaching.id).map((q) => q.id)) : null;
+  const bySub = new Map();
+  answers.forEach((a) => {
+    const q = allQuestions.find((x) => x.id === a.questionId);
+    if (!q) return;
+    if (teachingQids && !teachingQids.has(q.id)) return;
+    if (!bySub.has(q.subjectId)) bySub.set(q.subjectId, { correct: 0, total: 0 });
+    const e = bySub.get(q.subjectId);
+    e.total++;
+    if (a.isCorrect) e.correct++;
+  });
+  const subjects = teaching ? getSubjects().filter((s) => s.id === teaching.id) : getSubjects();
+  return subjects
+    .map((sub) => {
+      const e = bySub.get(sub.id);
+      if (!e) return null;
+      return { sub, total: e.total, correct: e.correct, pct: Math.round((e.correct / e.total) * 100) };
+    })
+    .filter(Boolean);
+}
+
+function mistakeTopics(studentId) {
+  const answers = getExamAnswersForStudent(studentId).filter((a) => !a.isCorrect);
+  if (!answers.length) return [];
+  const allQuestions = getQuestions();
+  const teaching = getTeachingSubject();
+  const teachingQids = teaching ? new Set(allQuestions.filter((q) => q.subjectId === teaching.id).map((q) => q.id)) : null;
+  const byTopic = new Map();
+  answers.forEach((a) => {
+    const q = allQuestions.find((x) => x.id === a.questionId);
+    if (!q) return;
+    if (teachingQids && !teachingQids.has(q.id)) return;
+    const t = getTopics().find((x) => x.id === q.topicId);
+    const key = t?.id || "unknown";
+    if (!byTopic.has(key)) byTopic.set(key, { topic: t, sub: (teaching || getSubjects().find((s) => s.id === q.subjectId)), count: 0 });
+    byTopic.get(key).count++;
+  });
+  return [...byTopic.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+}
+
+function fpSkillsBlock(mastery, mistakeT) {
+  const strengths = mastery ? [...mastery].filter((m) => m.pct >= 60).sort((a, b) => b.pct - a.pct).slice(0, 3) : [];
+  const weaknesses = mastery ? [...mastery].filter((m) => m.pct < 60).sort((a, b) => a.pct - b.pct).slice(0, 3) : [];
+
+  let html = "";
+  html += `
+    <div class="card card-pad">
+      <div class="card__head"><div class="card__title">${icons.shield} نقاط القوة</div></div>
+      ${strengths.length ? strengths.map((m) => skillBar(m.sub.icon, m.sub.name, m.pct, "success")).join("") : `<div class="text-muted" style="padding:12px; text-align:center; font-size:13px;">${mastery ? "لا توجد نقاط قوة مسجلة بعد" : "ابدأ التدريب على بنك الأسئلة لنكتشف نقاط القوة"}</div>`}
+    </div>
+    <div class="card card-pad" style="margin-top:16px;">
+      <div class="card__head"><div class="card__title">${icons.alert} نقاط الضعف</div></div>
+      ${weaknesses.length ? weaknesses.map((m) => skillBar(m.sub.icon, m.sub.name, m.pct, "danger")).join("") : `<div class="text-muted" style="padding:12px; text-align:center; font-size:13px;">${mastery ? "لا توجد نقاط ضعف ملحوظة 🎉" : "لا توجد بيانات تدريب بعد"}</div>`}
+      ${mistakeT.length ? `
+        <div class="fp-mistakes">
+          <div style="font-size:12px; font-weight:700; color:var(--muted); margin:10px 0 6px;">أخطاء متكررة حسب الموضوع:</div>
+          ${mistakeT.map((m) => `
+            <span class="fp-mistake" title="${escapeHTML(m.topic?.name || "غير محدد")}">${escapeHTML(m.topic?.name || "غير محدد")} <b>×${m.count}</b></span>`).join("")}
+        </div>` : ""}
+    </div>`;
+  return html;
+}
+
+function skillBar(icon, name, pct, tone) {
+  const cls = tone === "success" ? "skill-bar__fill--success" : "skill-bar__fill--danger";
+  return `
+    <div class="skill-bar">
+      <div class="skill-bar__head">
+        <span>${escapeHTML(icon || "📚")} ${escapeHTML(name)}</span>
+        <span class="skill-bar__pct">${pct}%</span>
+      </div>
+      <div class="skill-bar__track">
+        <div class="skill-bar__fill ${cls}" style="width:${pct}%;"></div>
+      </div>
+    </div>`;
+}
+
+function fpTreatmentBlock(followups, escalations, achievements) {
+  const rows = [];
+  escalations.forEach((es) => rows.push({
+    tone: "danger", emoji: "🚨", title: "تنبيه تصعيد", desc: es.reason || "تم رفع تنبيه للطالب", date: (es.date || "").slice(0, 10),
+  }));
+  followups.forEach((f) => rows.push({
+    tone: "primary", emoji: "📝", title: `ملاحظة متابعة ${f.writtenBy ? `— ${f.writtenBy}` : ""}`, desc: f.text, date: f.date || "",
+  }));
+  achievements.forEach((a) => rows.push({
+    tone: "success", emoji: "🏆", title: a.examTitle ? `تحسّن في ${a.examTitle}` : "إنجاز", desc: `${a.newPct}%${a.oldAvg ? ` (كان ${a.oldAvg}%)` : ""}`, date: a.date || "",
+  }));
+
+  if (!rows.length) {
+    return `<div class="text-muted" style="padding:16px; text-align:center; font-size:13px;">لا توجد متابعة مسجلة بعد — سجلها المدرس أو الإدارة أثناء الجلسات</div>`;
+  }
+  return `
+    <div class="fp-week">
+      ${rows.map((r) => `
+        <div class="fp-week__row">
+          <div class="fp-week__dot" style="background:${r.tone === "success" ? "var(--success)" : r.tone === "danger" ? "var(--danger)" : "var(--primary)"};"></div>
+          <div class="fp-week__body">
+            <div class="fp-week__title">${r.emoji} ${escapeHTML(r.title)}</div>
+            <div class="fp-week__desc">${escapeHTML(r.desc)}</div>
+          </div>
+          <div class="fp-week__date">${r.date ? formatDateAr(r.date.slice(0, 10)) : ""}</div>
+        </div>`).join("")}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  تبويب ١ — ملف الطالب
 // ═══════════════════════════════════════════════════════════
+
+function fpScheduleHTML(group) {
+  if (!group) return `<div class="text-muted" style="padding:20px; text-align:center;">لا توجد بيانات للمجموعة</div>`;
+  return `
+    <div class="vst-schedule">
+      ${WEEKDAY_OPTIONS.map((w) => {
+        const isScheduled = (group.days || []).includes(w.ar);
+        return `
+          <div class="vst-schedule__day ${isScheduled ? "is-active" : ""}">
+            <div class="vst-schedule__day-name">${w.ar}</div>
+            ${isScheduled
+              ? `<div class="vst-schedule__day-time">${formatTimeAr(group.time)}</div>`
+              : `<div class="vst-schedule__day-time" style="color:var(--muted);">—</div>`}
+          </div>`;
+      }).join("")}
+    </div>
+    <div style="margin-top:12px;">
+      ${detailRow("المدة", `${group.duration || 90} دقيقة`)}
+    </div>`;
+}
 
 function renderProfileTab(box, student) {
   const attendance = getAttendance().filter((a) => a.studentId === student.id && a.category === "attendance");
   const statuses = getStudentStatuses();
   const presentStatuses = new Set(statuses.filter((s) => s.presence === "present").map((s) => s.id));
 
-  const last30 = attendance.filter((a) => (Date.now() - new Date(a.date).getTime()) / 86400000 <= 30);
+  const last30 = fpAttendanceWindow(student.id);
   const presentCount = last30.filter((a) => presentStatuses.has(a.statusId)).length;
   const totalCount = last30.length;
   const rate = totalCount ? Math.round((presentCount / totalCount) * 100) : 0;
@@ -340,16 +894,13 @@ function renderProfileTab(box, student) {
   const lastLog = getLastFollowupLog(student.id);
   const group = findGroup(getGroups(), student.groupId);
   const debt = Number(student.lateBalance || 0);
-  const rank = computeStudentRank(student);
 
   box.innerHTML = `
-    ${renderRankMiniHTML(rank)}
-
     <div class="vst-info-grid">
       <div class="vst-info-card" style="--c:var(--success)">
         <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--success) 12%, transparent); color:var(--success);">${icons.check}</div>
         <div class="vst-info-card__value">${presentCount}/${totalCount}</div>
-        <div class="vst-info-card__label">حضور آخر 30 يوم</div>
+        <div class="vst-info-card__label">${totalCount < 10 ? "حضور السجل" : "حضور آخر 30 يوم"}</div>
       </div>
       <div class="vst-info-card" style="--c:${rate >= 70 ? "var(--success)" : rate >= 40 ? "var(--warning)" : "var(--danger)"}">
         <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.chart}</div>
@@ -386,6 +937,11 @@ function renderProfileTab(box, student) {
       </div>
     </div>
 
+    <div class="card card-pad" style="margin-top:16px;">
+      <div class="card__head"><div class="card__title">${icons.clock} جدول حصص الطالب</div></div>
+      ${fpScheduleHTML(group)}
+    </div>
+
     ${lastLog ? `
     <div class="card card-pad" style="margin-top:16px;">
       <div class="card__head"><div class="card__title">آخر ملاحظة متابعة</div></div>
@@ -396,7 +952,7 @@ function renderProfileTab(box, student) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  تبويب ٢ — تسجيل الحضور (عرض فقط + المبلغ المستحق)
+//  تبويب التفاصيل · قسم الحضور (عرض فقط + المبلغ المستحق)
 // ═══════════════════════════════════════════════════════════
 
 function renderAttendanceTab(box, student) {
@@ -540,7 +1096,7 @@ function renderDueNoticeHTML(student, breakdown, wallet) {
         ${wallet > 0 ? `<div class="pp-due__row pp-due__row--wallet"><span>${icons.wallet} خصم المحفظة</span><span>−${formatMoney(wallet)}</span></div>` : ""}
         <div class="pp-due__row pp-due__row--net"><span>المطلوب سداده الآن</span><span>${formatMoney(netDue)}</span></div>
       </div>
-      <div class="pp-due__foot">${icons.info} المدفوعات والتحصيل تتم داخل السنتر فقط — للتواصل استخدم تبويب «التواصل والجدول»</div>
+      <div class="pp-due__foot">${icons.info} المدفوعات والتحصيل تتم داخل السنتر فقط — للتواصل استخدم تبويب «آخر التحديثات»</div>
     </div>`;
 }
 
@@ -572,7 +1128,7 @@ function renderRecentHistory(studentId, limit) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  تبويب ٣ — الإدارة المالية (عرض فقط — بدون تحصيل أو إيداع)
+//  تبويب التفاصيل · قسم المالية (عرض فقط — بدون تحصيل أو إيداع)
 // ═══════════════════════════════════════════════════════════
 
 function renderFinanceTab(box, student) {
@@ -879,7 +1435,6 @@ function computeStudentRank(student) {
   return { group, grade };
 }
 
-const rankPercentileColor = (p) => (p >= 75 ? "var(--success)" : p >= 40 ? "var(--warning)" : "var(--danger)");
 const rankPercentileBadge = (p) => (p >= 75 ? "vst-rank-badge--success" : p >= 40 ? "vst-rank-badge--warning" : "vst-rank-badge--danger");
 
 function renderRankTrackHTML(percentile) {
@@ -939,18 +1494,6 @@ function renderRankPairHTML(rank, student) {
         ${groupCard}
         ${gradeCard}
       </div>
-    </div>`;
-}
-
-function renderRankMiniHTML(rank) {
-  const group = rank?.group;
-  const grade = rank?.grade;
-  const groupText = group ? `ترتيب المجموعة: <strong>#${group.rank}/${group.total}</strong>` : "ترتيب المجموعة: <strong>—</strong>";
-  const gradeText = grade ? `ترتيب السنة: <strong>#${grade.rank}/${grade.total}</strong>` : "ترتيب السنة: <strong>—</strong>";
-  return `
-    <div class="vst-rank-mini">
-      <span class="vst-rank-mini__item" ${group ? `style="color:${rankPercentileColor(group.percentile)};"` : ""}>${groupText}</span>
-      <span class="vst-rank-mini__item" ${grade ? `style="color:${rankPercentileColor(grade.percentile)};"` : ""}>${gradeText}</span>
     </div>`;
 }
 
@@ -1084,7 +1627,7 @@ function renderRadarChartSVG(analytics, size = 280) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  تبويب ٤ — الدرجات والحضور + الترتيب + التحليل المقارن
+//  تبويب التفاصيل · قسم الدرجات والترتيب + التحليل المقارن
 // ═══════════════════════════════════════════════════════════
 
 function renderGradesTab(box, student) {
@@ -1269,93 +1812,7 @@ function renderGradesTab(box, student) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  تبويب ٥ — المتابعة (عرض ملاحظات الإدارة فقط)
-// ═══════════════════════════════════════════════════════════
-
-function renderFollowupTab(box, student) {
-  const logs = getFollowupLogs().filter((l) => l.studentId === student.id).reverse().slice(0, 30);
-
-  box.innerHTML = `
-    <div class="pp-note-hint" style="margin-bottom:16px;">${icons.info} الملاحظات التالية يسجلها إدارة السنتر والمدرسون أثناء متابعة الطالب</div>
-
-    <div class="card card-pad">
-      <div class="card__head"><div class="card__title">سجل ملاحظات المتابعة (${logs.length})</div></div>
-      ${logs.length ? logs.map((l) => `
-        <div class="vst-followup-log">
-          <div class="vst-followup-log__date">${formatDateAr(l.date)} — ${l.time} <span style="color:var(--muted); font-size:11px;">${escapeHTML(l.writtenBy || "")}</span></div>
-          <div class="vst-followup-log__text">${escapeHTML(l.text)}</div>
-        </div>
-      `).join("") : `<div class="text-muted" style="padding:20px; text-align:center;">لا توجد ملاحظات متابعة مسجلة</div>`}
-    </div>
-  `;
-}
-
-// ═══════════════════════════════════════════════════════════
-//  تبويب ٦ — التواصل مع المستر + جدول الحصص
-// ═══════════════════════════════════════════════════════════
-
-function renderContactTab(box, student) {
-  const settings = getSettings();
-  const group = findGroup(getGroups(), student.groupId);
-  const centerName = settings.centerName || "سنتر تعليمي";
-  const centerPhone = settings.phone || "";
-  const waPhone = getWhatsApp() || centerPhone;
-
-  const waMessage = `السلام عليكم ورحمة الله،\nأنا ${isStudent ? "الطالب" : "ولي أمر"} ${student.name} (كود: ${student.code || "—"})\nأود التواصل بخصوص ${isStudent ? "ملفي" : "ملف"} الدراسي.`;
-
-  box.innerHTML = `
-    <div class="card card-pad">
-      <div class="card__head"><div class="card__title">${icons.whatsapp} تواصل مع المستر</div></div>
-      ${waPhone ? `
-      <div class="pp-contact-grid">
-        <a class="pp-contact-card pp-contact-card--wa" href="${buildWhatsAppLink(waPhone, waMessage)}" target="_blank" rel="noopener">
-          <div class="pp-contact-card__icon">${icons.whatsapp}</div>
-          <div>
-            <div class="pp-contact-card__title">واتساب — ${escapeHTML(centerName)}</div>
-            <div class="pp-contact-card__sub">${escapeHTML(waPhone)} · رسالة جاهزة باسم الطالب</div>
-          </div>
-          <span class="pp-contact-card__go">${icons.arrowLeft}</span>
-        </a>
-        ${centerPhone ? `
-        <a class="pp-contact-card pp-contact-card--call" href="tel:${encodeURIComponent(centerPhone)}">
-          <div class="pp-contact-card__icon">${icons.phone}</div>
-          <div>
-            <div class="pp-contact-card__title">اتصال هاتفي بالسنتر</div>
-            <div class="pp-contact-card__sub">${escapeHTML(centerPhone)}</div>
-          </div>
-          <span class="pp-contact-card__go">${icons.arrowLeft}</span>
-        </a>` : ""}
-      </div>
-      <div class="pp-note-hint">${icons.info} يتواصل معك فريق السنتر لمعرفة آخر المستجدات على مدار العام</div>
-      ` : `<div class="text-muted" style="padding:16px; text-align:center;">لم تُسجَّل بيانات تواصل للسنتر — اسأل الإدارة داخل السنتر</div>`}
-    </div>
-
-    <div class="card card-pad" style="margin-top:16px;">
-      <div class="card__head"><div class="card__title">جدول حصص الطالب</div></div>
-      ${group ? `
-        <div class="vst-schedule">
-          ${WEEKDAY_OPTIONS.map((w) => {
-            const isScheduled = (group.days || []).includes(w.ar);
-            return `
-              <div class="vst-schedule__day ${isScheduled ? "is-active" : ""}">
-                <div class="vst-schedule__day-name">${w.ar}</div>
-                ${isScheduled
-                  ? `<div class="vst-schedule__day-time">${formatTimeAr(group.time)}</div>`
-                  : `<div class="vst-schedule__day-time" style="color:var(--muted);">—</div>`}
-              </div>`;
-          }).join("")}
-        </div>
-        <div style="margin-top:12px;">
-          ${detailRow("المدة", `${group.duration || 90} دقيقة`)}
-          ${detailRow("السعر", formatMoney(group.sessionPrice || 0))}
-        </div>
-      ` : `<div class="text-muted" style="padding:20px; text-align:center;">لا توجد بيانات للمجموعة</div>`}
-    </div>
-  `;
-}
-
-// ═══════════════════════════════════════════════════════════
-//  تبويب ٧ — الخط الزمني (Story Timeline)
+//  الخط الزمني (Story Timeline) — موحّد داخل «آخر التحديثات»
 // ═══════════════════════════════════════════════════════════
 
 function buildTimelineEvents(student) {
@@ -1476,21 +1933,18 @@ function buildTimelineEvents(student) {
   return events;
 }
 
-function renderTimelineTab(box, student) {
-  const events = buildTimelineEvents(student);
-  events.sort((a, b) => {
-    const da = a.date + (a.time || "99:99");
-    const db = b.date + (b.time || "99:99");
-    return db.localeCompare(da);
-  });
+function renderTimelineFeed(box, events, filter) {
+  const list = (filter && filter !== "all")
+    ? events.filter((e) => (filter === "finance" ? ["payment", "wallet", "charge"].includes(e.type) : e.type === filter))
+    : events;
 
   const grouped = new Map();
-  events.forEach((ev) => {
+  list.forEach((ev) => {
     if (!grouped.has(ev.date)) grouped.set(ev.date, []);
     grouped.get(ev.date).push(ev);
   });
 
-  if (!events.length) {
+  if (!list.length) {
     box.innerHTML = `
       <div class="card card-pad" style="text-align:center; padding:50px 20px;">
         <div style="font-size:48px; margin-bottom:16px; opacity:.5;">📭</div>
@@ -1500,10 +1954,9 @@ function renderTimelineTab(box, student) {
     return;
   }
 
-  const attCount   = events.filter((e) => e.type === "attendance").length;
-  const examCount  = events.filter((e) => e.type === "exam").length;
-  const payCount   = events.filter((e) => e.type === "payment").length;
-  const followCount= events.filter((e) => e.type === "followup").length;
+  const attCount   = list.filter((e) => e.type === "attendance").length;
+  const examCount  = list.filter((e) => e.type === "exam").length;
+  const followCount= list.filter((e) => e.type === "followup").length;
 
   const today = todayISO();
   const monthNames = ["يناير","فبراير","مارس","إبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -1512,7 +1965,7 @@ function renderTimelineTab(box, student) {
     <div class="vst-info-grid" style="margin-bottom:16px;">
       <div class="vst-info-card" style="--c:var(--primary)">
         <div class="vst-info-card__icon" style="background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);">${icons.grid}</div>
-        <div class="vst-info-card__value">${events.length}</div>
+        <div class="vst-info-card__value">${list.length}</div>
         <div class="vst-info-card__label">إجمالي الأحداث</div>
       </div>
       <div class="vst-info-card" style="--c:var(--success)">

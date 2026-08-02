@@ -1,0 +1,458 @@
+[
+ {
+  "id": "Q-01",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-1",
+  "type": "mcq",
+  "text": "إذا كان س + 5 = 12، فما قيمة س؟",
+  "options": [
+   "5",
+   "7",
+   "8",
+   "12"
+  ],
+  "correctAnswer": "7",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "اطرح 5 من الطرفين: س = 12 - 5 = 7.",
+  "skill": "الجبر"
+ },
+ {
+  "id": "Q-02",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-1",
+  "type": "mcq",
+  "text": "ما ناتج 3 × (2 + 4)؟",
+  "options": [
+   "14",
+   "18",
+   "20",
+   "24"
+  ],
+  "correctAnswer": "18",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "أولاً الأقواس: 2+4=6 ثم 3×6=18.",
+  "skill": "الجبر"
+ },
+ {
+  "id": "Q-03",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-1",
+  "type": "mcq",
+  "text": "حل المعادلة: 2س + 3 = 11",
+  "options": [
+   "س=3",
+   "س=4",
+   "س=5",
+   "س=8"
+  ],
+  "correctAnswer": "س=4",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "2س=8 إذن س=4.",
+  "skill": "الجبر"
+ },
+ {
+  "id": "Q-04",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-1",
+  "type": "mcq",
+  "text": "إذا كانت س/4 = 3، فما قيمة س؟",
+  "options": [
+   "7",
+   "9",
+   "12",
+   "15"
+  ],
+  "correctAnswer": "12",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "س = 3 × 4 = 12.",
+  "skill": "الجبر"
+ },
+ {
+  "id": "Q-05",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-2",
+  "type": "mcq",
+  "text": "مساحة مربع طول ضلعه 5 سم تساوي:",
+  "options": [
+   "10 سم²",
+   "15 سم²",
+   "20 سم²",
+   "25 سم²"
+  ],
+  "correctAnswer": "25 سم²",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "المساحة = الضلع² = 25.",
+  "skill": "الهندسة"
+ },
+ {
+  "id": "Q-06",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-2",
+  "type": "mcq",
+  "text": "محيط مستطيل طوله 8 وعرضه 3 يساوي:",
+  "options": [
+   "11",
+   "22",
+   "24",
+   "26"
+  ],
+  "correctAnswer": "22",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "المحيط = 2×(8+3)=22.",
+  "skill": "الهندسة"
+ },
+ {
+  "id": "Q-07",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-2",
+  "type": "mcq",
+  "text": "مساحة دائرة نصف قطرها 7 تساوي (π=22/7):",
+  "options": [
+   "144",
+   "150",
+   "154",
+   "160"
+  ],
+  "correctAnswer": "154",
+  "difficulty": "hard",
+  "marks": 1,
+  "explanation": "المساحة = π ر² = 22/7 × 49 = 154.",
+  "skill": "الهندسة"
+ },
+ {
+  "id": "Q-08",
+  "subjectId": "SUB-1",
+  "topicId": "TOP-1-2",
+  "type": "mcq",
+  "text": "مجموع زوايا المثلث يساوي:",
+  "options": [
+   "90°",
+   "180°",
+   "270°",
+   "360°"
+  ],
+  "correctAnswer": "180°",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "مجموع زوايا المثلث دائماً 180 درجة.",
+  "skill": "الهندسة"
+ },
+ {
+  "id": "Q-09",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-1",
+  "type": "mcq",
+  "text": "اختر الصيغة الصحيحة: He ___ to school every day.",
+  "options": [
+   "go",
+   "goes",
+   "going",
+   "gone"
+  ],
+  "correctAnswer": "goes",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "مع He/She نضيف s للفعل في المضارع البسيط.",
+  "explanationShort": "He/She + فعل + s",
+  "explanationLong": "مع الضمائر المفردة (He/She/It) يضاف s أو es للفعل في المضارع البسيط. الأفعال المنتهية بـ o/x/s/ss/ch تأخذ es: go → goes.",
+  "qtype": "grammar",
+  "skill": "القواعد"
+ },
+ {
+  "id": "Q-10",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-1",
+  "type": "mcq",
+  "text": "الماضي من الفعل \"buy\" هو:",
+  "options": [
+   "buys",
+   "buyed",
+   "bought",
+   "buying"
+  ],
+  "correctAnswer": "bought",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "buy فعل شاذ، ماضيه bought.",
+  "explanationShort": "buy فعل شاذ",
+  "explanationLong": "بعض الأفعال شاذة ولا تأخذ ed في الماضي، وحفظها إجباري: buy → bought → bought.",
+  "qtype": "grammar",
+  "skill": "القواعد"
+ },
+ {
+  "id": "Q-11",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-1",
+  "type": "mcq",
+  "text": "الجملة الصحيحة في المضارع المستمر:",
+  "options": [
+   "She is reading a book.",
+   "She reads is a book.",
+   "She reading a book.",
+   "She are reading."
+  ],
+  "correctAnswer": "She is reading a book.",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "المضارع المستمر = am/is/are + فعل ing.",
+  "explanationShort": "المضارع المستمر = is/am/are + ing",
+  "explanationLong": "الصيغة هي فعل مساعد (am/is/are) حسب الفاعل + الفعل مع ing: She is reading. الفاعل المفرد She/He/It يأخذ is.",
+  "qtype": "grammar",
+  "skill": "القواعد"
+ },
+ {
+  "id": "Q-12",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-1",
+  "type": "mcq",
+  "text": "اختر أداة النكرة الصحيحة: I saw ___ elephant.",
+  "options": [
+   "a",
+   "an",
+   "the",
+   "no article"
+  ],
+  "correctAnswer": "an",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "نستخدم an قبل الكلمات التي تبدأ بصوت متحرك.",
+  "explanationShort": "an قبل صوت متحرك",
+  "explanationLong": "an تُستخدم قبل الكلمات اللي تبدأ بصوت متحرك (a/e/i/o/u) مثل elephant، بينما a قبل الأصوات الساكنة.",
+  "qtype": "grammar",
+  "skill": "القواعد"
+ },
+ {
+  "id": "Q-13",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-2",
+  "type": "mcq",
+  "text": "ما معنى كلمة \"achieve\"؟",
+  "options": [
+   "يحقق",
+   "يؤخر",
+   "يفقد",
+   "يشتري"
+  ],
+  "correctAnswer": "يحقق",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "achieve تعني يحقق / ينجز.",
+  "explanationShort": "achieve = يحقق",
+  "explanationLong": "achieve تعني ينجز أو يحقق هدفاً. الباقي: يؤخر delay، يفقد lose، يشتري buy.",
+  "qtype": "vocab",
+  "skill": "المفردات"
+ },
+ {
+  "id": "Q-14",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-2",
+  "type": "mcq",
+  "text": "المرادف الصحيح لكلمة \"brave\" هو:",
+  "options": [
+   "coward",
+   "courageous",
+   "afraid",
+   "weak"
+  ],
+  "correctAnswer": "courageous",
+  "difficulty": "hard",
+  "marks": 1,
+  "explanation": "brave و courageous مترادفان (شجاع).",
+  "explanationShort": "brave = courageous",
+  "explanationLong": "المرادفات كلمات مختلفة الشكل بنفس المعنى تقريباً: brave وcourageous = شجاع، وعكسها coward جبان.",
+  "qtype": "vocab",
+  "skill": "المفردات"
+ },
+ {
+  "id": "Q-15",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-2",
+  "type": "mcq",
+  "text": "كلمة \"library\" تعني:",
+  "options": [
+   "مكتبة",
+   "مطبخ",
+   "غرفة",
+   "سوق"
+  ],
+  "correctAnswer": "مكتبة",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "library = مكتبة.",
+  "explanationShort": "library = مكتبة",
+  "explanationLong": "library مكان الكتب: مكتبة. المطبخ kitchen، الغرفة room، السوق market.",
+  "qtype": "vocab",
+  "skill": "المفردات"
+ },
+ {
+  "id": "Q-16",
+  "subjectId": "SUB-2",
+  "topicId": "TOP-2-2",
+  "type": "mcq",
+  "text": "ما عكس كلمة \"success\"؟",
+  "options": [
+   "victory",
+   "failure",
+   "progress",
+   "achievement"
+  ],
+  "correctAnswer": "failure",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "عكس success (نجاح) هو failure (فشل).",
+  "explanationShort": "عكس success = failure",
+  "explanationLong": "success نجاح وعكسها failure فشل. الباقي مرادفات للنجاح: victory، progress، achievement.",
+  "qtype": "vocab",
+  "skill": "المفردات"
+ },
+ {
+  "id": "Q-17",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-1",
+  "type": "mcq",
+  "text": "وحدة قياس القوة في النظام الدولي هي:",
+  "options": [
+   "الجول",
+   "النيوتن",
+   "الواط",
+   "الأمبير"
+  ],
+  "correctAnswer": "النيوتن",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "القوة تقاس بالنيوتن N.",
+  "skill": "الفيزياء"
+ },
+ {
+  "id": "Q-18",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-1",
+  "type": "mcq",
+  "text": "قانون نيوتن الأول يُعرف أيضاً بـ:",
+  "options": [
+   "قانون الجاذبية",
+   "قانون القصور الذاتي",
+   "قانون الفعل ورد الفعل",
+   "قانون التسارع"
+  ],
+  "correctAnswer": "قانون القصور الذاتي",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "القانون الأول = القصور الذاتي.",
+  "skill": "الفيزياء"
+ },
+ {
+  "id": "Q-19",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-1",
+  "type": "mcq",
+  "text": "الطاقة الحركية لجسم تزداد عندما:",
+  "options": [
+   "يزداد وزنه فقط",
+   "تزداد سرعته",
+   "يقل حجمه",
+   "يرتفع عن الأرض"
+  ],
+  "correctAnswer": "تزداد سرعته",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "الطاقة الحركية = ½ ك ع²، تعتمد على السرعة.",
+  "skill": "الفيزياء"
+ },
+ {
+  "id": "Q-20",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-1",
+  "type": "mcq",
+  "text": "سرعة الضوء في الفراغ تقريباً:",
+  "options": [
+   "3×10⁸ م/ث",
+   "3×10⁶ م/ث",
+   "330 م/ث",
+   "1500 م/ث"
+  ],
+  "correctAnswer": "3×10⁸ م/ث",
+  "difficulty": "hard",
+  "marks": 1,
+  "explanation": "سرعة الضوء ≈ 3×10⁸ م/ث.",
+  "skill": "الفيزياء"
+ },
+ {
+  "id": "Q-21",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-2",
+  "type": "mcq",
+  "text": "العضية المسؤولة عن إنتاج الطاقة في الخلية هي:",
+  "options": [
+   "النواة",
+   "الميتوكوندريا",
+   "الجدار الخلوي",
+   "الفجوة"
+  ],
+  "correctAnswer": "الميتوكوندريا",
+  "difficulty": "medium",
+  "marks": 1,
+  "explanation": "الميتوكوندريا = محطة طاقة الخلية.",
+  "skill": "الأحياء"
+ },
+ {
+  "id": "Q-22",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-2",
+  "type": "mcq",
+  "text": "الوحدة الأساسية لبناء أجسام الكائنات الحية هي:",
+  "options": [
+   "الخلية",
+   "النسيج",
+   "العضو",
+   "الجهاز"
+  ],
+  "correctAnswer": "الخلية",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "الخلية هي وحدة البناء الأساسية.",
+  "skill": "الأحياء"
+ },
+ {
+  "id": "Q-23",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-2",
+  "type": "mcq",
+  "text": "عملية البناء الضوئي تحدث في:",
+  "options": [
+   "الجذور",
+   "الأوراق",
+   "الساق",
+   "الأزهار"
+  ],
+  "correctAnswer": "الأوراق",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "البناء الضوئي يحدث في البلاستيدات الخضراء بالأوراق.",
+  "skill": "الأحياء"
+ },
+ {
+  "id": "Q-24",
+  "subjectId": "SUB-3",
+  "topicId": "TOP-3-2",
+  "type": "mcq",
+  "text": "الجهاز المسؤول عن نقل الدم في الجسم هو:",
+  "options": [
+   "العصبي",
+   "الدوري",
+   "التنفسي",
+   "الهضمي"
+  ],
+  "correctAnswer": "الدوري",
+  "difficulty": "easy",
+  "marks": 1,
+  "explanation": "الجهاز الدوري ينقل الدم.",
+  "skill": "الأحياء"
+ }
+]

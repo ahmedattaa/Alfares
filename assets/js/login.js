@@ -2,7 +2,7 @@
 // Login — منطق صفحة تسجيل الدخول
 // =========================================================
 
-import { seedIfNeeded, login, parentLogin, studentLogin, getSettings, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled } from "./storage.js";
+import { seedIfNeeded, login, parentLogin, studentLogin, getSettings, getStudents, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled } from "./storage.js";
 import { redirectIfLoggedIn } from "./app.js";
 import { toast } from "./ui.js";
 import { initials, fakeDelay } from "./helpers.js";
@@ -21,7 +21,7 @@ const MODES = {
     label: "ولي أمر",
     fields: ["parentPhone"],
     subtitle: "تسجيل الدخول لمتابعة أبنائك",
-    hint: "أدخل رقم هاتف ولي الأمر المسجل في بيانات الطالب — للاختبار: 01000000000",
+    hint: "أدخل رقم هاتف ولي الأمر المسجل في بيانات الطالب",
   },
   student: {
     label: "طالب",
@@ -52,6 +52,14 @@ async function bootstrap() {
   if (settings.centerName) {
     document.getElementById("authCenterName").textContent = settings.centerName;
     document.getElementById("authLogo").textContent = initials(settings.centerName);
+  }
+
+  // أرقام ولي أمر تجريبية جاهزة للاختبار (أول 3 طلاب مسجلين)
+  if (currentMode === "parent" || MODES.parent) {
+    const samples = sampleParentPhones();
+    if (samples.length) {
+      hint.textContent = `أدخل رقم هاتف ولي الأمر المسجل في بيانات الطالب — للاختبار: ${samples.join(" · ")}`;
+    }
   }
 
   // بوابات الدخول حسب إعدادات السنتر
@@ -167,8 +175,12 @@ async function handleParentLogin() {
   setLoading(false);
 
   if (!result) {
-    showError("لم يتم العثور على طالب بهذا الرقم");
-    toast("لم يتم العثور على طالب بهذا الرقم", "warning");
+    const samples = sampleParentPhones();
+    const msg = samples.length
+      ? `لم يتم العثور على ولي أمر بهذا الرقم — الرقم لازم يكون المسجل في بيانات الطالب. للاختبار جرّب: ${samples.join("، ")}`
+      : "لم يتم العثور على طالب بهذا الرقم";
+    showError(msg);
+    toast(msg, "warning");
     return;
   }
 
@@ -206,6 +218,14 @@ async function handleStudentLogin() {
 }
 
 /* ---- Helpers ---- */
+function sampleParentPhones() {
+  try {
+    return [...new Set(getStudents().map((s) => s.parentPhone).filter(Boolean))].slice(0, 3);
+  } catch (e) {
+    return [];
+  }
+}
+
 function showError(msg) {
   errorBox.textContent = msg;
   errorBox.classList.add("is-open");

@@ -26,6 +26,7 @@ const KEYS = {
   extraCharges: "center_extra_charges",
   walletTransactions: "center_wallet_transactions",
   followupLogs: "center_followup_logs",
+  skillMastery: "center_skill_mastery",
   academicPeriods: "center_academic_periods",
   academicYears: "center_academic_years",
   terms: "center_terms",
@@ -143,6 +144,9 @@ const FALLBACK_DEMO_USERS = [
   { username: "assist1", password: "1234", name: "أ. حسن حسن", role: "assistant", permissions: ["session", "reception", "students", "followup"], theme: "default" },
 ];
 
+/** رقم نسخة بيانات التجربة — لو اتغير يتعاد ترقيم (بذر) بيانات الموك مرة واحدة للنسخ القائمة */
+const SEED_VERSION = "v4-mastery";
+
 /** تهيئة البيانات لأول مرة فقط من ملفات mock إلى IndexedDB */
 export async function seedIfNeeded() {
   await ensureCacheLoaded();
@@ -153,13 +157,16 @@ export async function seedIfNeeded() {
   // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
   ensureDemoParentPhone();
 
+  // تأكد من وجود مادة التدريس (مادة واحدة لكل السنتر) حتى للبيانات القديمة
+  ensureTeachingSubject();
+
   // ضمان وجود مستخدم الـ admin التجريبي (admin / 1234) مهما كان مصدر البيانات
   ensureAdminUser();
 
-  if (readJSON(KEYS.seeded, false) === true) return;
+  if (readJSON(KEYS.seeded, false) === SEED_VERSION) return;
 
   try {
-    const [students, grades, groups, studentStatuses, attendance, payments, exams, settings, academicPeriods, academicYears, terms, academicMonths] = await Promise.all([
+    const [students, grades, groups, studentStatuses, attendance, payments, exams, settings, academicPeriods, academicYears, terms, academicMonths, subjects, topics, questions, examAnswers] = await Promise.all([
       fetchMock("students.json"),
       fetchMock("grades.json"),
       fetchMock("groups.json"),
@@ -172,6 +179,10 @@ export async function seedIfNeeded() {
       fetchMock("academicYears.json"),
       fetchMock("terms.json"),
       fetchMock("academicMonths.json"),
+      fetchMock("subjects.json"),
+      fetchMock("topics.json"),
+      fetchMock("questions.json"),
+      fetchMock("examAnswers.json"),
     ]);
 
     writeJSON(KEYS.students, students);
@@ -186,7 +197,11 @@ export async function seedIfNeeded() {
     writeJSON(KEYS.academicYears, academicYears);
     writeJSON(KEYS.terms, terms);
     writeJSON(KEYS.academicMonths, academicMonths);
-    writeJSON(KEYS.seeded, true);
+    writeJSON(KEYS.subjects, subjects);
+    writeJSON(KEYS.topics, topics);
+    writeJSON(KEYS.questions, questions);
+    writeJSON(KEYS.examAnswers, resolvePlaceholders(examAnswers));
+    writeJSON(KEYS.seeded, SEED_VERSION);
   } catch (e) {
     console.error("فشل تحميل بيانات Mock — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
     // لو فشل تحميل الإعدادات، نضمن وجود المستخدمين التجريبيين عشان الدخول يشتغل
@@ -200,9 +215,48 @@ export async function seedIfNeeded() {
 
   // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
   ensureDemoParentPhone();
+
+  // بيانات تجريبية لبوابة العائلة (متابعة + إنجاز) للطالب التجريبي
+  ensureDemoFamilyData();
+}
+
+/** بيانات تجريبية لبوابة العائلة — متابعة + إنجاز للطالب التجريبي */
+function ensureDemoFamilyData() {
+  const demo = getStudents().find((s) => s.parentPhone && s.parentPhone.replace(/[\s\-\(\)]/g, "") === "01000000000");
+  if (!demo) return;
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+
+  let logs = getFollowupLogs();
+  if (!logs.some((l) => l.studentId === demo.id)) {
+    logs = logs.concat([
+      { id: "FUL-DEMO-1", studentId: demo.id, date: daysAgo(2), time: "09:45", writtenBy: "أ. حسن حسن", text: "بدأنا خطة علاجية لمادة العلوم: جلسة مراجعة أسبوعية + متابعة أسبوعية لواجب المنهج." },
+      { id: "FUL-DEMO-2", studentId: demo.id, date: daysAgo(4), time: "11:20", writtenBy: "أ. حسن حسن", text: "لاحظنا ضعفاً في مادة العلوم — تم تكليف الطالب بمراجعة موضوع «الفيزياء والطاقة» وحل أسئلة إضافية." },
+      { id: "FUL-DEMO-3", studentId: demo.id, date: daysAgo(9), time: "10:10", writtenBy: "السكرتارية", text: "أداء جيد في مادة الرياضيات — نشجع الطالب على الاستمرار." },
+    ]);
+    saveFollowupLogs(logs);
+  }
+
+  let ach = getAchievements();
+  if (!ach.some((a) => a.studentId === demo.id)) {
+    ach = ach.concat([
+      { id: "ACH-DEMO-1", type: "excellence", studentId: demo.id, examId: "EXM-1", examTitle: "امتحان الشهر الأول — الفصل الأول", date: daysAgo(36), newScore: 41, maxScore: 50, newPct: 82, oldAvg: 55, sent: true, sentAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+    ]);
+    saveAchievements(ach);
+  }
 }
 
 /** يضمن وجود مستخدمي الاختبار في الإعدادات — بيفضل أي بيانات حقيقية ولا يعيد ضبط كلمات مرور موجودة */
+/** مادة التدريس الافتراضية — مادة واحدة لكل السنتر (حالياً الإنجليزي) */
+const DEFAULT_TEACHING_SUBJECT_ID = "SUB-2";
+
+/** لو الإعدادات القديمة مش فيها subjectId، نضبطها على المادة الافتراضية */
+function ensureTeachingSubject() {
+  const settings = getSettings();
+  if (settings.subjectId) return;
+  writeJSON(KEYS.settings, { ...settings, subjectId: DEFAULT_TEACHING_SUBJECT_ID });
+  console.log("✅ teaching subjectId set to", DEFAULT_TEACHING_SUBJECT_ID);
+}
+
 function ensureAdminUser() {
   const settings = getSettings();
   const users = Array.isArray(settings.users) ? settings.users : [];
@@ -548,6 +602,13 @@ export const saveExams = (list) => writeJSON(KEYS.exams, list);
 /* ---------------- Settings ---------------- */
 export const getSettings = () => readJSON(KEYS.settings, {});
 export const saveSettings = (obj) => writeJSON(KEYS.settings, obj);
+
+/** مادة التدريس (مادة واحدة لكل السنتر) — إن لم تُضبط نرجع null */
+export function getTeachingSubject() {
+  const sid = getSettings().subjectId;
+  if (!sid) return null;
+  return getSubjects().find((s) => s.id === sid) || null;
+}
 
 const SYSTEM_SETTINGS_DEFAULTS = {
   healthWeightAttendance: 40,
@@ -1520,6 +1581,46 @@ export function addExamAnswer({ examId, studentId, questionId, studentAnswer, is
   return answer;
 }
 
+/**
+ * إجابة تدريبية من مركز قيادة الطالب — تُسجل في نفس مخزن الإجابات مع بيانات
+ * الجلسة (attemptId) والوقت والثقة — أساس دفتر الأخطاء وسجل المحاولات ومؤشر السرعة.
+ */
+export function addPracticeAnswer({ studentId, questionId, studentAnswer, isCorrect, attemptId, timeTaken, confidence, reason, mode = "practice", score }) {
+  const list = getExamAnswers();
+  const answer = {
+    id: generateId("EAN"),
+    examId: "practice",
+    mode: mode || "practice",
+    studentId,
+    questionId,
+    studentAnswer,
+    isCorrect: !!isCorrect,
+    marksAwarded: isCorrect ? 1 : 0,
+    score: typeof score === "number" ? score : null,
+    attemptId: attemptId || null,
+    timeTaken: Number(timeTaken) || null,
+    confidence: confidence || null,
+    reason: reason || null,
+    reviewed: false,
+    reviewedAt: null,
+    createdAt: todayISO(),
+  };
+  list.push(answer);
+  saveExamAnswers(list);
+  return answer;
+}
+
+/** بمناسبة مراجعة خطأ — تُحفظ في سجل الإجابة نفسها (دفتر الأخطاء يقرأها) */
+export function markAnswerReviewed(answerId) {
+  const list = getExamAnswers();
+  const item = list.find((a) => a.id === answerId);
+  if (!item) return false;
+  item.reviewed = true;
+  item.reviewedAt = todayISO();
+  saveExamAnswers(list);
+  return true;
+}
+
 export function getExamAnswersForExam(examId) {
   return getExamAnswers().filter((a) => a.examId === examId);
 }
@@ -1530,6 +1631,207 @@ export function getExamAnswersForStudent(studentId) {
 
 export function getExamAnswersForQuestion(questionId) {
   return getExamAnswers().filter((a) => a.questionId === questionId);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   إتقان المهارات (Skill Mastery) — نموذج 72 ساعة بسيط
+   الخطأ → حالة "قيد العلاج" → بعد 72 ساعة يفتح التأكيد
+   نجاح التأكيد → "معالَج" · فشل التأكيد مرتين → "بحاجة تدخل"
+   ═══════════════════════════════════════════════════════════ */
+
+export const RETEST_HOURS = 72;
+export const SKILL_STATUS = { TREATING: "treating", CURED: "cured", ESCALATED: "escalated" };
+
+export const getSkillMastery = () => readJSON(KEYS.skillMastery, []);
+export const saveSkillMastery = (list) => writeJSON(KEYS.skillMastery, list);
+
+function skillMasteryId(studentId, skillId) {
+  return `SM-${studentId}-${skillId}`;
+}
+
+function answerDateOr(a) {
+  return a.createdAt || getExams().find((e) => e.id === a.examId)?.date || "";
+}
+
+function hoursFromNowDate(days) {
+  return addDaysToIso(todayISO(), days);
+}
+
+/** يرجع (ويجهّز) سجل إتقان لمهارة الطالب — ينشئه من الإجابات لو مش موجود */
+export function getSkillMasteryForStudent(studentId, skillId) {
+  const list = getSkillMastery();
+  let rec = list.find((r) => r.studentId === studentId && r.skillId === skillId);
+  if (rec) return rec;
+
+  // إنشاء من تاريخ الإجابات لو ليه سجل أصلاً (بيانات قديمة/Seed)
+  const answers = getExamAnswersForStudent(studentId);
+  const skillAnswers = answers.filter((a) => {
+    const q = getQuestions().find((x) => x.id === a.questionId);
+    return q?.skill === skillId;
+  });
+  if (!skillAnswers.length) return null;
+
+  skillAnswers.sort((a, b) => (answerDateOr(a) < answerDateOr(b) ? -1 : 1));
+  const wrongs = skillAnswers.filter((a) => !a.isCorrect);
+  const lastWrong = wrongs[wrongs.length - 1];
+  const cured = skillAnswers.some((a) => a.mode === "retest" && a.isCorrect);
+
+  rec = {
+    id: skillMasteryId(studentId, skillId),
+    studentId,
+    skillId,
+    status: cured ? SKILL_STATUS.CURED : lastWrong ? SKILL_STATUS.TREATING : SKILL_STATUS.CURED,
+    firstErrorAt: wrongs[0]?.createdAt || (lastWrong ? todayISO() : null),
+    lastErrorAt: lastWrong ? answerDateOr(lastWrong) : null,
+    retestDue: lastWrong ? addDaysToIso(answerDateOr(lastWrong), 3) : null,
+    retestCount: skillAnswers.filter((a) => a.mode === "retest").length,
+    successCount: skillAnswers.filter((a) => a.isCorrect).length,
+    failCount: wrongs.length,
+    lastRetestAt: null,
+  };
+  list.push(rec);
+  saveSkillMastery(list);
+  return rec;
+}
+
+export function getSkillMasteryAllForStudent(studentId) {
+  const list = getSkillMastery().filter((r) => r.studentId === studentId);
+  if (list.length) return list;
+  // تهيئة من الإجابات القديمة
+  const skills = new Set(getQuestions().filter((q) => getExamAnswersForStudent(studentId).some((a) => a.questionId === q.id)).map((q) => q.skill));
+  skills.forEach((sk) => getSkillMasteryForStudent(studentId, sk));
+  return getSkillMastery().filter((r) => r.studentId === studentId);
+}
+
+/**
+ * قلب نظام الإتقان — يُستدعى عند كل إجابة تدريبية.
+ * attemptKind: "first" (أول مرة) | "learned" (خطأ ثم فهمت) | "retest" (تأكيد 72 ساعة)
+ */
+export function advanceSkillMastery(studentId, skillId, correct, attemptKind = "first") {
+  let rec = getSkillMasteryForStudent(studentId, skillId);
+
+  // صحيحة من أول مرة بدون أخطاء سابقة → لا حاجة لسجل
+  if (correct && attemptKind !== "retest" && !rec) return null;
+
+  if (!rec) {
+    rec = {
+      id: skillMasteryId(studentId, skillId),
+      studentId,
+      skillId,
+      status: SKILL_STATUS.TREATING,
+      firstErrorAt: null,
+      lastErrorAt: null,
+      retestDue: null,
+      retestCount: 0,
+      successCount: 0,
+      failCount: 0,
+      lastRetestAt: null,
+    };
+    const list = getSkillMastery();
+    list.push(rec);
+    saveSkillMastery(list);
+  }
+
+  const list = getSkillMastery();
+  const idx = list.findIndex((r) => r.id === rec.id);
+  const updated = { ...rec };
+
+  if (correct) {
+    updated.successCount += 1;
+    if (attemptKind === "retest") {
+      updated.status = SKILL_STATUS.CURED;
+      updated.lastRetestAt = todayISO();
+      updated.retestDue = null;
+    }
+  } else {
+    updated.failCount += 1;
+    updated.lastErrorAt = todayISO();
+    updated.firstErrorAt = updated.firstErrorAt || todayISO();
+    if (attemptKind === "retest") {
+      updated.retestCount += 1;
+      updated.lastRetestAt = todayISO();
+      if (updated.retestCount >= 2) updated.status = SKILL_STATUS.ESCALATED;
+      else updated.status = SKILL_STATUS.TREATING;
+    } else {
+      // خطأ عادي (أول مرة أو بعد فهمت) → تبدأ ساعة الـ 72 ساعة
+      updated.status = SKILL_STATUS.TREATING;
+    }
+    updated.retestDue = hoursFromNowDate(3);
+  }
+
+  list[idx] = updated;
+  saveSkillMastery(list);
+  return updated;
+}
+
+/** التأكيدات المستحقة: قيد العلاج وانتهت الـ 72 ساعة */
+export function getDueSkillReviews(studentId) {
+  const today = todayISO();
+  return getSkillMasteryAllForStudent(studentId).filter((r) => r.status === SKILL_STATUS.TREATING && r.retestDue && r.retestDue <= today);
+}
+
+/** المهارات المطلوب تدخل المعلم فيها (تصعيد) — قواعد واضحة بلا تكرار لا نهائي */
+export function computeSkillEscalations() {
+  const students = getStudents();
+  const qBySkill = new Map();
+  getQuestions().forEach((q) => {
+    if (!qBySkill.has(q.skill)) qBySkill.set(q.skill, []);
+    qBySkill.get(q.skill).push(q);
+  });
+  const out = [];
+  students.forEach((st) => {
+    const recs = getSkillMasteryAllForStudent(st.id);
+    recs.forEach((r) => {
+      const qs = qBySkill.get(r.skillId) || [];
+      const reason =
+        r.status === SKILL_STATUS.ESCALATED
+          ? "فشل التأكيد مرتين"
+          : r.failCount >= 3
+            ? "أخطأ 3+ مرات"
+            : null;
+      if (!reason) return;
+      out.push({
+        studentId: st.id,
+        studentName: st.name,
+        studentCode: st.code,
+        skillId: r.skillId,
+        skillName: r.skillId,
+        questionCount: qs.length,
+        failCount: r.failCount,
+        successCount: r.successCount,
+        status: r.status,
+        lastErrorAt: r.lastErrorAt,
+        reason,
+      });
+    });
+  });
+  out.sort((a, b) => b.failCount - a.failCount);
+  return out;
+}
+
+/** KPI — المهارة اتأكدت (معالجة) */
+export function isSkillMastered(studentId, skillId) {
+  const rec = getSkillMasteryForStudent(studentId, skillId);
+  return rec ? rec.status === SKILL_STATUS.CURED : false;
+}
+
+/** عند "أنا فهمت" — يعلّم الخطأ كمُتعلَّم ويحفظ نقط التعلم عليه */
+export function markAnswerLearned(answerId, score) {
+  const list = getExamAnswers();
+  const item = list.find((a) => a.id === answerId);
+  if (!item) return false;
+  item.reviewed = true;
+  item.reviewedAt = todayISO();
+  if (typeof score === "number") item.score = score;
+  saveExamAnswers(list);
+  return true;
+}
+
+function addDaysToIso(iso, days) {
+  if (!days) return iso;
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 /**

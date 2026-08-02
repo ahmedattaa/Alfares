@@ -18,6 +18,7 @@ import {
   getStudentStatuses,
   saveStudentStatuses,
   getStudents,
+  getSubjects,
   getAcademicYears,
   saveAcademicYears,
   getTerms,
@@ -134,6 +135,14 @@ function renderCenterTab(box) {
           <div class="field">
             <label class="field__label">العملة</label>
             <input class="input" name="currency" value="${escapeHTML(settings.currency || "ج.م")}" style="max-width:200px;">
+          </div>
+          <div class="field">
+            <label class="field__label">مادة التدريس</label>
+            <select class="input" name="subjectId" style="max-width:280px;">
+              <option value="">— لا يوجد (عرض كل المواد) —</option>
+              ${getSubjects().map((s) => `<option value="${s.id}" ${settings.subjectId === s.id ? "selected" : ""}>${escapeHTML(s.icon || "")} ${escapeHTML(s.name)}</option>`).join("")}
+            </select>
+            <div class="field__hint">المادة الوحيدة التي يراها الطالب وأولياء الأمور (السنتر مادة واحدة).</div>
           </div>
           <button class="btn btn-primary" type="submit">${icons.check} حفظ التغييرات</button>
         </form>

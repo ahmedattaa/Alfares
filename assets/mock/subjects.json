@@ -1,0 +1,29 @@
+[
+ {
+  "id": "SUB-1",
+  "name": "الرياضيات",
+  "gradeIds": [
+   "GR1"
+  ],
+  "icon": "📐",
+  "color": "#6c5ce7"
+ },
+ {
+  "id": "SUB-2",
+  "name": "اللغة الإنجليزية",
+  "gradeIds": [
+   "GR1"
+  ],
+  "icon": "🔤",
+  "color": "#00b894"
+ },
+ {
+  "id": "SUB-3",
+  "name": "العلوم",
+  "gradeIds": [
+   "GR1"
+  ],
+  "icon": "🔬",
+  "color": "#e17055"
+ }
+]

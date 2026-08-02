@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession, isFeatureEnabled } from "./storage.js";
+import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession, isFeatureEnabled, getSkillMasteryAllForStudent } from "./storage.js";
 import { escapeHTML, initials, formatMoney, formatDateAr, todayISO, generateId } from "./helpers.js";
 import { emptyStateHTML, toast, whatsappPreviewDialog, formModal, confirmDialog } from "./ui.js";
 import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
@@ -16,6 +16,7 @@ import { getTypeMeta } from "./achievement-engine.js";
 import { renderTemplate } from "./whatsapp-templates.js";
 import { openCollectionDialog } from "./collection-dialog.js";
 import { canPerformAction } from "./permissions.js";
+import { buildErrorNotebook, notebookStats } from "./error-notebook.js";
 
 const content = await initPage("student");
 if (content) render();
@@ -131,6 +132,8 @@ function render() {
       </div>` : statCard("tone-primary", icons.money, formatMoney(student.lateBalance || 0), "متأخرات مالية")}
       ${(student.walletBalance || 0) > 0 ? statCard("tone-success", icons.wallet, formatMoney(student.walletBalance), "رصيد المحفظة") : ""}
     </div>
+
+    ${renderMasteryCard(id)}
 
     <div class="grid-2">
       <div class="card card-pad">
@@ -260,6 +263,56 @@ function statCard(tone, icon, value, label) {
       <div class="stat-card__icon ${tone}">${icon}</div>
       <div class="stat-card__value">${value}</div>
       <div class="stat-card__label">${label}</div>
+    </div>
+  `;
+}
+
+/* ── علاج الأخطاء — مهارات الطالب ── */
+function renderMasteryCard(studentId) {
+  const nb = buildErrorNotebook(studentId);
+  const st = notebookStats(nb);
+  const recs = getSkillMasteryAllForStudent(studentId)
+    .slice()
+    .sort((a, b) => {
+      const o = { cured: 3, treating: 1, escalated: 0 };
+      return (o[b.status] ?? 1) - (o[a.status] ?? 1);
+    });
+
+  if (!recs.length && !nb.length) return "";
+
+  const statusMeta = {
+    cured: { label: "متقنة ✓", tone: "success", dot: "✅" },
+    treating: { label: "قيد العلاج", tone: "warning", dot: "🔄" },
+    escalated: { label: "محتاجة تدخل", tone: "danger", dot: "🔴" },
+  };
+
+  const rows = recs
+    .map((r) => {
+      const m = statusMeta[r.status] || statusMeta.treating;
+      const due = r.status === "treating" && r.retestDue ? `<span style="font-size:11px; color:var(--muted);">تأكيد ${formatDateAr(r.retestDue)}</span>` : "";
+      return `
+        <div style="display:flex; align-items:center; gap:8px; padding:7px 0; font-size:13px; border-bottom:1px dashed var(--border);">
+          <span>${m.dot}</span>
+          <strong>${escapeHTML(r.skillId)}</strong>
+          <span class="badge badge-${m.tone}" style="margin-right:auto;"><span class="badge-dot"></span>${m.label}</span>
+          ${due}
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <div class="card card-pad" style="margin-top:22px; border:2px solid var(--primary); border-right:6px solid var(--primary);">
+      <div class="card__head">
+        <div class="card__title">🧠 علاج الأخطاء — إتقان المهارات</div>
+        <span style="font-size:12px; color:var(--muted);">${st.total} خطأ · نسبة العلاج ${st.treatmentRate}%</span>
+      </div>
+      <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px;">
+        ${st.newCount ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--info);"></span><strong style="color:var(--info);">${st.newCount}</strong><span class="text-muted">جديد</span></div>` : ""}
+        ${st.inTreatment ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--warning);"></span><strong style="color:var(--warning);">${st.inTreatment}</strong><span class="text-muted">قيد العلاج</span></div>` : ""}
+        ${st.repeated ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--danger);"></span><strong style="color:var(--danger);">${st.repeated}</strong><span class="text-muted">متكرر</span></div>` : ""}
+        ${st.treated ? `<div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--success);"></span><strong style="color:var(--success);">${st.treated}</strong><span class="text-muted">معالَج</span></div>` : ""}
+      </div>
+      <div>${rows || emptyStateHTML({ icon: icons.check, title: "لا توجد مهارات في خطة العلاج", text: "الطالب بيجاوب صح من أول مرة — ممتاز!" })}</div>
     </div>
   `;
 }

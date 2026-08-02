@@ -1,0 +1,44 @@
+[
+ {
+  "id": "TOP-1-1",
+  "subjectId": "SUB-1",
+  "name": "الجبر والمعادلات",
+  "order": 1,
+  "parentId": null
+ },
+ {
+  "id": "TOP-1-2",
+  "subjectId": "SUB-1",
+  "name": "الهندسة والمساحات",
+  "order": 2,
+  "parentId": null
+ },
+ {
+  "id": "TOP-2-1",
+  "subjectId": "SUB-2",
+  "name": "القواعد والزمن",
+  "order": 1,
+  "parentId": null
+ },
+ {
+  "id": "TOP-2-2",
+  "subjectId": "SUB-2",
+  "name": "المفردات والتعبير",
+  "order": 2,
+  "parentId": null
+ },
+ {
+  "id": "TOP-3-1",
+  "subjectId": "SUB-3",
+  "name": "الفيزياء والطاقة",
+  "order": 1,
+  "parentId": null
+ },
+ {
+  "id": "TOP-3-2",
+  "subjectId": "SUB-3",
+  "name": "الأحياء والكائنات",
+  "order": 2,
+  "parentId": null
+ }
+]

@@ -1,0 +1,866 @@
+[
+ {
+  "id": "ANS-0001",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-01",
+  "studentAnswer": "7",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0002",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-02",
+  "studentAnswer": "18",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0003",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-03",
+  "studentAnswer": "س=4",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0004",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-04",
+  "studentAnswer": "12",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0005",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-05",
+  "studentAnswer": "25 سم²",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0006",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-06",
+  "studentAnswer": "22",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0007",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-07",
+  "studentAnswer": "150",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0008",
+  "examId": "EXM-1",
+  "studentId": "STU-2001",
+  "questionId": "Q-08",
+  "studentAnswer": "180°",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0009",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-01",
+  "studentAnswer": "7",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0010",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-02",
+  "studentAnswer": "18",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0011",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-03",
+  "studentAnswer": "س=4",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0012",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-04",
+  "studentAnswer": "12",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0013",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-05",
+  "studentAnswer": "25 سم²",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0014",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-06",
+  "studentAnswer": "22",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0015",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-07",
+  "studentAnswer": "154",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0016",
+  "examId": "EXM-1",
+  "studentId": "STU-2002",
+  "questionId": "Q-08",
+  "studentAnswer": "180°",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0017",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-01",
+  "studentAnswer": "7",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0018",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-02",
+  "studentAnswer": "18",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0019",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-03",
+  "studentAnswer": "س=4",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0020",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-04",
+  "studentAnswer": "12",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0021",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-05",
+  "studentAnswer": "25 سم²",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0022",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-06",
+  "studentAnswer": "22",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0023",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-07",
+  "studentAnswer": "154",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0024",
+  "examId": "EXM-1",
+  "studentId": "STU-2003",
+  "questionId": "Q-08",
+  "studentAnswer": "180°",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0025",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-01",
+  "studentAnswer": "7",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0026",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-02",
+  "studentAnswer": "18",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0027",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-03",
+  "studentAnswer": "س=4",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0028",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-04",
+  "studentAnswer": "12",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0029",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-05",
+  "studentAnswer": "25 سم²",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0030",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-06",
+  "studentAnswer": "22",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0031",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-07",
+  "studentAnswer": "154",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0032",
+  "examId": "EXM-1",
+  "studentId": "STU-2005",
+  "questionId": "Q-08",
+  "studentAnswer": "180°",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0033",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-09",
+  "studentAnswer": "go",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0034",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-10",
+  "studentAnswer": "bought",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0035",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-11",
+  "studentAnswer": "She are reading.",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0036",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-12",
+  "studentAnswer": "an",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0037",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-13",
+  "studentAnswer": "يحقق",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0038",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-14",
+  "studentAnswer": "afraid",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0039",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-15",
+  "studentAnswer": "سوق",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0040",
+  "examId": "EXM-2",
+  "studentId": "STU-2001",
+  "questionId": "Q-16",
+  "studentAnswer": "failure",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0041",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-09",
+  "studentAnswer": "goes",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0042",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-10",
+  "studentAnswer": "bought",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0043",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-11",
+  "studentAnswer": "She is reading a book.",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0044",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-12",
+  "studentAnswer": "an",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0045",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-13",
+  "studentAnswer": "يحقق",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0046",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-14",
+  "studentAnswer": "courageous",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0047",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-15",
+  "studentAnswer": "مكتبة",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0048",
+  "examId": "EXM-2",
+  "studentId": "STU-2002",
+  "questionId": "Q-16",
+  "studentAnswer": "achievement",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0049",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-09",
+  "studentAnswer": "goes",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0050",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-10",
+  "studentAnswer": "bought",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0051",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-11",
+  "studentAnswer": "She is reading a book.",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0052",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-12",
+  "studentAnswer": "an",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0053",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-13",
+  "studentAnswer": "يحقق",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0054",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-14",
+  "studentAnswer": "courageous",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0055",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-15",
+  "studentAnswer": "مكتبة",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0056",
+  "examId": "EXM-2",
+  "studentId": "STU-2003",
+  "questionId": "Q-16",
+  "studentAnswer": "failure",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0057",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-09",
+  "studentAnswer": "goes",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0058",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-10",
+  "studentAnswer": "buying",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0059",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-11",
+  "studentAnswer": "She is reading a book.",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0060",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-12",
+  "studentAnswer": "an",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0061",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-13",
+  "studentAnswer": "يحقق",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0062",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-14",
+  "studentAnswer": "courageous",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0063",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-15",
+  "studentAnswer": "مكتبة",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0064",
+  "examId": "EXM-2",
+  "studentId": "STU-2005",
+  "questionId": "Q-16",
+  "studentAnswer": "failure",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0065",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-17",
+  "studentAnswer": "النيوتن",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0066",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-18",
+  "studentAnswer": "قانون التسارع",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0067",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-19",
+  "studentAnswer": "يقل حجمه",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0068",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-20",
+  "studentAnswer": "3×10⁸ م/ث",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0069",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-21",
+  "studentAnswer": "الفجوة",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0070",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-22",
+  "studentAnswer": "العضو",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0071",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-23",
+  "studentAnswer": "الساق",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0072",
+  "examId": "EXM-3",
+  "studentId": "STU-2001",
+  "questionId": "Q-24",
+  "studentAnswer": "الهضمي",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0073",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-17",
+  "studentAnswer": "النيوتن",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0074",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-18",
+  "studentAnswer": "قانون الفعل ورد الفعل",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0075",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-19",
+  "studentAnswer": "تزداد سرعته",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0076",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-20",
+  "studentAnswer": "3×10⁶ م/ث",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0077",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-21",
+  "studentAnswer": "الميتوكوندريا",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0078",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-22",
+  "studentAnswer": "الخلية",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0079",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-23",
+  "studentAnswer": "الأوراق",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0080",
+  "examId": "EXM-3",
+  "studentId": "STU-2002",
+  "questionId": "Q-24",
+  "studentAnswer": "الدوري",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0081",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-17",
+  "studentAnswer": "الواط",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0082",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-18",
+  "studentAnswer": "قانون القصور الذاتي",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0083",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-19",
+  "studentAnswer": "يزداد وزنه فقط",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0084",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-20",
+  "studentAnswer": "3×10⁸ م/ث",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0085",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-21",
+  "studentAnswer": "الفجوة",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0086",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-22",
+  "studentAnswer": "الخلية",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0087",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-23",
+  "studentAnswer": "الجذور",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0088",
+  "examId": "EXM-3",
+  "studentId": "STU-2003",
+  "questionId": "Q-24",
+  "studentAnswer": "الهضمي",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0089",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-17",
+  "studentAnswer": "الواط",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0090",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-18",
+  "studentAnswer": "قانون الجاذبية",
+  "isCorrect": false,
+  "marksAwarded": 0
+ },
+ {
+  "id": "ANS-0091",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-19",
+  "studentAnswer": "تزداد سرعته",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0092",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-20",
+  "studentAnswer": "3×10⁸ م/ث",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0093",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-21",
+  "studentAnswer": "الميتوكوندريا",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0094",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-22",
+  "studentAnswer": "الخلية",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0095",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-23",
+  "studentAnswer": "الأوراق",
+  "isCorrect": true,
+  "marksAwarded": 1
+ },
+ {
+  "id": "ANS-0096",
+  "examId": "EXM-3",
+  "studentId": "STU-2005",
+  "questionId": "Q-24",
+  "studentAnswer": "الدوري",
+  "isCorrect": true,
+  "marksAwarded": 1
+ }
+]

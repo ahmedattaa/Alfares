@@ -10,7 +10,7 @@ import { formatTimeAr } from "./schedule.js";
 import { getSessionsForDate } from "./session-overview.js";
 import { getHealthSummary, healthScoreHTML, healthBarHTML, healthStudentRowHTML } from "./health-score.js";
 import { getEscalationSummary, getLevelMeta } from "./escalation-engine.js";
-import { getGroups, getGrades } from "./storage.js";
+import { getGroups, getGrades, getStudents, getSkillMasteryAllForStudent, computeSkillEscalations } from "./storage.js";
 
 const content = await initPage("dashboard");
 if (content) render();
@@ -34,6 +34,7 @@ function render() {
 
     ${summary.danger.length > 0 ? renderDangerZone(summary, groups, grades) : ""}
     ${escalation.total > 0 ? renderEscalationCard(escalation, groups) : ""}
+    ${renderMasteryCard(groups)}
 
     <div id="todaySessions"></div>
   `;
@@ -107,6 +108,54 @@ function renderEscalationCard(escalation, groups) {
         ${l1.map((s) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px;"><span>🟡</span>${studentLink(s)}<span style="margin-right:auto; font-size:11px; color:var(--info);">${s.consecutiveAbsences} غيابات متتالية</span></div>`).join("")}
       </div>
       ${escalation.total > 9 ? `<div style="text-align:center; margin-top:8px;"><a href="teacher-insights.html" style="font-size:13px; color:var(--primary); text-decoration:none; font-weight:700;">+${escalation.total - 9} طالب آخرين ←</a></div>` : ""}
+    </div>
+  `;
+}
+
+/* ── علاج الأخطاء — إتقان المهارات ── */
+function renderMasteryCard(groups) {
+  const students = getStudents();
+  const escalations = computeSkillEscalations();
+  let treating = 0, cured = 0, escalatedCount = 0;
+  const treatingStudents = new Set();
+
+  students.forEach((s) => {
+    getSkillMasteryAllForStudent(s.id).forEach((r) => {
+      if (r.status === "cured") cured++;
+      else {
+        treating++;
+        treatingStudents.add(s.id);
+        if (r.status === "escalated") escalatedCount++;
+      }
+    });
+  });
+
+  const total = treating + cured;
+  if (!total && !escalations.length) return "";
+
+  const studentLink = (id, name) => {
+    const g = groups.find((gr) => gr.id === id);
+    return `<a href="student.html?id=${id}" style="color:inherit; text-decoration:none; font-weight:700;">${escapeHTML(name)}</a> <span style="font-size:11px; color:var(--muted);">${escapeHTML(g?.name || "")}</span>`;
+  };
+
+  return `
+    <div class="card card-pad" style="margin-bottom:20px; border:2px solid var(--primary); border-right:6px solid var(--primary);">
+      <div class="card__head">
+        <div class="card__title">🧠 علاج الأخطاء — إتقان المهارات</div>
+        <a href="students.html" style="font-size:12px; color:var(--primary); text-decoration:none;">عرض الطلاب ←</a>
+      </div>
+      <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--warning);"></span><strong style="color:var(--warning);">${treating}</strong><span class="text-muted">مهارة قيد العلاج</span></div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--success);"></span><strong style="color:var(--success);">${cured}</strong><span class="text-muted">مهارة متقنة</span></div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--danger);"></span><strong style="color:var(--danger);">${escalations.length}</strong><span class="text-muted">تحتاج تدخل المعلم</span></div>
+        <div style="display:flex; align-items:center; gap:6px; font-size:13px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--info);"></span><strong>${treatingStudents.size}</strong><span class="text-muted">طالب في رحلة علاج</span></div>
+      </div>
+      ${escalations.length ? `
+        <div style="font-weight:800; font-size:13px; margin-bottom:4px; color:var(--danger);">${icons.alert} مهارات محتاجة تدخلك:</div>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          ${escalations.slice(0, 5).map((e) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px;"><span>🔴</span>${studentLink(e.studentId, e.studentName)}<strong style="color:var(--danger);">${escapeHTML(e.skillName)}</strong><span style="font-size:11px; color:var(--muted);">${escapeHTML(e.reason)}</span></div>`).join("")}
+        </div>` : `
+        <div style="font-size:12.5px; color:var(--muted);">لا توجد مهارات محتاجة تدخل حالياً — كل المهارات تسير في خطة العلاج. 👌</div>`}
     </div>
   `;
 }

@@ -143,8 +143,10 @@
 .vst-badge svg { width: 13px; height: 13px; }
 
 /* ---------- Tabs ---------- */
+.vst-layout { display: block; }
+
 .vst-tabs {
-  display: flex; gap: 6px; margin-bottom: 20px; overflow-x: auto; scrollbar-width: none;
+  display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap;
   padding: 4px; background: var(--bg); border-radius: 14px;
   animation: fadeUp .35s ease both;
 }
@@ -159,6 +161,24 @@
 .vst-tab.is-active { background: var(--primary); color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent); }
 .vst-tab__icon { width: 16px; height: 16px; }
 .vst-tab__icon svg { width: 16px; height: 16px; }
+
+/* التابلت وما أعلى: قائمة عمودية على اليمين (زي نظام المتابعة) */
+@media (min-width: 768px) {
+  .vst-layout { display: flex; gap: 22px; align-items: flex-start; }
+  .vst-tabs {
+    flex-direction: column; flex-wrap: nowrap; width: 230px; flex-shrink: 0;
+    position: sticky; top: 76px; z-index: 40; margin-bottom: 0;
+  }
+  .vst-tab { width: 100%; justify-content: flex-start; padding: 11px 14px; font-size: 13px; }
+  #ppTabContent { flex: 1; min-width: 0; }
+}
+
+@media (max-width: 700px) {
+  .vst-tab { flex: 1 1 auto; justify-content: center; padding: 10px 8px; font-size: 12px; }
+}
+@media (max-width: 480px) {
+  .vst-tab { min-width: 104px; }
+}
 
 /* ---------- Info Grid ---------- */
 .vst-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 12px; }
@@ -240,6 +260,77 @@
   background: var(--bg-2); padding: 10px 18px; margin-top: 12px;
 }
 .pp-due__foot svg { width: 14px; height: 14px; flex-shrink: 0; }
+.pp-due--debt { border-top-color: var(--danger); }
+.pp-due--debt .pp-due__icon { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+/* ---------- أزرار انتقال سريعة ---------- */
+.pp-goto-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: 12px; padding: 9px 14px; cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.pp-goto-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.pp-goto-btn svg { width: 16px; height: 16px; }
+.pp-goto-btn--link {
+  background: transparent; border: none; color: var(--primary);
+  padding: 4px 6px; font-size: 12px;
+}
+.pp-goto-btn--link:hover { text-decoration: underline; background: transparent; box-shadow: none; transform: none; }
+
+.fp-quick-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
+/* ---------- ماذا تفعل الإدارة (مختصر) ---------- */
+.fp-treat-short { padding: 2px 2px 4px; }
+.fp-treat-short__line {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  background: var(--bg-2); border-radius: 10px; padding: 10px 14px; display: inline-block;
+}
+.fp-treat-short__last { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.7; }
+
+/* ---------- آخر التحديثات (فيد + فلاتر) ---------- */
+.pp-feed-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.pp-feed-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 800; color: var(--text); }
+.pp-feed-title svg { width: 18px; height: 18px; color: var(--primary); }
+.pp-feed-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.pp-filter-btn {
+  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  color: var(--muted); background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 14px; transition: all .15s ease;
+}
+.pp-filter-btn.is-active {
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+/* ---------- التفاصيل (Accordion) ---------- */
+.pp-acc { display: flex; flex-direction: column; gap: 12px; }
+.pp-acc__item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: var(--shadow-sm); overflow: hidden; animation: fadeUp .35s ease both;
+}
+.pp-acc__item[open] .pp-acc__chev { transform: rotate(180deg); }
+.pp-acc__head {
+  display: flex; align-items: center; gap: 12px; padding: 15px 18px; cursor: pointer;
+  list-style: none; user-select: none;
+}
+.pp-acc__head::-webkit-details-marker { display: none; }
+.pp-acc__head::marker { content: ""; }
+.pp-acc__icon {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  display: flex; align-items: center; justify-content: center;
+}
+.pp-acc__icon svg { width: 20px; height: 20px; }
+.pp-acc__title { flex: 1; font-size: 15px; font-weight: 800; color: var(--text); }
+.pp-acc__chev {
+  font-size: 14px; color: var(--muted); transition: transform .18s ease;
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-2); border-radius: 8px;
+}
+.pp-acc__body { padding: 4px 18px 18px; border-top: 1px solid var(--border); padding-top: 16px; }
 
 /* ---------- ملاحظة عرض فقط ---------- */
 .pp-note-hint {
@@ -449,3 +540,632 @@
 @media (max-width: 400px) {
   .vst-schedule { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Family Overview — نظرة عامة (بوابة العائلة)
+   ═══════════════════════════════════════════════════════════ */
+
+.fp-health-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 800;
+  padding: 6px 14px; border-radius: 99px;
+}
+.fp-health {
+  display: flex; align-items: center; gap: 28px;
+  flex-wrap: wrap; padding: 8px 4px;
+}
+.fp-health__gauge { position: relative; width: 128px; height: 128px; flex-shrink: 0; }
+.fp-health__svg { width: 128px; height: 128px; }
+.fp-health__gauge-inner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.fp-health__score { font-size: 34px; font-weight: 800; line-height: 1; }
+.fp-health__max { font-size: 11px; color: var(--muted); font-weight: 700; }
+.fp-health__info { flex: 1; min-width: 220px; }
+.fp-health__emoji { font-size: 26px; }
+.fp-health__label { font-size: 20px; font-weight: 800; margin-top: 2px; }
+.fp-health__sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.fp-health__break { display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+.fp-health__b { display: flex; flex-direction: column; gap: 2px; }
+.fp-health__b span { font-size: 11px; color: var(--muted); font-weight: 600; }
+.fp-health__b b { font-size: 15px; }
+
+.fp-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.fp-card {
+  --c: var(--primary);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 14px; display: flex; align-items: center; gap: 12px;
+  animation: fadeUp .35s var(--ease) both;
+}
+.fp-card__icon {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--c) 13%, transparent); color: var(--c);
+}
+.fp-card__body { min-width: 0; }
+.fp-card__value { font-size: 20px; font-weight: 800; line-height: 1.1; }
+.fp-card__label { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 2px; }
+.fp-card__sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.fp-grid-2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+
+.fp-week { display: flex; flex-direction: column; }
+.fp-week__row {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 0; border-bottom: 1px dashed var(--border);
+}
+.fp-week__row:last-child { border-bottom: none; }
+.fp-week__dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.fp-week__body { flex: 1; min-width: 0; }
+.fp-week__title { font-size: 13px; font-weight: 700; }
+.fp-week__desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.fp-week__date { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+
+.fp-mistakes { display: flex; flex-wrap: wrap; gap: 6px; }
+.fp-mistake {
+  font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 99px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.fp-mistake b { font-weight: 800; }
+
+.fp-compare { display: flex; align-items: center; gap: 14px; }
+.fp-compare__col { text-align: center; min-width: 84px; }
+.fp-compare__label { font-size: 11px; color: var(--muted); font-weight: 700; }
+.fp-compare__num { font-size: 22px; font-weight: 800; }
+.fp-compare__bar { flex: 1; height: 12px; background: var(--bg-2); border-radius: 99px; overflow: hidden; --c: var(--primary); }
+.fp-compare__fill { height: 100%; background: var(--c); border-radius: 99px; transition: width .5s ease; }
+
+@media (max-width: 980px) {
+  .fp-cards { grid-template-columns: repeat(2, 1fr); }
+  .fp-grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .fp-cards { grid-template-columns: 1fr; }
+  .fp-health { gap: 16px; justify-content: center; }
+  .fp-health__info { text-align: center; min-width: 100%; }
+  .fp-health__break { justify-content: center; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Family Portal — لمسات ديزاين (خلفية نظيفة + ألوان حيوية)
+   ═══════════════════════════════════════════════════════════ */
+
+body[data-page="parent"] {
+  background:
+    radial-gradient(1100px 380px at 50% -12%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 65%),
+    linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+  background-attachment: fixed;
+}
+
+.pp-header {
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+/* زر العودة لجميع الأبناء — كبسولة أنيقة */
+.pp-back-btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 7px 18px 7px 16px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, var(--surface)), var(--surface) 62%);
+  color: var(--primary); font-family: inherit; font-weight: 800; font-size: 12.5px; cursor: pointer;
+  box-shadow: var(--shadow-sm); transition: all .25s var(--ease);
+}
+.pp-back-btn:hover {
+  transform: translateX(4px);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.pp-back-btn__arrow {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 62%, var(--secondary)));
+  color: #fff; font-size: 17px; line-height: 1;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+
+/* شريط التبويبات (السلايدر) — أسطح بيضاء وزر نشط متدرج */
+.vst-tabs {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgba(16, 24, 40, .05);
+}
+.vst-tab:hover { color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--surface)); }
+.vst-tab.is-active {
+  background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 68%, var(--secondary)) 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
+/* بطاقات المؤشرات — سطوح بيضاء نظيفة */
+.fp-card { background: var(--surface); box-shadow: var(--shadow-sm); }
+
+/* أشرطة المهارات — تدرجات حيوية على مسار ناعم */
+.skill-bar { margin-bottom: 12px; }
+.skill-bar__head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; font-size: 12.5px; font-weight: 700;
+}
+.skill-bar__pct { font-weight: 800; color: var(--text); }
+.skill-bar__track {
+  height: 10px; border-radius: 99px; overflow: hidden;
+  background: color-mix(in srgb, var(--text) 7%, var(--surface));
+}
+.skill-bar__fill { height: 100%; border-radius: 99px; transition: width .5s var(--ease); }
+.skill-bar__fill--success {
+  background: linear-gradient(90deg, var(--success), color-mix(in srgb, var(--success) 55%, #FFF));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--success) 35%, transparent);
+}
+.skill-bar__fill--danger {
+  background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 55%, #FFF));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+/* شريط مقارنة الأداء مع المجموعة */
+.fp-compare__bar { background: color-mix(in srgb, var(--text) 7%, var(--surface)); }
+.fp-compare__fill {
+  background: linear-gradient(90deg, var(--c), color-mix(in srgb, var(--c) 55%, #FFF));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--c) 35%, transparent);
+}
+
+/* عداد صحة الطالب — توهج ناعم */
+.fp-health__gauge { filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--primary) 18%, transparent)); }
+.fp-health__score { text-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 25%, transparent); }
+
+/* ═══════════════════════════════════════════════════════════
+   Family Portal — الطبقة الجمالية (Premium polish)
+   لغة بصرية موحّدة: توهجات لونية، سطوح زجاجية، تدرجات حيوية،
+   حركة ناعمة، وأرقام حاسوبية ثابتة — كلها مشتقّة من متغيرات السمة
+   ═══════════════════════════════════════════════════════════ */
+
+/* خلفية نظيفة هادئة — توهج واحد خفيف من الأعلى فقط */
+body[data-page="parent"] {
+  background:
+    radial-gradient(1100px 380px at 50% -12%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 65%),
+    linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+  background-attachment: fixed;
+}
+body[data-page="parent"] ::selection { background: color-mix(in srgb, var(--primary) 26%, transparent); color: inherit; }
+
+/* شريط تمرير أنيق */
+body[data-page="parent"]::-webkit-scrollbar { width: 11px; height: 11px; }
+body[data-page="parent"]::-webkit-scrollbar-track { background: transparent; }
+body[data-page="parent"]::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 999px; border: 3px solid transparent; background-clip: padding-box;
+}
+body[data-page="parent"]::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 45%, transparent);
+  background-clip: padding-box;
+}
+
+/* حلقة تركيز واضحة */
+body[data-page="parent"] a:focus-visible,
+body[data-page="parent"] button:focus-visible,
+body[data-page="parent"] summary:focus-visible,
+body[data-page="parent"] [tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* هيدر زجاجي بحد علوي مضيء */
+.pp-header {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 10px 30px color-mix(in srgb, var(--primary) 7%, transparent);
+}
+.pp-brand__mark {
+  background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 55%, var(--secondary)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 6px 18px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+.pp-brand__name { letter-spacing: -.2px; }
+.pp-user-chip {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 4px 14px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.pp-user-chip__avatar {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, var(--secondary)));
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--primary) 32%, transparent);
+}
+.pp-page-title { letter-spacing: -.3px; }
+
+/* بطاقات اختيار الابن — أرقام بتدرج لوني وتوهج ناعم */
+.ps-chip {
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 20px color-mix(in srgb, var(--c, var(--primary)) 7%, transparent);
+}
+.ps-chip::before {
+  background: linear-gradient(180deg, var(--c, var(--primary)), color-mix(in srgb, var(--c, var(--primary)) 25%, transparent));
+}
+.ps-chip:hover {
+  box-shadow: 0 2px 4px rgba(16,24,40,.04), 0 12px 26px color-mix(in srgb, var(--c, var(--primary)) 18%, transparent);
+}
+.ps-chip__n { font-variant-numeric: tabular-nums; }
+@supports (background-clip: text) {
+  .ps-chip__n {
+    background: linear-gradient(135deg, var(--c, var(--primary)), color-mix(in srgb, var(--c, var(--primary)) 55%, var(--text)));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+}
+.ps-card {
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px color-mix(in srgb, var(--c, var(--primary)) 7%, transparent);
+}
+.ps-card::before {
+  content: ""; position: absolute; top: -70px; left: -70px; width: 170px; height: 170px;
+  border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c, var(--primary)) 15%, transparent), transparent 70%);
+}
+.ps-card::after {
+  background: linear-gradient(90deg, var(--c, var(--primary)), color-mix(in srgb, var(--c, var(--primary)) 35%, transparent));
+}
+.ps-card:hover {
+  box-shadow: 0 4px 8px rgba(16,24,40,.05), 0 18px 44px color-mix(in srgb, var(--c, var(--primary)) 24%, transparent);
+  border-color: color-mix(in srgb, var(--c, var(--primary)) 28%, var(--border));
+}
+.ps-card__av {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 16px color-mix(in srgb, var(--c, var(--primary)) 32%, transparent);
+}
+.ps-card__footer .arrow {
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 60%, var(--secondary)));
+  color: #fff; box-shadow: 0 3px 10px color-mix(in srgb, var(--primary) 32%, transparent);
+}
+
+/* بطاقة الملف — بطولة بتدرج ملكي ولمعات ضوئية */
+.vst-profile-card {
+  background:
+    radial-gradient(520px 300px at 92% -30%, rgba(255,255,255,.2), transparent 58%),
+    radial-gradient(420px 260px at 6% 112%, color-mix(in srgb, var(--secondary) 45%, transparent), transparent 62%),
+    linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 62%, var(--secondary)) 130%);
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.2), 0 18px 44px color-mix(in srgb, var(--primary) 34%, transparent);
+}
+.vst-profile-card::before {
+  top: -70%; right: -22%; width: 360px; height: 360px;
+  background: conic-gradient(from 210deg, transparent 0 42%, rgba(255,255,255,.1) 50%, transparent 58% 100%);
+}
+.vst-profile-card::after {
+  bottom: -45%; left: -15%; width: 240px; height: 240px;
+  background: rgba(255,255,255,.05);
+  box-shadow: 0 0 0 60px rgba(255,255,255,.03);
+}
+.vst-profile-card__avatar {
+  background: linear-gradient(160deg, rgba(255,255,255,.36), rgba(255,255,255,.12));
+  border: 1px solid rgba(255,255,255,.28);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.22), 0 10px 24px rgba(0,0,0,.16);
+  border-radius: 18px;
+}
+.vst-profile-card__name { letter-spacing: -.4px; text-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.vst-profile-card__badges .vst-badge {
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px rgba(0,0,0,.08);
+}
+
+/* التبويبات — كبسولات زجاجية، والنشط بتدرج براق */
+.vst-tabs {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: color-mix(in srgb, var(--border) 85%, transparent);
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--primary) 8%, transparent), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.vst-tab { font-weight: 800; }
+.vst-tab:hover { transform: translateY(-1px); }
+.vst-tab.is-active {
+  background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 55%, var(--secondary)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 6px 18px color-mix(in srgb, var(--primary) 45%, transparent);
+}
+.vst-tab.is-active:active { transform: scale(.97); }
+
+/* الكروت العامة — حدود ناعمة وظل لوني خافت */
+body[data-page="parent"] .card {
+  box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 10px 28px color-mix(in srgb, var(--primary) 6%, transparent);
+}
+body[data-page="parent"] .card:hover {
+  box-shadow: 0 2px 4px rgba(16,24,40,.04), 0 16px 36px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+/* بطاقات المؤشرات — خط علوي متدرج وأيقونات متوهجة */
+.fp-card {
+  position: relative; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 22px color-mix(in srgb, var(--c, var(--primary)) 7%, transparent);
+  transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
+}
+.fp-card::before {
+  content: ""; position: absolute; top: 0; right: 0; left: 0; height: 3px;
+  background: linear-gradient(90deg, var(--c, var(--primary)), color-mix(in srgb, var(--c, var(--primary)) 22%, transparent));
+}
+.fp-card:hover {
+  transform: translateY(-3px) !important;
+  border-color: color-mix(in srgb, var(--c, var(--primary)) 32%, var(--border));
+  box-shadow: 0 6px 12px rgba(16,24,40,.05), 0 18px 40px color-mix(in srgb, var(--c, var(--primary)) 22%, transparent);
+}
+.fp-card__icon {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 5px 14px color-mix(in srgb, currentColor 24%, transparent);
+}
+.fp-card__value { font-variant-numeric: tabular-nums; }
+
+/* عداد الصحة — هالة لونية ثابتة بدون filter/transform
+   (أي transform/filter على العنصر الأب يكسر مرجعية url(#hpGrad)
+    في بعض المتصفحات فيظهر خط العداد أسود) */
+.fp-health__gauge { position: relative; filter: none; }
+.fp-health__gauge::after {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, transparent 56%, color-mix(in srgb, var(--primary) 22%, transparent) 76%, transparent 84%);
+}
+.fp-health__score { font-variant-numeric: tabular-nums; }
+.fp-health__label { letter-spacing: -.3px; }
+.fp-health__b b { font-variant-numeric: tabular-nums; }
+
+/* بطاقة المطلوب سداده — حد علوي متدرج وشارات متوهجة */
+.pp-due { position: relative; border-top: none; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 12px 30px color-mix(in srgb, var(--warning) 10%, transparent); }
+.pp-due::before {
+  content: ""; position: absolute; top: 0; right: 0; left: 0; height: 4px;
+  background: linear-gradient(90deg, var(--warning), color-mix(in srgb, var(--warning) 20%, transparent));
+}
+.pp-due--cleared::before { background: linear-gradient(90deg, var(--success), color-mix(in srgb, var(--success) 20%, transparent)); }
+.pp-due--debt::before { background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 20%, transparent)); }
+.pp-due__icon {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 5px 14px color-mix(in srgb, currentColor 26%, transparent);
+}
+.pp-due__amount {
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 16%, var(--surface)), color-mix(in srgb, var(--danger) 7%, var(--surface)));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+  font-variant-numeric: tabular-nums;
+}
+.pp-due__amount.is-zero,
+.pp-due--cleared .pp-due__amount {
+  border-color: color-mix(in srgb, var(--success) 26%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--success) 16%, var(--surface)), color-mix(in srgb, var(--success) 7%, var(--surface)));
+}
+.pp-due__row { transition: background .15s ease; }
+.pp-due__row:hover { background: color-mix(in srgb, var(--primary) 3%, var(--surface)); }
+.pp-due__foot { box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.pp-due__foot svg { color: var(--warning); }
+.pp-due--cleared .pp-due__foot svg { color: var(--success); }
+.pp-due--debt .pp-due__foot svg { color: var(--danger); }
+
+/* أزرار التنقل السريع — كبسولات بتدرج ونبضة ضغط */
+.pp-goto-btn {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 15%, var(--surface)), color-mix(in srgb, var(--primary) 6%, var(--surface)));
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+  transition: transform .14s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
+}
+.pp-goto-btn:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--border));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 24%, transparent), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.pp-goto-btn:active { transform: translateY(0) scale(.97); }
+.pp-goto-btn--link:hover { box-shadow: none; }
+
+/* سطر «ماذا تفعل الإدارة» — شريط جانبي بلون السمة */
+.fp-treat-short__line {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+/* صفوف أحداث الأسبوع — تواريخ كبسولية */
+.fp-week__row { transition: background .15s ease; border-radius: 10px; margin: 0 -8px; padding: 9px 8px; }
+.fp-week__row:hover { background: color-mix(in srgb, var(--primary) 4%, var(--surface)); }
+.fp-week__dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--text) 7%, transparent); }
+.fp-week__date {
+  background: var(--bg-2); border: 1px solid var(--border); padding: 2px 9px; border-radius: 99px; font-weight: 700;
+}
+.fp-mistake {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 12%, var(--surface)), color-mix(in srgb, var(--danger) 5%, var(--surface)));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+}
+
+/* أشرطة المهارات — لمعة داخلية فوق التدرج */
+.skill-bar__fill { box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.skill-bar__fill--success {
+  background: linear-gradient(90deg, var(--success) 0%, color-mix(in srgb, var(--success) 65%, #FFF) 130%);
+}
+.skill-bar__fill--danger {
+  background: linear-gradient(90deg, var(--danger) 0%, color-mix(in srgb, var(--danger) 65%, #FFF) 130%);
+}
+
+/* الفيد والفلاتر — الفلتر النشط بتدرج براق */
+.pp-feed-title svg { filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--primary) 35%, transparent)); }
+.pp-feed-title::after {
+  content: ""; flex: 0 0 auto; width: 40px; height: 3px; border-radius: 99px;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 25%, transparent));
+  margin-right: 2px;
+}
+.pp-filter-btn {
+  background: var(--surface); box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+  transition: transform .14s var(--ease), box-shadow .2s var(--ease), color .2s ease, border-color .2s ease, background .2s ease;
+}
+.pp-filter-btn:hover { color: var(--primary); transform: translateY(-1px); border-color: color-mix(in srgb, var(--primary) 34%, var(--border)); }
+.pp-filter-btn.is-active {
+  background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 55%, var(--secondary)) 100%);
+  color: #fff; border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 5px 14px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.pp-filter-btn.is-active:hover { color: #fff; }
+
+/* الأكورديون — شارات متوهجة وفتح متدرج */
+.pp-acc__item {
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 22px color-mix(in srgb, var(--primary) 6%, transparent);
+  transition: box-shadow .2s var(--ease);
+}
+.pp-acc__item[open] { box-shadow: 0 4px 10px rgba(16,24,40,.05), 0 16px 34px color-mix(in srgb, var(--primary) 13%, transparent); }
+.pp-acc__head { transition: background .18s ease; }
+.pp-acc__head:hover { background: color-mix(in srgb, var(--primary) 4%, var(--surface)); }
+.pp-acc__icon {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 4px 12px color-mix(in srgb, currentColor 22%, transparent);
+}
+.pp-acc__chev {
+  background: var(--surface); border: 1px solid var(--border); color: var(--primary);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+}
+.pp-acc__item[open] .pp-acc__chev {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, var(--secondary)));
+  color: #fff; border-color: transparent;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 36%, transparent);
+}
+.pp-acc__body { animation: ppAccIn .3s var(--ease); }
+@keyframes ppAccIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* الخط الزمني — شهود كبسولية وتوهجات ملوّنة */
+.vst-tl-month {
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 99px; padding: 4px 14px;
+}
+.vst-tl-month::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+.vst-timeline::before {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 45%, transparent) 0%, var(--border) 55%);
+}
+.vst-tl-date__dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+.vst-tl-event__card {
+  background: var(--surface); box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  transition: transform .16s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease);
+}
+.vst-tl-event--success .vst-tl-event__card { border-right-color: var(--success); box-shadow: 0 4px 14px color-mix(in srgb, var(--success) 13%, transparent); }
+.vst-tl-event--danger .vst-tl-event__card { border-right-color: var(--danger); box-shadow: 0 4px 14px color-mix(in srgb, var(--danger) 13%, transparent); }
+.vst-tl-event--warning .vst-tl-event__card { border-right-color: var(--warning); box-shadow: 0 4px 14px color-mix(in srgb, var(--warning) 13%, transparent); }
+.vst-tl-event--primary .vst-tl-event__card { border-right-color: var(--primary); box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 13%, transparent); }
+.vst-tl-event__card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--text) 9%, transparent);
+}
+.vst-tl-event__dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--surface) 85%, var(--border)); }
+
+/* بطاقات المعلومات — أيقونات متوهجة بألوان النبرة */
+.vst-info-card {
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 22px color-mix(in srgb, var(--c, var(--primary)) 7%, transparent);
+}
+.vst-info-card::before {
+  background: linear-gradient(90deg, var(--c, var(--primary)), color-mix(in srgb, var(--c, var(--primary)) 22%, transparent));
+}
+.vst-info-card:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 0 6px 12px rgba(16,24,40,.05), 0 16px 36px color-mix(in srgb, var(--c, var(--primary)) 20%, transparent);
+}
+.vst-info-card__icon {
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 5px 14px color-mix(in srgb, currentColor 22%, transparent);
+}
+.vst-info-card__value { font-variant-numeric: tabular-nums; }
+
+/* صفوف التفاصيل والحضور */
+.vst-detail-row { transition: background .15s ease; }
+.vst-detail-row:hover { background: color-mix(in srgb, var(--primary) 4%, var(--bg)); }
+.vst-att-dot--today { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent); }
+
+/* الترتيب — أرقام بتدرج لوني ومسار منعّم */
+.vst-rank-card {
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 26px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.vst-rank-card__title { letter-spacing: .2px; }
+.vst-rank-num { font-variant-numeric: tabular-nums; }
+@supports (background-clip: text) {
+  .vst-rank-num {
+    background: linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 45%, var(--secondary)) 120%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--primary) 24%, transparent));
+  }
+}
+.vst-rank-track { box-shadow: inset 0 1px 2px rgba(0,0,0,.06); }
+.vst-rank-marker {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, var(--secondary)));
+  box-shadow: 0 0 0 3px var(--surface), 0 4px 12px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.vst-rank-marker__label { box-shadow: 0 2px 8px color-mix(in srgb, var(--text) 8%, transparent); }
+.vst-rank-badge { box-shadow: inset 0 1px 0 rgba(255,255,255,.4); }
+
+/* الجدول الأسبوعي — اليوم النشط بتدرج ناعم */
+.vst-schedule__day {
+  transition: transform .16s var(--ease), box-shadow .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+}
+.vst-schedule__day:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+}
+.vst-schedule__day.is-active {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--primary) 12%, var(--surface)), color-mix(in srgb, var(--primary) 4%, var(--surface)));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* كروت التواصل — أيقونات متوهجة وزر انتقال دائري */
+.pp-contact-card {
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 22px color-mix(in srgb, var(--primary) 7%, transparent);
+}
+.pp-contact-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  box-shadow: 0 8px 16px rgba(16,24,40,.05), 0 18px 40px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.pp-contact-card__icon {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 5px 14px color-mix(in srgb, currentColor 24%, transparent);
+}
+.pp-contact-card__go {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, var(--secondary)));
+  color: #fff; box-shadow: 0 3px 10px color-mix(in srgb, var(--primary) 34%, transparent);
+  transition: transform .15s var(--ease);
+}
+.pp-contact-card:hover .pp-contact-card__go { transform: scale(1.1); }
+
+/* العبارات التحليلية والدفتر المالي والملاحظات */
+.vst-statement { box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.vst-statement__emoji { filter: drop-shadow(0 2px 5px rgba(0,0,0,.1)); }
+.vst-master-ledger {
+  box-shadow: 0 2px 4px rgba(16,24,40,.04), 0 14px 34px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.vst-master-ledger__net { font-variant-numeric: tabular-nums; }
+@supports (background-clip: text) {
+  .vst-master-ledger__net {
+    background: linear-gradient(135deg, var(--success), color-mix(in srgb, var(--success) 55%, #FFF));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+}
+.vst-ledger-amount { font-variant-numeric: tabular-nums; }
+.pp-note-hint {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 6%, var(--surface)), var(--surface));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
+}
+.pp-note-hint svg { filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--primary) 32%, transparent)); }
+.pp-readonly-note {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
+}
+
+/* أزرار عامة داخل البوابة — توهج لوني */
+body[data-page="parent"] .btn-primary { box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 32%, transparent); }
+body[data-page="parent"] .btn-primary:hover { box-shadow: 0 8px 22px color-mix(in srgb, var(--primary) 40%, transparent); }
+body[data-page="parent"] .btn-success { box-shadow: 0 4px 14px color-mix(in srgb, var(--success) 30%, transparent); }
+body[data-page="parent"] .btn-success:hover { box-shadow: 0 8px 22px color-mix(in srgb, var(--success) 38%, transparent); }
+
+/* حركة مخفّضة للوصولية */
+@media (prefers-reduced-motion: reduce) {
+  body[data-page="parent"] *, body[data-page="parent"] *::before, body[data-page="parent"] *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
