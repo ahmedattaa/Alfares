@@ -41,6 +41,7 @@ http://localhost:8080
     css/style.css        Design System موحد لكل الصفحات
     js/                  وحدات ES6: storage, ui, icons, helpers, app, ...
     mock/*.json          بيانات تجريبية (تُنسخ تلقائيًا إلى LocalStorage)
+                         — تشمل subjects/topics/questions/examAnswers لمنهج الطالب
 
 /staff/              منطقة المتابعة والإدارة (داخل السنتر)
   dashboard.html         الرئيسية (إحصائيات عامة)
@@ -60,14 +61,17 @@ http://localhost:8080
   settings.html          إعدادات السنتر
   attendance-tracker.html متابعة الحضور والغياب
 
-/parent/             منطقة ولي الأمر (بوابة خارجية للعرض فقط)
-  index.html           بوابة ولي الأمر
+/parent/             منطقة ولي الأمر — بوابة العائلة (Family Portal، عرض فقط)
+  index.html           فحص الدقيقة الواحدة (نظرة عامة) + الخط الزمني + ملف الطالب +
+                      الحضور + المالية (عرض) + الدرجات والترتيب + المتابعة + التواصل
+                      (parent-portal.js + parent.css)
 
 /site/               منطقة الويب سايت (المنصة العامة + نقطة الدخول)
   index.html           الصفحة التسويقية + أزرار الدخول للجميع (تظهر حسب إعدادات البوابات)
 
-/student/            منطقة منصة الطالب
-  index.html           بوابة الطالب (عرض ملفه الدراسي — نفس وحدة parent-portal.js)
+/student/            منطقة منصة الطالب — مركز قيادة الطالب (Student Command Center)
+  index.html           نظام تشغيل مصغر: مركز تعلم يومي، منهج (مواد ← مواضيع ← أسئلة MCQ للتدريب)،
+                      مركز أخطاء، إحصاءات تقدم، تقويم، محفوظات، إشعارات (student-portal.js)
 
 /scripts/tests/      أدوات واختبارات (test-scenarios, test-output, inject-test-data)
 ```
