@@ -47,18 +47,35 @@
       <div class="auth-fields" data-mode="parent" style="display:none;">
         <div class="field">
           <label class="field__label">رقم هاتف ولي الأمر</label>
-          <input class="input ltr" type="tel" id="parentPhone" placeholder="010xxxxxxxx" dir="ltr" inputmode="numeric">
+          <input class="input ltr" type="tel" id="parentPhone" placeholder="010xxxxxxxx" dir="ltr" inputmode="numeric" autocomplete="username">
         </div>
-        <div class="field__hint" style="margin-top:-8px; margin-bottom:12px;">أدخل رقم الهاتف المسجل في بيانات الطالب</div>
+        <div class="field" id="parentSecretField">
+          <label class="field__label" id="parentSecretLabel">كود الدخول</label>
+          <input class="input ltr" type="password" id="parentSecret" placeholder="أول مرة: كود التفعيل من السنتر" dir="ltr" inputmode="numeric" autocomplete="current-password">
+        </div>
+        <div class="field__hint" style="margin-top:-8px; margin-bottom:12px;" id="parentHint">أدخل رقم الهاتف المسجل + كود الدخول (أول مرة استخدم كود التفعيل اللي أرسله لك السنتر)</div>
+
+        <div id="setPassWrap" style="display:none;">
+          <div class="auth-secret-note">لأول مرة فقط — اختر كلمة مرور خاصة بيك (4-8 أرقام) هتستخدمها في الدخول من دلوقتي</div>
+          <div class="field">
+            <label class="field__label">اختر كلمة المرور</label>
+            <input class="input ltr" type="password" id="newParentPass" placeholder="••••••" dir="ltr" inputmode="numeric" autocomplete="new-password">
+          </div>
+          <button type="button" class="btn btn-primary btn-block" id="setPassBtn">حفظ كلمة المرور والدخول</button>
+        </div>
       </div>
 
       <!-- Student fields -->
       <div class="auth-fields" data-mode="student" style="display:none;">
         <div class="field">
-          <label class="field__label">كود الطالب</label>
-          <input class="input ltr" type="text" id="studentCode" placeholder="مثال: 101" dir="ltr" inputmode="numeric">
+          <label class="field__label">اسم المستخدم</label>
+          <input class="input ltr" type="text" id="studentUsername" placeholder="كود الطالب (مثال: 101)" dir="ltr" autocomplete="username">
         </div>
-        <div class="field__hint" style="margin-top:-8px; margin-bottom:12px;">أدخل كود الطالب المسجل في السنتر — للاختبار: 101</div>
+        <div class="field">
+          <label class="field__label">كلمة المرور</label>
+          <input class="input ltr" type="password" id="studentPassword" placeholder="••••••" dir="ltr" inputmode="numeric" autocomplete="current-password">
+        </div>
+        <div class="field__hint" style="margin-top:-8px; margin-bottom:12px;">اسم المستخدم = كود الطالب، وكلمة المرور بتتصرف من السنتر — للاختبار: 101 / 1234</div>
       </div>
 
       <button class="btn btn-primary btn-block btn-lg" type="submit" id="loginBtn">
