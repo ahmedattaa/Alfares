@@ -11,6 +11,7 @@ import {
   getSystemSettings,
   resetAllData,
   clearStudentData,
+  enableDemoMode,
   getSession,
   getGrades,
   saveGrades,
@@ -1869,18 +1870,21 @@ function renderDangerTab(box) {
       <button class="btn btn-warning" id="backfillLedgerBtn">${icons.clipboard} تهيئة دفتر الأستاذ</button>
     </div>
     <div class="card card-pad" style="border-color: var(--danger-light); margin-bottom:16px;">
-      <div class="card__head"><div class="card__title text-danger">مسح بيانات الطلاب</div></div>
+      <div class="card__head"><div class="card__title text-danger">بيانات الطلاب — المشروع فاضي افتراضيًا</div></div>
       <p class="text-muted" style="margin-bottom:14px; font-size:13.5px;">
-        بيمسح كل الطلاب والمجموعات والحضور والمدفوعات والامتحانات والملاحظات والتدريبات ودفتر الأستاذ
-        — وبيحافظ على إعدادات السنتر وحسابات الدخول والسنوات الدراسية والمواد وبنك الأسئلة والهيكل الأكاديمي.
-        البيانات التجريبية مش هتترجع تاني.
+        النظام بيبدأ فاضي (من غير طلاب أو مجموعات أو بيانات تجريبية) مع الحفاظ على الأساسيات:
+        إعدادات السنتر وحسابات الدخول والسنوات الدراسية وحالات الطالب والمواد وبنك الأسئلة والهيكل الأكاديمي.
       </p>
-      <button class="btn btn-danger" id="clearStudentsBtn">${icons.trash} مسح بيانات الطلاب (مشروع فاضي)</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="openSetupWizardBtn">${icons.rocket || "🚀"} معالج الإعداد الأول</button>
+        <button class="btn btn-danger" id="clearStudentsBtn">${icons.trash} مسح بيانات الطلاب (مشروع فاضي)</button>
+        <button class="btn btn-outline" id="enableDemoBtn" style="color:var(--warning);border-color:var(--warning);">🧪 وضع بيانات تجريبية</button>
+      </div>
     </div>
     <div class="card card-pad" style="border-color: var(--danger-light);">
       <div class="card__head"><div class="card__title text-danger">منطقة خطرة</div></div>
       <p class="text-muted" style="margin-bottom:14px; font-size:13.5px;">
-        إعادة ضبط النظام تحذف كل التعديلات المحفوظة محليًا وتعيد تحميل بيانات العرض التجريبية الأصلية.
+        إعادة ضبط النظام تحذف كل التعديلات المحفوظة محليًا وترجع المشروع للوضع الافتراضي الفاضي (الأساسيات فقط).
       </p>
       <button class="btn btn-danger" id="resetBtn">${icons.trash} إعادة ضبط النظام بالكامل</button>
     </div>
@@ -1898,6 +1902,17 @@ function renderDangerTab(box) {
     toast(`تم تهيئة ${count} قيد في دفتر الأستاذ ✓`, "success");
   });
 
+  document.getElementById("openSetupWizardBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "معالج الإعداد الأول",
+      body: "هيقودك خطوة بخطوة لتهيئة السنتر: بيانات السنتر، العام الدراسي، المجموعات، واستيراد الطلاب. هل تريد فتحه؟",
+      confirmText: "افتح المعالج",
+      tone: "primary",
+    });
+    if (!ok) return;
+    window.location.href = appPath("staff/setup.html");
+  });
+
   document.getElementById("clearStudentsBtn").addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "مسح بيانات الطلاب",
@@ -1907,14 +1922,27 @@ function renderDangerTab(box) {
     });
     if (!ok) return;
     await clearStudentData();
-    toast("تم مسح بيانات الطلاب — المشروع بقى فاضي ✓", "success");
+    toast("تم مسح بيانات الطلاب — تم تسجيل الخروج تلقائيًا ✓", "success");
+    setTimeout(() => (window.location.href = appPath("login.html")), 1200);
+  });
+
+  document.getElementById("enableDemoBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "وضع بيانات تجريبية",
+      body: "هيتم إضافة بيانات تجريبية كاملة (مجموعات وطلاب وحضور ومدفوعات وامتحانات وحسابات تجريبية) لتجربة النظام — الأساسيات مش هتتغير. هل أنت متأكد؟",
+      confirmText: "نعم، أضف البيانات التجريبية",
+      tone: "warning",
+    });
+    if (!ok) return;
+    await enableDemoMode();
+    toast("تم تفعيل البيانات التجريبية ✓", "success");
     setTimeout(() => (window.location.href = appPath("dashboard.html")), 1200);
   });
 
   document.getElementById("resetBtn").addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "إعادة ضبط النظام",
-      body: "سيتم حذف كل البيانات المحفوظة والعودة للبيانات التجريبية الأصلية. هل أنت متأكد؟",
+      body: "سيتم حذف كل البيانات المحفوظة والعودة للوضع الافتراضي الفاضي (الأساسيات فقط). هل أنت متأكد؟",
       confirmText: "إعادة الضبط",
       tone: "danger",
     });

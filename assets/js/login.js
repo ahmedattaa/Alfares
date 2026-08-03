@@ -2,7 +2,7 @@
 // Login — منطق صفحة تسجيل الدخول
 // =========================================================
 
-import { seedIfNeeded, login, parentLogin, studentLogin, setParentPassword, MAX_PARENT_FAILS, MAX_STUDENT_FAILS, getSettings, getStudents, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled } from "./storage.js";
+import { seedIfNeeded, login, parentLogin, studentLogin, setParentPassword, MAX_PARENT_FAILS, MAX_STUDENT_FAILS, getSettings, getStudents, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled, needsInitialSetup } from "./storage.js";
 import { redirectIfLoggedIn } from "./app.js";
 import { toast } from "./ui.js";
 import { initials, fakeDelay } from "./helpers.js";
@@ -393,6 +393,7 @@ async function finalizeLogin(session, redirectUrl) {
 function portalTargetFor(session) {
   if (session?.role === "student") return appPath("student/");
   if (session?.role === "parent") return appPath("parent/");
+  if (session?.role === "admin" && needsInitialSetup()) return appPath("staff/setup.html");
   return appPath("staff/dashboard.html");
 }
 

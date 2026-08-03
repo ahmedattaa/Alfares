@@ -48,6 +48,7 @@ const KEYS = {
   expenses: "center_expenses",
   seeded: "center_seeded_v12",
   freshStart: "center_fresh_start",
+  setupDone: "center_setup_done",
 };
 
 const MOCK_BASE = new URL("../mock/", import.meta.url).href;
@@ -151,21 +152,12 @@ const FALLBACK_DEMO_USERS = [
 /** رقم نسخة بيانات التجربة — لو اتغير يتعاد ترقيم (بذر) بيانات الموك مرة واحدة للنسخ القائمة */
 const SEED_VERSION = "v4-mastery";
 
-/** تهيئة البيانات لأول مرة فقط من ملفات mock إلى IndexedDB */
+/** تهيئة البيانات لأول مرة فقط من ملفات mock إلى IndexedDB.
+ *  الوضع الافتراضي = مشروع فاضي: نزرع الأساسيات (الإعدادات/المستخدمين، السنوات الدراسية،
+ *  حالات الطالب، الهيكل الأكاديمي، المواد، بنك الأسئلة) وبدون أي بيانات تشغيلية.
+ *  البيانات التجريبية بتظهر فقط بعد الضغط على "وضع بيانات تجريبية". */
 export async function seedIfNeeded() {
   await ensureCacheLoaded();
-
-  // بيانات تجريبية — تتأكد من وجودها دائماً (حتى لو الـ seed شغال قبل كده)
-  seedTestData();
-
-  // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
-  await ensureDemoParentPhone();
-
-  // ترحيل بيانات دخول أولياء الأمور القديمة (مستوى الطالب) لحسابات لكل رقم تليفون
-  migrateParentAccounts();
-
-  // حساب دخول تجريبي للطالب (الكود / 1234)
-  await ensureDemoStudentAuth();
 
   // تأكد من وجود مادة التدريس (مادة واحدة لكل السنتر) حتى للبيانات القديمة
   ensureTeachingSubject();
@@ -173,61 +165,54 @@ export async function seedIfNeeded() {
   // ضمان وجود مستخدم الـ admin التجريبي (admin / 1234) مهما كان مصدر البيانات
   ensureAdminUser();
 
-  if (readJSON(KEYS.seeded, false) === SEED_VERSION) return;
+  // أول تشغيل (أو بعد إعادة الضبط) → زرع الأساسيات فقط + تفعيل الوضع الفاضي الافتراضي
+  if (readJSON(KEYS.seeded, false) !== SEED_VERSION) {
+    try {
+      const [settings, grades, studentStatuses, academicPeriods, academicYears, terms, academicMonths, subjects, topics, questions] = await Promise.all([
+        fetchMock("settings.json"),
+        fetchMock("grades.json"),
+        fetchMock("studentStatuses.json"),
+        fetchMock("academicPeriods.json"),
+        fetchMock("academicYears.json"),
+        fetchMock("terms.json"),
+        fetchMock("academicMonths.json"),
+        fetchMock("subjects.json"),
+        fetchMock("topics.json"),
+        fetchMock("questions.json"),
+      ]);
 
-  try {
-    const [students, grades, groups, studentStatuses, attendance, payments, exams, settings, academicPeriods, academicYears, terms, academicMonths, subjects, topics, questions, examAnswers] = await Promise.all([
-      fetchMock("students.json"),
-      fetchMock("grades.json"),
-      fetchMock("groups.json"),
-      fetchMock("studentStatuses.json"),
-      fetchMock("attendance.json"),
-      fetchMock("payments.json"),
-      fetchMock("exams.json"),
-      fetchMock("settings.json"),
-      fetchMock("academicPeriods.json"),
-      fetchMock("academicYears.json"),
-      fetchMock("terms.json"),
-      fetchMock("academicMonths.json"),
-      fetchMock("subjects.json"),
-      fetchMock("topics.json"),
-      fetchMock("questions.json"),
-      fetchMock("examAnswers.json"),
-    ]);
-
-    writeJSON(KEYS.students, students);
-    writeJSON(KEYS.grades, grades);
-    writeJSON(KEYS.groups, groups);
-    writeJSON(KEYS.studentStatuses, studentStatuses);
-    writeJSON(KEYS.attendance, resolvePlaceholders(attendance));
-    writeJSON(KEYS.payments, resolvePlaceholders(payments));
-    writeJSON(KEYS.exams, resolvePlaceholders(exams));
-    writeJSON(KEYS.settings, settings);
-    writeJSON(KEYS.academicPeriods, academicPeriods);
-    writeJSON(KEYS.academicYears, academicYears);
-    writeJSON(KEYS.terms, terms);
-    writeJSON(KEYS.academicMonths, academicMonths);
-    writeJSON(KEYS.subjects, subjects);
-    writeJSON(KEYS.topics, topics);
-    writeJSON(KEYS.questions, questions);
-    writeJSON(KEYS.examAnswers, resolvePlaceholders(examAnswers));
-    writeJSON(KEYS.seeded, SEED_VERSION);
-  } catch (e) {
-    console.error("فشل تحميل بيانات Mock — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
-    // لو فشل تحميل الإعدادات، نضمن وجود المستخدمين التجريبيين عشان الدخول يشتغل
-    if (!Array.isArray(getSettings().users) || getSettings().users.length === 0) {
-      writeJSON(KEYS.settings, { ...getSettings(), users: FALLBACK_DEMO_USERS.map((u) => ({ ...u })) });
+      writeJSON(KEYS.settings, settings);
+      writeJSON(KEYS.grades, grades);
+      writeJSON(KEYS.studentStatuses, studentStatuses);
+      writeJSON(KEYS.academicPeriods, academicPeriods);
+      writeJSON(KEYS.academicYears, academicYears);
+      writeJSON(KEYS.terms, terms);
+      writeJSON(KEYS.academicMonths, academicMonths);
+      writeJSON(KEYS.subjects, subjects);
+      writeJSON(KEYS.topics, topics);
+      writeJSON(KEYS.questions, questions);
+      writeJSON(KEYS.seeded, SEED_VERSION);
+    } catch (e) {
+      console.error("فشل تحميل بيانات الأساسيات — تأكد من تشغيل المشروع عبر خادم محلى وليس file://", e);
+      // لو فشل تحميل الإعدادات، نضمن وجود المستخدمين التجريبيين عشان الدخول يشتغل
+      if (!Array.isArray(getSettings().users) || getSettings().users.length === 0) {
+        writeJSON(KEYS.settings, { ...getSettings(), users: FALLBACK_DEMO_USERS.map((u) => ({ ...u })) });
+      }
     }
+
+    // المشروع يبدأ فاضي افتراضيًا — البيانات التجريبية تظهر فقط بزر "وضع بيانات تجريبية"
+    writeJSON(KEYS.freshStart, true);
+    ensureAdminUser();
   }
 
-  // ضمان وجود مستخدم الـ admin التجريبي (admin / 1234) مهما كان مصدر البيانات
-  ensureAdminUser();
-
-  // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
-  await ensureDemoParentPhone();
-
-  // بيانات تجريبية لبوابة العائلة (متابعة + إنجاز) للطالب التجريبي
-  ensureDemoFamilyData();
+  // الوضع التجريبي فقط (بعد تفعيل "وضع بيانات تجريبية") — وليس الافتراضي
+  if (readJSON(KEYS.freshStart, false) !== true) {
+    seedTestData();
+    await ensureDemoParentPhone();
+    migrateParentAccounts();
+    await ensureDemoStudentAuth();
+    ensureDemoFamilyData();
+  }
 }
 
 /** بيانات تجريبية لبوابة العائلة — متابعة + إنجاز للطالب التجريبي */
@@ -1420,6 +1405,24 @@ export async function resetAllData() {
   }
 }
 
+/* =========================================================
+   ONBOARDING WIZARD — معالج الإعداد الأول
+   ========================================================= */
+
+/** هل النظام لسه في "المشروع الفاضي" ويحتاج معالج الإعداد الأول؟
+ *  شرط الفتح التلقائي: الوضع الفاضي مفعّل + المعالج لم يكتمل + مفيش مجموعات ولا طلاب. */
+export function needsInitialSetup() {
+  if (readJSON(KEYS.freshStart, false) !== true) return false;
+  if (readJSON(KEYS.setupDone, false) === true) return false;
+  return getGroups().length === 0 && getStudents().length === 0;
+}
+
+/** وضع علامة اكتمال معالج الإعداد — يمنع فتحه تلقائيًا في الزيارات القادمة */
+export function markSetupDone() {
+  cache[KEYS.setupDone] = true;
+  trackWrite(idbSet(KEYS.setupDone, true).catch(() => {}));
+}
+
 /** مسح بيانات الطلاب والتشغيلية — المشروع يظهر فاضي مع الحفاظ على الأساسيات:
  *  الإعدادات (المستخدمون/حسابات الدخول، اسم السنتر، المادة، إعدادات النظام)،
  *  السنوات الدراسية، حالات الطالب، الهيكل الأكاديمي (سنوات/أترام/شهور)،
@@ -1437,7 +1440,6 @@ export async function clearStudentData() {
     [KEYS.topics]: readJSON(KEYS.topics, []),
     [KEYS.questions]: readJSON(KEYS.questions, []),
     [KEYS.users]: readJSON(KEYS.users, []),
-    [KEYS.session]: readJSON(KEYS.session, null),
   };
 
   const wipeKeys = [
@@ -1472,10 +1474,58 @@ export async function clearStudentData() {
   // علامة تمنع زرع البيانات التجريبية في الزيارات القادمة + تثبيت رقم النسخة حتى لا يعيد التحميل من mock
   cache[KEYS.freshStart] = true;
   trackWrite(idbSet(KEYS.freshStart, true).catch(() => {}));
+  // بعد المسح يفتح معالج الإعداد الأول تلقائيًا في المرة الجاية
+  cache[KEYS.setupDone] = false;
+  trackWrite(idbSet(KEYS.setupDone, false).catch(() => {}));
   cache[KEYS.seeded] = SEED_VERSION;
   trackWrite(idbSet(KEYS.seeded, SEED_VERSION).catch(() => {}));
 
   Object.entries(keep).forEach(([k, v]) => writeJSON(k, v));
+
+  // بعد مسح بيانات الطلاب نعمل تسجيل خروج تلقائي (الجلسة مش محفوظة إطلاقًا)
+  logout();
+}
+
+/** تفعيل الوضع التجريبي — يزرع بيانات تجريبية كاملة (مجموعات "تست" + طلاب + حضور + مدفوعات +
+ *  استحقاقات + امتحانات + حسابات ديمو) فوق الأساسيات. يُستخدم من زر "وضع بيانات تجريبية" في
+ *  منطقة الخطر، ويمكن العودة للمشروع الفاضي عبر "مسح بيانات الطلاب". */
+export async function enableDemoMode() {
+  // تفعيل الوضع التجريبي — في الزيارات القادمة تتأكد seedIfNeeded من وجود بيانات الديمو
+  writeJSON(KEYS.freshStart, false);
+
+  // بيانات mock التشغيلية (طلاب/مجموعات/حضور/مدفوعات/امتحانات/إجابات) — فقط لو مفيش طلاب أصلًا
+  if (getStudents().length === 0) {
+    try {
+      const [students, groups, attendance, payments, exams, examAnswers] = await Promise.all([
+        fetchMock("students.json"),
+        fetchMock("groups.json"),
+        fetchMock("attendance.json"),
+        fetchMock("payments.json"),
+        fetchMock("exams.json"),
+        fetchMock("examAnswers.json"),
+      ]);
+      writeJSON(KEYS.students, resolvePlaceholders(students));
+      writeJSON(KEYS.groups, groups);
+      writeJSON(KEYS.attendance, resolvePlaceholders(attendance));
+      writeJSON(KEYS.payments, resolvePlaceholders(payments));
+      writeJSON(KEYS.exams, resolvePlaceholders(exams));
+      writeJSON(KEYS.examAnswers, resolvePlaceholders(examAnswers));
+    } catch (e) {
+      console.error("فشل تحميل بيانات الديمو من mock", e);
+    }
+  }
+
+  // البيانات المولّدة (مجموعات "تست" + طلاب + حضور + مدفوعات + استحقاقات)
+  seedTestData();
+
+  // بيانات تجريبية مساعدة (ولي أمر تجريبي + حساب طالب تجريبي + متابعة/إنجاز)
+  await ensureDemoParentPhone();
+  migrateParentAccounts();
+  await ensureDemoStudentAuth();
+  ensureDemoFamilyData();
+
+  ensureTeachingSubject();
+  ensureAdminUser();
 }
 
 /* =========================================================

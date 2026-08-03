@@ -2,7 +2,7 @@
 // App — نقطة الإقلاع المشتركة لكل الصفحات الداخلية
 // =========================================================
 
-import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift, getSettings, openShift, autoCloseShift } from "./storage.js";
+import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift, getSettings, openShift, autoCloseShift, needsInitialSetup } from "./storage.js";
 import { renderShell } from "./ui.js";
 import { canAccessPage, firstAccessiblePage } from "./permissions.js";
 import { appPath } from "./paths.js";
@@ -27,6 +27,12 @@ export async function initPage(activePage) {
   const session = getSession();
   if (!canAccessPage(session, activePage)) {
     window.location.href = firstAccessiblePage(session);
+    return null;
+  }
+
+  // مشروع فاضي لأول مرة → توجيه المدير لمعالج الإعداد الأول (كل الصفحات ما عدا المعالج نفسه)
+  if (activePage !== "setup" && session.role === "admin" && needsInitialSetup()) {
+    window.location.href = appPath("staff/setup.html");
     return null;
   }
 
