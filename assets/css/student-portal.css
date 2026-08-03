@@ -945,6 +945,22 @@
 .sc-modal__x { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 .sc-modal__x:hover { color: var(--danger); }
 .sc-modal__x svg { width: 16px; height: 16px; }
+.sc-modal__body { font-size: 13.5px; line-height: 1.7; }
+.sc-modal__foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.sc-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.sc-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
+.sc-field { margin-bottom: 12px; }
+.sc-field__label { display: block; font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 6px; }
 
 /* ── Settings rows ── */
 .sc-set {

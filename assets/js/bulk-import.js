@@ -1,18 +1,21 @@
 /* ──────────────────────────────────────────────
    bulk-import.js — إضافة جماعية للطلاب من ملف
+   مع ربط الأعمدة بالحقول (Column Mapping) يدويًا
    ────────────────────────────────────────────── */
 import { icons } from "./icons.js";
 import { getStudents, saveStudents, getGrades, getGroups, getSettings } from "./storage.js";
 import { escapeHTML, generateId } from "./helpers.js";
 import { toast } from "./ui.js";
-import { suggestStudentCode, findGroup } from "./lookups.js";
+import { findGroup } from "./lookups.js";
+import { appPath } from "./paths.js";
+
+const BI_MAP_CACHE_KEY = "bulkImportMapCache_v1";
 
 export function openBulkImportModal(preselectedGroupId) {
   if (document.getElementById("bulkImportOverlay")) return;
 
   const groups = getGroups();
   const grades = getGrades();
-  const students = getStudents();
 
   const ov = document.createElement("div");
   ov.id = "bulkImportOverlay";
@@ -28,18 +31,138 @@ export function openBulkImportModal(preselectedGroupId) {
 
   let parsedRows = [];
   let addedIds = new Set();
+  let biFileState = null;
   let biGradeId = defaultGradeId;
   let biGroupId = defaultGroup?.id || "";
+  let biGrid = [];
+  let biMapping = { code: -1, name: -1, phone: -1, skipHeader: false };
+  let biState = "input"; // input | mapping | preview
+  let biPastedText = "";
+  let biSignature = "";
+  let biMapError = "";
+
+  const mappingCache = loadMappingCache();
 
   function close() { ov.remove(); }
+
+  /* ── دخول بيانات جديدة (لصق أو ملف) → تلقائي أو شاشة ربط ── */
+  function handleNewData(grid, text, fileMeta, emptyMsg) {
+    biGrid = grid;
+    biFileState = fileMeta && grid.length ? { ...fileMeta, text } : null;
+
+    if (!grid.length) {
+      parsedRows = [];
+      biState = "input";
+      biMapError = "";
+      render();
+      toast(emptyMsg || "لا توجد بيانات صالحة", "warning");
+      return;
+    }
+
+    const auto = autoDetectMapping(grid);
+    biSignature = makeSignature(grid, auto);
+    const cached = mappingCache[biSignature];
+    biMapping = cached || auto || { code: -1, name: -1, phone: -1, skipHeader: false };
+    biMapError = "";
+
+    if (biMapping.name >= 0) {
+      biState = "preview";
+      parsedRows = parseGrid(biGrid, biMapping, groups);
+      addedIds = new Set();
+    } else {
+      biState = "mapping";
+    }
+    render();
+  }
+
+  function applyMapping() {
+    if (biMapping.name < 0) {
+      biMapError = "عمود اسم الطالب لازم يتعيّن — بدونه مش هتتقدر تضيف أي طالب.";
+      render();
+      return;
+    }
+    mappingCache[biSignature] = { ...biMapping };
+    saveMappingCache(mappingCache);
+    biState = "preview";
+    parsedRows = parseGrid(biGrid, biMapping, groups);
+    addedIds = new Set();
+    biMapError = "";
+    render();
+  }
+
+  /* ── شاشة ربط الأعمدة ── */
+  function mappingPanelHTML() {
+    const maxCols = biGrid.reduce((m, r) => Math.max(m, (r || []).length), 0);
+    const start = biMapping.skipHeader ? 1 : 0;
+
+    if (!maxCols) {
+      return `<div style="padding:14px;color:var(--muted);font-size:13px;">لا توجد أعمدة للربط — جرب رفع ملف تاني أو لصق البيانات.</div>`;
+    }
+
+    const cols = [];
+    for (let c = 0; c < maxCols; c++) {
+      const label = biMapping.skipHeader
+        ? (cleanCell(biGrid[0]?.[c]) || `العمود ${c + 1}`)
+        : `العمود ${c + 1}`;
+      const samples = [];
+      for (let r = start; r < biGrid.length && samples.length < 3; r++) {
+        const v = cleanCell(biGrid[r]?.[c]);
+        if (v) samples.push(v);
+      }
+      cols.push({ label, samples, c });
+    }
+
+    return `
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <label style="font-weight:700;font-size:14px;">❸ اربط الأعمدة بالحقول</label>
+          <span style="font-size:12px;color:var(--muted);">أي عمود مش بتعينه هيتجاهل تلقائيًا</span>
+        </div>
+        <div class="table-wrap" style="max-height:300px;overflow-y:auto;margin-bottom:10px;">
+          <table class="table" style="font-size:13px;">
+            <thead><tr>
+              <th>العمود</th>
+              <th>عينة من البيانات</th>
+              <th>دوره</th>
+            </tr></thead>
+            <tbody>
+              ${cols.map((col) => `
+                <tr>
+                  <td><strong>${escapeHTML(col.label)}</strong></td>
+                  <td dir="ltr" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);">${col.samples.length ? escapeHTML(col.samples.join(" ، ")) : "<span class='text-muted'>فارغ</span>"}</td>
+                  <td>
+                    <select class="select bi-col-role" data-col="${col.c}" style="max-width:175px;">
+                      <option value="" ${biMapping.code !== col.c && biMapping.name !== col.c && biMapping.phone !== col.c ? "selected" : ""}>— تجاهل —</option>
+                      <option value="code" ${biMapping.code === col.c ? "selected" : ""}>كود الطالب</option>
+                      <option value="name" ${biMapping.name === col.c ? "selected" : ""}>اسم الطالب</option>
+                      <option value="phone" ${biMapping.phone === col.c ? "selected" : ""}>تلفون ولي الأمر</option>
+                    </select>
+                  </td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px;">
+          <input type="checkbox" id="biSkipHeaderChk" ${biMapping.skipHeader ? "checked" : ""} style="width:16px;height:16px;">
+          الصف الأول ترويسة (يتخطاه عند القراءة)
+        </label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="biApplyMappingBtn">${icons.check} تطبيق الربط</button>
+          <span class="text-muted" style="font-size:12px;">هتظهر معاينة نهائية قبل إضافة أي طالب</span>
+        </div>
+        ${biMapError ? `<div style="color:var(--danger);font-size:13px;margin-top:8px;">⚠️ ${escapeHTML(biMapError)}</div>` : ""}
+      </div>`;
+  }
 
   function render() {
     const hasData = parsedRows.length > 0;
     const pending = parsedRows.filter((r) => !addedIds.has(r._key));
     const done = parsedRows.filter((r) => addedIds.has(r._key));
+    const showMapping = biState === "mapping";
+    const showPreview = biState === "preview";
 
     ov.innerHTML = `
-      <div class="bulk-modal" style="background:var(--surface,#fff);border-radius:16px;margin-bottom:40px;box-shadow:0 24px 60px rgba(0,0,0,.3);animation:ucdSlideUp .25s cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;max-width:820px;width:100%;">
+      <div class="bulk-modal" style="background:var(--surface,#fff);border-radius:16px;margin-bottom:40px;box-shadow:0 24px 60px rgba(0,0,0,.3);animation:ucdSlideUp .25s cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;max-width:860px;width:100%;">
         <!-- HEADER -->
         <div style="flex:0 0 auto;padding:18px 22px;border-bottom:1px solid var(--border);">
           <div style="display:flex;align-items:center;gap:10px;">
@@ -80,31 +203,36 @@ export function openBulkImportModal(preselectedGroupId) {
               <span class="text-muted" style="font-size:12px;align-self:center;">يدعم Excel (.xlsx) و Word (.docx)</span>
             </div>
             <div id="biPasteArea" style="display:none;">
-              <textarea id="biTextArea" class="input" rows="4" dir="ltr" style="font-size:12px;font-family:monospace;width:100%;direction:ltr;" placeholder="${"كود الطالب\tاسم الطالب\tتلفون ولي الأمر\nSTU001\tأحمد علي\t01234567890\nSTU002\tمحمد حسن\t01123456789"}"></textarea>
+              <textarea id="biTextArea" class="input" rows="4" dir="ltr" style="font-size:12px;font-family:monospace;width:100%;direction:ltr;" placeholder="${"كود الطالب\tاسم الطالب\tتلفون ولي الأمر\nSTU001\tأحمد علي\t01234567890\nSTU002\tمحمد حسن\t01123456789"}">${escapeHTML(biPastedText)}</textarea>
               <div style="display:flex;gap:8px;margin-top:6px;">
                 <button class="btn btn-primary btn-sm" id="biParseBtn">🔍 معاينة البيانات</button>
-                <span class="text-muted" style="font-size:11px;align-self:center;">افصل بين الأعمدة بـ Tab أو Comma — سطر لكل طالب</span>
+                <span class="text-muted" style="font-size:11px;align-self:center;">افصل بين الأعمدة بـ Tab أو Comma — ولو الأعمدة ملغبطة هتسألك تربطها بنفسك</span>
               </div>
             </div>
-            <div id="biFileInfo" style="display:none;padding:10px;background:var(--bg);border-radius:var(--r-sm);font-size:13px;"></div>
-            <div id="biRawPreview" style="display:none;margin-top:8px;">
-              <details>
-                <summary style="cursor:pointer;font-size:12px;color:var(--muted);">📄 النص المستخرج من الملف</summary>
-                <pre id="biRawText" style="font-size:11px;font-family:monospace;direction:ltr;text-align:left;background:var(--bg);padding:10px;border-radius:8px;max-height:200px;overflow:auto;margin-top:6px;white-space:pre-wrap;"></pre>
-              </details>
-            </div>
+            ${biFileState ? `
+            <div style="padding:10px;background:var(--bg);border-radius:var(--r-sm);font-size:13px;margin-top:8px;">📄 ${escapeHTML(biFileState.name)} — تم استخراج ${biFileState.rows} صف</div>
+            ${biFileState.text ? `
+            <details style="margin-top:8px;">
+              <summary style="cursor:pointer;font-size:12px;color:var(--muted);">📄 النص المستخرج من الملف</summary>
+              <pre style="font-size:11px;font-family:monospace;direction:ltr;text-align:left;background:var(--bg);padding:10px;border-radius:8px;max-height:200px;overflow:auto;margin-top:6px;white-space:pre-wrap;">${escapeHTML(biFileState.text)}</pre>
+            </details>` : ""}
+            ` : ""}
           </div>
 
+          <!-- STEP 2.5: Column Mapping -->
+          ${showMapping ? mappingPanelHTML() : ""}
+
           <!-- STEP 3: Preview -->
-          ${hasData ? `
+          ${showPreview ? `
           <div style="margin-bottom:14px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-              <label style="font-weight:700;font-size:14px;">❸ معاينة — راجع البيانات قبل الإضافة</label>
+              <label style="font-weight:700;font-size:14px;">❹ معاينة — راجع البيانات قبل الإضافة</label>
               <div style="display:flex;gap:8px;align-items:center;">
-                <span style="font-size:12px;color:var(--muted);">تم إضافة ${done.length} من ${parsedRows.length}</span>
+                <button class="btn btn-outline btn-sm" id="biEditMappingBtn" title="تغيير أي عمود بيشير لإيه" style="color:var(--primary);">🎯 إعادة الربط</button>
                 ${pending.length ? `<button class="btn btn-success btn-sm" id="biAddAllBtn">${icons.plus} إضافة الكل (${pending.length})</button>` : ""}
               </div>
             </div>
+            ${hasData ? `
             <div class="table-wrap" style="max-height:340px;overflow-y:auto;">
               <table class="table" style="font-size:13px;">
                 <thead><tr>
@@ -125,20 +253,25 @@ export function openBulkImportModal(preselectedGroupId) {
                     <td style="font-weight:${err ? "400" : "700"}; color:${err ? "var(--danger)" : "inherit"};">${err ? `<span title="${escapeHTML(err)}">⚠️</span> ` : ""}${escapeHTML(r.code || "—")}</td>
                     <td>${escapeHTML(r.name || "—")}</td>
                     <td class="text-muted">${escapeHTML(r.groupName)}</td>
-                    <td dir="ltr">${escapeHTML(r.phone || "—")}</td>
+                    <td dir="ltr">${r._phoneNote ? `<span title="${escapeHTML(r._phoneNote)}" style="cursor:help;">⚠️</span> ` : ""}${escapeHTML(r.phone || "—")}</td>
                     <td>${!isDone && !err ? `<button class="btn btn-outline btn-sm bi-add-one" data-key="${r._key}" title="إضافة هذا الطالب" style="color:var(--success);border-color:var(--success);min-width:36px;">${icons.plus}</button>` : ""}</td>
                   </tr>`;
                   }).join("")}
                 </tbody>
               </table>
             </div>
+            ` : `
+            <div style="padding:20px 0;text-align:center;color:var(--muted);">
+              <div style="font-size:14px;">لا توجد صفوف صالحة بعد الربط — تأكد من اختيار أعمدة صح ووجود بيانات فعلية</div>
+            </div>`}
           </div>
           ` : `
+          ${biState === "input" ? `
           <div style="padding:30px 0;text-align:center;color:var(--muted);">
             <div style="font-size:40px;margin-bottom:10px;">📋</div>
             <div style="font-size:14px;">الصق البيانات أو ارفع ملف Excel/Word لبدء المعاينة</div>
-            <div style="font-size:12px;margin-top:4px;">تأكد من وجود 3 أعمدة: كود الطالب، اسم الطالب، تلفون ولي الأمر</div>
-          </div>
+            <div style="font-size:12px;margin-top:4px;">3 أعمدة: كود الطالب، اسم الطالب، تلفون ولي الأمر — أو أي ترتيب، النظام هيسألك تربطه</div>
+          </div>` : ""}
           `}
         </div>
 
@@ -180,11 +313,8 @@ export function openBulkImportModal(preselectedGroupId) {
 
     ov.querySelector("#biParseBtn")?.addEventListener("click", () => {
       const text = ov.querySelector("#biTextArea")?.value || "";
-      const rows = parseText(text, students, groups, grades);
-      if (!rows.length) { toast("لا توجد بيانات صالحة للمعاينة — تأكد من الصيغة", "warning"); return; }
-      parsedRows = rows;
-      addedIds = new Set();
-      render();
+      biPastedText = text;
+      handleNewData(extractGridFromText(text), text, null, "لا توجد بيانات صالحة للمعاينة — تأكد من الصيغة");
     });
 
     ov.querySelector("#biUploadBtn")?.addEventListener("click", () => {
@@ -194,18 +324,35 @@ export function openBulkImportModal(preselectedGroupId) {
     ov.querySelector("#biFileInput")?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      const result = await parseFile(file);
+      handleNewData(result.grid, result.text, { name: file.name, rows: result.grid.length }, "لم نتمكن من استخراج بيانات من الملف — جرب اللصق المباشر");
+    });
 
-      const rows = await parseFile(file, students, groups, grades);
-      if (!rows.length) { toast("لم نتمكن من استخراج بيانات من الملف — جرب اللصق المباشر", "warning"); return; }
+    /* ── ربط الأعمدة ── */
+    ov.querySelectorAll(".bi-col-role").forEach((sel) => {
+      sel.addEventListener("change", () => {
+        const col = Number(sel.dataset.col);
+        const role = sel.value;
+        if (biMapping.code === col) biMapping.code = -1;
+        if (biMapping.name === col) biMapping.name = -1;
+        if (biMapping.phone === col) biMapping.phone = -1;
+        if (role === "code") biMapping.code = col;
+        else if (role === "name") biMapping.name = col;
+        else if (role === "phone") biMapping.phone = col;
+        biMapError = "";
+        render();
+      });
+    });
 
-      parsedRows = rows;
-      addedIds = new Set();
+    ov.querySelector("#biSkipHeaderChk")?.addEventListener("change", (e) => {
+      biMapping.skipHeader = e.target.checked;
+      biMapError = "";
+      render();
+    });
 
-      const info = ov.querySelector("#biFileInfo");
-      if (info) {
-        info.style.display = "block";
-        info.textContent = `📄 ${file.name} — تم استخراج ${rows.length} طالب`;
-      }
+    ov.querySelector("#biApplyMappingBtn")?.addEventListener("click", applyMapping);
+    ov.querySelector("#biEditMappingBtn")?.addEventListener("click", () => {
+      biState = "mapping";
       render();
     });
 
@@ -239,7 +386,7 @@ export function openBulkImportModal(preselectedGroupId) {
     const selectedGroupId = ov.querySelector("#biGroupSelect")?.value || biGroupId || defaultGroup?.id || "";
     const grp = groups.find((g) => g.id === selectedGroupId);
     const student = {
-      id: row.code || generateId("STU"),
+      id: generateId("STU"),
       name: row.name,
       code: row.code || "",
       gradeId: grp?.gradeId || "",
@@ -272,55 +419,87 @@ export function openBulkImportModal(preselectedGroupId) {
   render();
 }
 
-/* ─── Parsing ─── */
+/* ═══════════════════ Parsing & Mapping ═══════════════════ */
 
-function parseText(text, students, groups, grades) {
+/** تحويل نص خام إلى شبكة أعمدة (خلايا محفوظة — الفارغ في المنتصف لا يزيح الأعمدة) */
+function extractGridFromText(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return [];
+  const sep = detectSeparator(lines);
+  return lines.map((l) => splitRow(l, sep));
+}
 
-  let actualSep = "\t";
-  if (lines.some((l) => l.includes("\t"))) actualSep = "\t";
-  else if (lines.some((l) => l.includes(";"))) actualSep = ";";
-  else if (lines.some((l) => l.match(/\s{2,}/))) actualSep = /\s{2,}/;
+/** يكتشف الفاصل بين الأعمدة: Tab → فاصلة منقوطة → فاصلة → مسافتان فأكثر */
+function detectSeparator(lines) {
+  if (lines.some((l) => l.includes("\t"))) return "\t";
+  if (lines.some((l) => l.includes(";"))) return ";";
+  if (lines.some((l) => l.includes(","))) return ",";
+  if (lines.some((l) => l.match(/\s{2,}/))) return /\s{2,}/;
+  return "\t";
+}
 
-  const startIdx = isHeaderLine(lines[0], actualSep) ? 1 : 0;
+/** تقسيم سطر لأعمدة مع الحفاظ على الخلايا الفارغة في المنتصف (للفواصل الصريحة) */
+function splitRow(line, sep) {
+  if (sep instanceof RegExp) return line.split(sep).map((c) => c.trim()).filter(Boolean);
+  let parts = line.split(sep).map((c) => c.trim());
+  while (parts.length && parts[parts.length - 1] === "") parts.pop();
+  return parts;
+}
 
-  const rows = [];
-  const usedCodes = new Set(students.map((s) => s.code));
+function cleanCell(value) {
+  return String(value ?? "").trim();
+}
+
+/** تنظيف الاسم: إزالة المسافات الزائدة وتوحيد الفواصل بين الكلمات */
+function normalizeName(raw) {
+  return String(raw ?? "").trim().replace(/\s+/g, " ");
+}
+
+/** توحيد صيغة رقم التليفون المصرى: إزالة الشَرطات والمسافات وتحويل +20/0020
+ *  يرجع { value, note } — note فيها تنبيه لو الرقم غير صالح، بدون منع الإضافة */
+function normalizePhone(raw) {
+  const original = String(raw ?? "").trim();
+  if (!original) return { value: "", note: "" };
+
+  let p = original.replace(/[\s\-()./]+/g, "");
+  if (p.startsWith("+20")) p = "0" + p.slice(3);
+  else if (p.startsWith("0020")) p = "0" + p.slice(4);
+  else if (p.startsWith("002")) p = "0" + p.slice(3);
+  else if (p.startsWith("+")) p = p.slice(1);
+  else if (/^20\d{10}$/.test(p)) p = "0" + p.slice(2);
+
+  if (/^01\d{9}$/.test(p)) return { value: p, note: "" };
+  return { value: original, note: "رقم التليفون غير صالح (يُقبل 11 رقمًا يبدأ بـ 01)" };
+}
+
+/** قراءة الشبكة حسب الربط الحالي → صفوف جاهزة للمعاينة */
+function parseGrid(grid, mapping, groups) {
+  const sel = document.getElementById("biGroupSelect");
+  const grpId = sel?.value || groups[0]?.id || "";
+  const grp = findGroup(groups, grpId);
+  const existingCount = getStudents().filter((s) => s.groupId === grpId).length;
+  const usedCodes = new Set(getStudents().map((s) => s.code));
   let autoCode = 1;
+  const rows = [];
+  const start = mapping.skipHeader ? 1 : 0;
 
-  for (let i = startIdx; i < lines.length; i++) {
-    let parts;
-    if (actualSep instanceof RegExp) {
-      parts = lines[i].split(actualSep).map((p) => p.trim());
-    } else {
-      parts = lines[i].split(actualSep).map((p) => p.trim());
-    }
+  for (let i = start; i < grid.length; i++) {
+    const parts = grid[i] || [];
+    if (!parts.some((c) => cleanCell(c))) continue;
 
-    parts = parts.filter((p) => p.length > 0);
-    if (parts.length < 1) continue;
+    let code = mapping.code >= 0 ? cleanCell(parts[mapping.code]) : "";
+    let name = mapping.name >= 0 ? cleanCell(parts[mapping.name]) : "";
+    let phone = mapping.phone >= 0 ? cleanCell(parts[mapping.phone]) : "";
 
-    let code, name, phone;
-    const looksLikeCode = /^[A-Za-z0-9_/-]{2,}$/.test(parts[0]);
+    name = normalizeName(name);
 
-    const sel = document.getElementById("biGroupSelect");
-    const grpId = sel?.value || groups[0]?.id || "";
-    const grp = findGroup(groups, grpId);
+    const phoneInfo = normalizePhone(phone);
+    phone = phoneInfo.value;
+    const phoneNote = phoneInfo.note;
 
-    if (looksLikeCode && parts.length >= 2) {
-      code = parts[0];
-      name = parts[1];
-      phone = parts.length >= 3 ? parts[2] : "";
-    } else if (looksLikeCode && parts.length === 1) {
-      code = parts[0];
-      name = "";
-      phone = "";
-    } else {
-      name = parts[0];
-      const existingCount = getStudents().filter((s) => s.groupId === grpId).length;
-      code = grp ? `${grp.code}${existingCount + autoCode}` : generateId("STU") + "_" + autoCode;
+    if (!code) {
+      code = grp?.code ? `${grp.code}${existingCount + autoCode}` : `${generateId("STU")}_${autoCode}`;
       autoCode++;
-      phone = parts.length >= 2 ? parts[1] : "";
     }
 
     const errors = [];
@@ -333,6 +512,7 @@ function parseText(text, students, groups, grades) {
       name,
       phone,
       groupName: grp?.name || "—",
+      _phoneNote: phoneNote,
       _error: errors.length ? errors.join("، ") : null,
     });
     if (!errors.length && code) usedCodes.add(code);
@@ -341,119 +521,178 @@ function parseText(text, students, groups, grades) {
   return rows;
 }
 
-async function parseFile(file, students, groups, grades) {
-  const ext = file.name.split(".").pop().toLowerCase();
+/** اكتشاف الربط تلقائيًا: ترويسة أولًا، ثم شكل الأعمدة */
+function autoDetectMapping(grid) {
+  if (!grid.length) return { code: -1, name: -1, phone: -1, skipHeader: false };
 
-  if (["xlsx", "xls"].includes(ext)) {
-    return parseExcel(file, students, groups, grades);
+  const row0 = (grid[0] || []).map((c) => cleanCell(c).toLowerCase());
+  const roles = row0.map(classifyHeader);
+
+  if (roles.some((r) => r !== null)) {
+    let code = -1, name = -1, phone = -1;
+    roles.forEach((r, idx) => {
+      if (r === "code" && code === -1) code = idx;
+      else if (r === "name" && name === -1) name = idx;
+      else if (r === "phone" && phone === -1) phone = idx;
+    });
+    return { code, name, phone, skipHeader: true };
   }
 
-  if (ext === "docx") {
-    return parseWord(file, students, groups, grades);
-  }
-
-  if (["csv", "tsv"].includes(ext)) {
-    const text = await file.text();
-    return parseText(text, students, groups, grades);
-  }
-
-  return [];
+  const prof = analyzeColumns(grid);
+  return { code: prof.code, name: prof.name, phone: prof.phone, skipHeader: false };
 }
 
-function parseExcel(file, students, groups, grades) {
+/** تصنيف خلية الترويسة لدور (كود/اسم/تلفون) أو null */
+function classifyHeader(cell) {
+  if (!cell) return null;
+  if (cell.includes("كود") || cell.includes("رقم الطالب") || /^(code|id|student\s*code|student\s*id)$/.test(cell)) return "code";
+  if (cell.includes("اسم") || cell.includes("الطالب") || /^(name|student\s*name)$/.test(cell)) return "name";
+  if (cell.includes("تلفون") || cell.includes("تليفون") || cell.includes("هاتف") || cell.includes("موبايل") || cell.includes("جوال") || /(phone|mobile)/.test(cell)) return "phone";
+  return null;
+}
+
+/** تحليل شكل الأعمدة (بدون ترويسة) لتخمين أدوارها من البيانات */
+function analyzeColumns(grid) {
+  const maxCols = Math.max(...grid.map((r) => (r ? r.length : 0)));
+  let code = -1, name = -1, phone = -1;
+
+  for (let c = 0; c < maxCols; c++) {
+    let codeLike = 0, nameLike = 0, phoneLike = 0, total = 0;
+    for (let r = 0; r < grid.length && r <= 6; r++) {
+      const cell = cleanCell(grid[r]?.[c]);
+      if (!cell) continue;
+      total++;
+      const phoneRes = normalizePhone(cell);
+      if (phoneRes.value && !phoneRes.note) phoneLike++;
+      else if (/^[0-9][0-9\s\-()./]{8,}$/.test(cell)) phoneLike++;
+      if (/^[A-Za-z0-9_/-]{2,}$/.test(cell)) codeLike++;
+      if (/[\u0621-\u064A]/.test(cell)) nameLike++;
+    }
+    if (!total) continue;
+
+    if (phone === -1 && phoneLike >= Math.max(1, Math.ceil(total * 0.6))) { phone = c; continue; }
+    if (code === -1 && codeLike === total && nameLike === 0) { code = c; continue; }
+    if (name === -1 && nameLike === total) { name = c; continue; }
+  }
+
+  return { code, name, phone };
+}
+
+/** توقيع يميز قالب الملف — لحفظ الربط مرة واحدة وإعادة استخدامه */
+function makeSignature(grid, mapping) {
+  if (mapping && mapping.skipHeader && grid[0] && grid[0].some((c) => cleanCell(c))) {
+    return "h:" + grid[0].map((c) => cleanCell(c).toLowerCase()).join("\u0001");
+  }
+  const rows = grid.slice(0, 5).map((r) => (r || []).map((c) => classifySample(cleanCell(c))).join("|"));
+  return "d:" + rows.join("\n");
+}
+
+function classifySample(cell) {
+  if (!cell) return "·";
+  const p = normalizePhone(cell);
+  if (p.value && !p.note) return "p";
+  if (/^[A-Za-z0-9_/-]{2,}$/.test(cell)) return "c";
+  if (/[\u0621-\u064A]/.test(cell)) return "n";
+  return "?";
+}
+
+/* ── حفظ الربط (حتى 50 قالبًا) ── */
+function loadMappingCache() {
+  try { return JSON.parse(localStorage.getItem(BI_MAP_CACHE_KEY)) || {}; } catch (e) { return {}; }
+}
+
+function saveMappingCache(cache) {
+  try {
+    const keys = Object.keys(cache);
+    while (keys.length > 50) delete cache[keys.shift()];
+    localStorage.setItem(BI_MAP_CACHE_KEY, JSON.stringify(cache));
+  } catch (e) { /* تجاهل — localStorage مش متاح */ }
+}
+
+/* ── قراءة الملفات ── */
+
+async function parseFile(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+
+  if (["xlsx", "xls"].includes(ext)) return parseExcel(file);
+  if (ext === "docx") return parseWord(file);
+  if (["csv", "tsv"].includes(ext)) {
+    const text = await file.text();
+    return { grid: extractGridFromText(text), text };
+  }
+  return { grid: [], text: "" };
+}
+
+function parseExcel(file) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        if (typeof XLSX === "undefined") { resolve([]); return; }
+        if (typeof XLSX === "undefined") { resolve({ grid: [], text: "" }); return; }
         const wb = XLSX.read(e.target.result, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        const text = data.map((row) => row.join("\t")).join("\n");
-        resolve(parseText(text, students, groups, grades));
-      } catch (err) { console.error("Excel parse error", err); resolve([]); }
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+        const grid = data.map((row) => (row || []).map((v) => v == null ? "" : String(v)));
+        const text = grid.map((r) => r.join("\t")).join("\n");
+        resolve({ grid, text });
+      } catch (err) { console.error("Excel parse error", err); resolve({ grid: [], text: "" }); }
     };
     reader.readAsArrayBuffer(file);
   });
 }
 
-function parseWord(file, students, groups, grades) {
+function parseWord(file) {
   return new Promise((resolve) => {
     if (typeof mammoth === "undefined") {
       const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js";
-      script.onload = () => parseWordWithMammoth(file, students, groups, grades).then(resolve);
-      script.onerror = () => resolve([]);
+      script.src = appPath("../vendor/mammoth.browser.min.js");
+      script.onload = () => parseWordWithMammoth(file).then(resolve);
+      script.onerror = () => resolve({ grid: [], text: "" });
       document.head.appendChild(script);
     } else {
-      parseWordWithMammoth(file, students, groups, grades).then(resolve);
+      parseWordWithMammoth(file).then(resolve);
     }
   });
 }
 
-async function parseWordWithMammoth(file, students, groups, grades) {
+async function parseWordWithMammoth(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
 
-    // 1) HTML — preserves table structure with real cell boundaries
+    // 1) HTML — بيحافظ على حدود الجداول الحقيقية
     const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
     const html = htmlResult.value;
 
-    // 2) Parse tables via DOM (much more reliable than regex)
+    // 2) استخراج الجداول عبر DOM (أدق من الـ regex)
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
     const tables = doc.querySelectorAll("table");
-    let tableLines = [];
+    let grid = [];
+    let text = "";
 
     if (tables.length) {
       tables.forEach((table) => {
         table.querySelectorAll("tr").forEach((tr) => {
           const cells = [];
           tr.querySelectorAll("td, th").forEach((td) => {
-            const text = td.textContent.trim();
-            cells.push(text);
+            cells.push(td.textContent.trim());
           });
-          if (cells.length >= 1) tableLines.push(cells.join("\t"));
+          if (cells.some((c) => c)) grid.push(cells);
         });
       });
-    }
-
-    // 3) If no tables found, fall back to raw text
-    let text;
-    if (tableLines.length) {
-      text = tableLines.join("\n");
+      text = grid.map((r) => r.join("\t")).join("\n");
     } else {
+      // 3) من غير جداول → نرجع للنص الخام
       const rawResult = await mammoth.extractRawText({ arrayBuffer });
       text = rawResult.value;
+      grid = extractGridFromText(text);
     }
 
-    const rows = parseText(text, students, groups, grades);
-
-    // Show extracted text for debugging
-    const rawPreview = document.getElementById("biRawPreview");
-    const rawText = document.getElementById("biRawText");
-    if (rawPreview && rawText) {
-      rawPreview.style.display = "block";
-      rawText.textContent = text;
-    }
-
-    const info = document.getElementById("biFileInfo");
-    if (info) {
-      info.style.display = "block";
-      info.textContent = `📄 ${file.name} — تم استخراج ${rows.length} طالب`;
-    }
-
-    return rows;
+    return { grid, text };
   } catch (err) {
     console.error("Word parse error", err);
-    return [];
+    return { grid: [], text: "" };
   }
-}
-
-function isHeaderLine(line, sep) {
-  const lower = line.toLowerCase();
-  const keywords = ["كود", "اسم", "تلفون", "code", "name", "phone", "الطالب", "student", "رقم", "تليفون", "الصف", "class", "grade"];
-  return keywords.some((kw) => lower.includes(kw));
 }
 
 function todayISO() {

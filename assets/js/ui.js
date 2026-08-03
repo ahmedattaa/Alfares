@@ -49,7 +49,11 @@ export function renderShell(activePage) {
   const settings = getSettings();
   const session = getSession();
   const centerName = settings.centerName || "سنتر تعليمى";
-  const visibleNavItems = NAV_ITEMS.filter((item) => canAccessPage(session, item.page)).map((item) =>
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    const isHiddenShift = item.page === "shift" && (getSettings().shiftMode || "hidden") === "hidden";
+    if (isHiddenShift) return false;
+    return canAccessPage(session, item.page);
+  }).map((item) =>
     session?.role === "student" && item.page === "visit"
       ? { ...item, label: "ملفي الدراسي", href: appPath("staff/visit.html") }
       : item
@@ -98,8 +102,9 @@ export function renderShell(activePage) {
           <div class="topbar__right">
             ${(() => {
               if (session?.role === "student") return `<span class="shift-indicator shift-indicator--open" style="background:var(--primary);" title="حساب طالب — عرض فقط">${icons.shield} حساب طالب</span>`;
+              const shiftMode = getSettings().shiftMode || "hidden";
+              if (shiftMode === "hidden") return "";
               const shift = getCurrentShift();
-              const shiftMode = getSettings().shiftMode || "mandatory";
               if (shift) {
                 const modeTag = shiftMode === "no_custody" ? " (بدون عهدة)" : "";
                 return `<span class="shift-indicator shift-indicator--open" title="وردية مفتوحة${modeTag} — فتحها ${escapeHTML(shift.openedBy)}">${icons.wallet} وردية مفتوحة${modeTag}</span>`;
@@ -204,7 +209,8 @@ function bindShellEvents() {
   /* ── تقفيل إجباري للوردية ── */
   window.addEventListener("beforeunload", (e) => {
     const sys = getSystemSettings();
-    if (sys.strictShiftClosing && getCurrentShift()) {
+    const isHiddenShift = (getSettings().shiftMode || "hidden") === "hidden";
+    if (sys.strictShiftClosing && getCurrentShift() && !isHiddenShift) {
       e.preventDefault();
       e.returnValue = "⚠️ الوردية لسه مفتوحة! لو سيبت الصفحة هتتفقد البيانات. احرص على تقفيل الوردية الأول.";
       return e.returnValue;

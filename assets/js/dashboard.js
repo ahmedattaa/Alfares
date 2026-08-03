@@ -10,7 +10,7 @@ import { formatTimeAr } from "./schedule.js";
 import { getSessionsForDate } from "./session-overview.js";
 import { getHealthSummary, healthScoreHTML, healthBarHTML, healthStudentRowHTML } from "./health-score.js";
 import { getEscalationSummary, getLevelMeta } from "./escalation-engine.js";
-import { getGroups, getGrades, getStudents, getSkillMasteryAllForStudent, computeSkillEscalations } from "./storage.js";
+import { getGroups, getGrades, getStudents, getSkillMasteryAllForStudent, computeSkillEscalations, isStudentPortalEnabled } from "./storage.js";
 
 const content = await initPage("dashboard");
 if (content) render();
@@ -114,6 +114,8 @@ function renderEscalationCard(escalation, groups) {
 
 /* ── علاج الأخطاء — إتقان المهارات ── */
 function renderMasteryCard(groups) {
+  // بوابة الطالب مقفولة → الطالب مش بيحل → الكارت بالكامل مش منطقي
+  if (!isStudentPortalEnabled()) return "";
   const students = getStudents();
   const escalations = computeSkillEscalations();
   let treating = 0, cured = 0, escalatedCount = 0;

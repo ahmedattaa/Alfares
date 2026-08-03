@@ -10,6 +10,7 @@ import {
   saveSettings,
   getSystemSettings,
   resetAllData,
+  clearStudentData,
   getSession,
   getGrades,
   saveGrades,
@@ -394,10 +395,10 @@ function renderFinanceTab(box) {
           <div class="card__head"><div class="card__title">💰 وضع الصندوق (الوردية)</div></div>
           <form id="shiftModeForm">
             <div style="display:flex; flex-direction:column; gap:10px;">
-              <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${(settings.shiftMode || "mandatory") === "mandatory" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
-                <input type="radio" name="shiftMode" value="mandatory" ${(settings.shiftMode || "mandatory") === "mandatory" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
+              <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${settings.shiftMode === "mandatory" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
+                <input type="radio" name="shiftMode" value="mandatory" ${settings.shiftMode === "mandatory" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
                 <div>
-                  <div style="font-weight:700; font-size:14px;">🔒 وردية إجبارية (الافتراضى)</div>
+                  <div style="font-weight:700; font-size:14px;">🔒 وردية إجبارية</div>
                   <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس لازم يعدّ فلوس الصندوق بالفئات قبل ما يفتح الوردية. آمن 100% — كل جنيه ليه سجل. التدقيق الأعمى كامل عند التقليل.</div>
                   <span class="badge badge-success" style="margin-top:6px; font-size:10px;">⭐ الأعلى أماناً</span>
                 </div>
@@ -409,6 +410,15 @@ function renderFinanceTab(box) {
                   <div style="font-weight:700; font-size:14px;">🔓 وردية بدون عهدة</div>
                   <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">المدرس يفتح الوردية من غير ما يعدّ فلوس. كل الدفعات بتتسجل والتدقيق شغال — بس مفيش نقطة مرجعية للعهدة الافتتاحية. مناسب للسناتر اللي مش بتحتفظ بفلوس في الصندوق.</div>
                   <span class="badge badge-primary" style="margin-top:6px; font-size:10px;">✅ آمن + مرن</span>
+                </div>
+              </label>
+
+              <label style="display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; background:${(settings.shiftMode || "hidden") === "hidden" ? "var(--primary-bg, rgba(59,130,246,0.08))" : "var(--bg)"};">
+                <input type="radio" name="shiftMode" value="hidden" ${(settings.shiftMode || "hidden") === "hidden" ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--primary); margin-top:2px;">
+                <div>
+                  <div style="font-weight:700; font-size:14px;">🤫 وردية تلقائية (مخفية) (الافتراضي)</div>
+                  <div class="text-muted" style="font-size:12px; line-height:1.6; margin-top:4px;">مش هتشوف أي حاجة اسمها وردية أو صندوق — الوردية بتتفتح تلقائيًا مع فتح النظام وكل التحصيلات بتتسجل بصمت. بيتقفل بس لو في يوم تاني وبدون أي تدخل منك. كل التقارير (التحصيل اليومي، عجز/زيادة) لسه شغالة في الخلفية.</div>
+                  <span class="badge badge-primary" style="margin-top:6px; font-size:10px;">✨ شيك + الأمان محفوظ في الخلفية</span>
                 </div>
               </label>
 
@@ -481,9 +491,9 @@ function renderFinanceTab(box) {
   document.getElementById("shiftModeForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
-    const mode = data.shiftMode || "mandatory";
+    const mode = data.shiftMode || "hidden";
     saveSettings({ ...settings, shiftMode: mode });
-    const labels = { mandatory: "وردية إجبارية", no_custody: "وردية بدون عهدة", disabled: "تعطيل الوردية" };
+    const labels = { mandatory: "وردية إجبارية", no_custody: "وردية بدون عهدة", hidden: "وردية تلقائية (مخفية)", disabled: "تعطيل الوردية" };
     Sounds.save();
     toast(`تم حفظ وضع الصندوق: ${labels[mode]}`, "success");
   });
@@ -1858,6 +1868,15 @@ function renderDangerTab(box) {
       </p>
       <button class="btn btn-warning" id="backfillLedgerBtn">${icons.clipboard} تهيئة دفتر الأستاذ</button>
     </div>
+    <div class="card card-pad" style="border-color: var(--danger-light); margin-bottom:16px;">
+      <div class="card__head"><div class="card__title text-danger">مسح بيانات الطلاب</div></div>
+      <p class="text-muted" style="margin-bottom:14px; font-size:13.5px;">
+        بيمسح كل الطلاب والمجموعات والحضور والمدفوعات والامتحانات والملاحظات والتدريبات ودفتر الأستاذ
+        — وبيحافظ على إعدادات السنتر وحسابات الدخول والسنوات الدراسية والمواد وبنك الأسئلة والهيكل الأكاديمي.
+        البيانات التجريبية مش هتترجع تاني.
+      </p>
+      <button class="btn btn-danger" id="clearStudentsBtn">${icons.trash} مسح بيانات الطلاب (مشروع فاضي)</button>
+    </div>
     <div class="card card-pad" style="border-color: var(--danger-light);">
       <div class="card__head"><div class="card__title text-danger">منطقة خطرة</div></div>
       <p class="text-muted" style="margin-bottom:14px; font-size:13.5px;">
@@ -1877,6 +1896,19 @@ function renderDangerTab(box) {
     if (!ok) return;
     const count = backfillLedger();
     toast(`تم تهيئة ${count} قيد في دفتر الأستاذ ✓`, "success");
+  });
+
+  document.getElementById("clearStudentsBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "مسح بيانات الطلاب",
+      body: "سيتم حذف كل الطلاب والمجموعات والحضور والمدفوعات والامتحانات وملاحظات المتابعة والتدريبات نهائيًا. إعدادات السنتر والسنوات الدراسية والمواد وبنك الأسئلة وحسابات الدخول هتفضل. هل أنت متأكد؟",
+      confirmText: "نعم، امسح الكل",
+      tone: "danger",
+    });
+    if (!ok) return;
+    await clearStudentData();
+    toast("تم مسح بيانات الطلاب — المشروع بقى فاضي ✓", "success");
+    setTimeout(() => (window.location.href = appPath("dashboard.html")), 1200);
   });
 
   document.getElementById("resetBtn").addEventListener("click", async () => {

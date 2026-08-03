@@ -43,7 +43,11 @@ const KEYS = {
   questions: "center_questions",
   examAnswers: "center_exam_answers",
   users: "center_users",
+  parentAccounts: "center_parent_accounts",
+  studentAccounts: "center_student_accounts",
+  expenses: "center_expenses",
   seeded: "center_seeded_v12",
+  freshStart: "center_fresh_start",
 };
 
 const MOCK_BASE = new URL("../mock/", import.meta.url).href;
@@ -155,7 +159,13 @@ export async function seedIfNeeded() {
   seedTestData();
 
   // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
-  ensureDemoParentPhone();
+  await ensureDemoParentPhone();
+
+  // ترحيل بيانات دخول أولياء الأمور القديمة (مستوى الطالب) لحسابات لكل رقم تليفون
+  migrateParentAccounts();
+
+  // حساب دخول تجريبي للطالب (الكود / 1234)
+  await ensureDemoStudentAuth();
 
   // تأكد من وجود مادة التدريس (مادة واحدة لكل السنتر) حتى للبيانات القديمة
   ensureTeachingSubject();
@@ -214,7 +224,7 @@ export async function seedIfNeeded() {
   ensureAdminUser();
 
   // تأكد من وجود طالب برقم ولي أمر معروف للاختبار
-  ensureDemoParentPhone();
+  await ensureDemoParentPhone();
 
   // بيانات تجريبية لبوابة العائلة (متابعة + إنجاز) للطالب التجريبي
   ensureDemoFamilyData();
@@ -270,17 +280,47 @@ function ensureAdminUser() {
   }
 }
 
-function ensureDemoParentPhone() {
+async function ensureDemoParentPhone() {
   const students = getStudents();
   if (!students.length) return;
-  if (students.some((s) => s.parentPhone && s.parentPhone.replace(/[\s\-\(\)]/g, "") === "01000000000")) return;
-  students[0].parentPhone = "01000000000";
-  saveStudents(students);
-  console.log("✅ Demo parentPhone set on", students[0].name);
+  let demo = students.find((s) => normalizeParentPhone(s.parentPhone) === "01000000000");
+  if (!demo) {
+    if (!students[0].parentPhone) {
+      demo = students[0];
+      demo.parentPhone = "01000000000";
+      saveStudents(students);
+      console.log("✅ Demo parentPhone set on", demo.name);
+    } else {
+      return;
+    }
+  }
+  const account = ensureParentAccount("01000000000");
+  if (account && !account.parentPassHash && !account.parentActivationHash) {
+    account.parentActivationHash = await hashSecret("123456", account.id);
+    saveParentAccounts(getParentAccounts());
+    console.log("✅ Demo parent activation code (123456) set on", demo.name);
+  }
+}
+
+/** حساب دخول تجريبي للطالب — اليوزر نيم = كود الطالب، الباسورد 1234 */
+async function ensureDemoStudentAuth() {
+  const students = getStudents();
+  if (!students.length) return;
+  const demo = students.find((s) => String(s.code).trim() === "101") || students[0];
+  const account = ensureStudentAccount(demo.id);
+  if (!account.username) account.username = String(demo.code || "").trim();
+  if (!account.passwordHash) {
+    account.passwordHash = await hashSecret("1234", demo.id);
+    console.log("✅ Demo student auth (" + account.username + " / 1234) set on", demo.name);
+  }
+  saveStudentAccounts(getStudentAccounts());
 }
 
 /** بيانات تجريبية — كل الأيام × 3 سنوات دراسية × 52+ طالب × كل الحالات */
 function seedTestData() {
+  // بعد "مسح بيانات الطلاب" لا نعيد زرع البيانات التجريبية إطلاقًا
+  if (readJSON(KEYS.freshStart, false) === true) return;
+
   const existingGroups = readJSON(KEYS.groups, []);
   // لو البيانات اتعملت قبل كده (فى أى يوم) نتخطى
   if (existingGroups.some((g) => g.days?.length && g.name?.includes("تست"))) return;
@@ -428,7 +468,54 @@ export const saveSessionLogs = (list) => writeJSON(KEYS.sessionLogs, list);
 export const getExtraCharges = () => readJSON(KEYS.extraCharges, []);
 export const saveExtraCharges = (list) => writeJSON(KEYS.extraCharges, list);
 
-/**
+/* ---------------- Expenses (المصاريف التشغيلية) ---------------- */
+/** فئات المصاريف الثابتة — للتوزيع في التقارير */
+export const EXPENSE_CATEGORIES = [
+  { id: "rent", label: "إيجار المكان", icon: "🏠" },
+  { id: "utilities", label: "فواتير (كهرباء / ماء / نت)", icon: "💡" },
+  { id: "staff", label: "مرتبات / مساعدين", icon: "👥" },
+  { id: "printing", label: "طباعة / مستلزمات تعليمية", icon: "📄" },
+  { id: "marketing", label: "تسويق / دعاية", icon: "📣" },
+  { id: "maintenance", label: "صيانة / أجهزة", icon: "🛠️" },
+  { id: "other", label: "أخرى", icon: "📦" },
+];
+
+export const getExpenses = () => readJSON(KEYS.expenses, []);
+export const saveExpenses = (list) => writeJSON(KEYS.expenses, list);
+
+/** إضافة مصروف جديد — { date, category, amount, note } */
+export function addExpense({ date, category, amount, note = "" }) {
+  const list = getExpenses();
+  const entry = {
+    id: generateId("EXP"),
+    date: date || todayISO(),
+    category: EXPENSE_CATEGORIES.some((c) => c.id === category) ? category : "other",
+    amount: Math.max(0, Number(amount) || 0),
+    note: String(note || "").trim(),
+    createdAt: Date.now(),
+  };
+  list.push(entry);
+  saveExpenses(list);
+  return entry;
+}
+
+/** تعديل مصروف — يعمل تحديث جزئي على الحقول المعطاة */
+export function updateExpense(id, patch = {}) {
+  const list = getExpenses();
+  const entry = list.find((x) => x.id === id);
+  if (!entry) return null;
+  if (patch.date) entry.date = patch.date;
+  if (patch.category) entry.category = EXPENSE_CATEGORIES.some((c) => c.id === patch.category) ? patch.category : entry.category;
+  if (patch.amount !== undefined) entry.amount = Math.max(0, Number(patch.amount) || 0);
+  if (patch.note !== undefined) entry.note = String(patch.note || "").trim();
+  saveExpenses(list);
+  return entry;
+}
+
+/** حذف مصروف بالمعرف */
+export function deleteExpense(id) {
+  saveExpenses(getExpenses().filter((x) => x.id !== id));
+}/**
  * تطبيق الاستحقاقات المالية المعلقة على طالب جديد (أو طالب انتقل لمجموعة جديدة).
  * بتجيب كل الـ batches اللى ليها طلاب فى نفس المجموعة وبنفس الاسم والمبلغ،
  * وبتشوف لو الطالب ده ناقصه سجل ليها — لو ناقص بتسجله تلقائيًا.
@@ -710,28 +797,124 @@ export function logout() {
   trackWrite(idbDelete(KEYS.session).catch(() => {}));
 }
 
+/* ---------------- Parent Auth (حساب لكل رقم تليفون) ---------------- */
+export const MAX_PARENT_FAILS = 5;
+export const PARENT_LOCK_MS = 10 * 60 * 1000;
+
+/** تجزئة احتياطية (بلا crypto.subtle) لمنع تخزين الأكواد/كلمات المرور كنص صريح */
+function fallbackHash(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+
+async function sha256Hex(text) {
+  const data = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** تجزئة السر مع salt خاص بالحساب — SHA-256 إن توفر (https/localhost) وإلا تجزئة احتياطية */
+export async function hashSecret(secret, salt) {
+  const text = `${salt}::${String(secret || "").trim()}`;
+  try {
+    if (typeof crypto !== "undefined" && crypto.subtle) {
+      return "sha256:" + await sha256Hex(text);
+    }
+  } catch (e) { /* نكمل بالتجزئة الاحتياطية */ }
+  return "cyrb53:" + fallbackHash(text);
+}
+
+const normalizeParentPhone = (p) => String(p || "").replace(/[\s\-\(\)]/g, "");
+
+export const getParentAccounts = () => readJSON(KEYS.parentAccounts, []);
+export const saveParentAccounts = (list) => writeJSON(KEYS.parentAccounts, list);
+
+/** حساب ولي الأمر برقم التليفون — حساب واحد لكل رقم مهما عدد الأبناء */
+export function findParentAccount(phone) {
+  const norm = normalizeParentPhone(phone);
+  if (!norm) return null;
+  return getParentAccounts().find((a) => a.phone === norm) || null;
+}
+
+/** يهيّئ حساب جديد لرقم معين لو مش موجود */
+function ensureParentAccount(phone) {
+  const norm = normalizeParentPhone(phone);
+  if (!norm) return null;
+  const accounts = getParentAccounts();
+  let account = accounts.find((a) => a.phone === norm);
+  if (!account) {
+    account = { id: generateId("PAR"), phone: norm, createdAt: Date.now() };
+    accounts.push(account);
+    saveParentAccounts(accounts);
+  }
+  return account;
+}
+
 /**
- * Parent login by phone number.
- * Looks up students whose `parentPhone` matches.
- * Returns { session, students: [...] } or null.
- * Creates a restricted session with role="parent" + linked student IDs.
+ * Parent login by phone number + secret (كلمة المرور أو كود التفعيل لأول مرة).
+ * الكود/كلمة المرور على رقم التليفون — يصلح لكل الأبناء المسجلين بنفس الرقم.
+ * يمنع الدخول برقم الهاتف فقط — لازم رقم + سر صحيح.
+ * Returns:
+ *   { ok:true, session, students, needsPassword }
+ *   { ok:false, reason:"not-found" }
+ *   { ok:false, reason:"no-auth" }              // السنتر ماضبطش كود/كلمة مرور
+ *   { ok:false, reason:"locked", lockUntil }
+ *   { ok:false, reason:"bad-secret", fails, locked, lockUntil }
  */
-export function parentLogin(phone) {
-  const normalized = phone.replace(/[\s\-\(\)]/g, "");
+export async function parentLogin(phone, secret) {
+  const normalized = normalizeParentPhone(phone);
+  if (!normalized) return { ok: false, reason: "not-found" };
+
   const students = getStudents().filter(
-    (s) => s.parentPhone && s.parentPhone.replace(/[\s\-\(\)]/g, "") === normalized && s.status !== "graduated"
+    (s) => s.parentPhone && normalizeParentPhone(s.parentPhone) === normalized && s.status !== "graduated"
   );
 
-  // Fallback: search by student phone too
-  const fallback = !students.length ? getStudents().filter(
-    (s) => s.phone && s.phone.replace(/[\s\-\(\)]/g, "") === normalized && s.status !== "graduated"
-  ) : [];
+  const account = findParentAccount(normalized);
 
-  const matched = students.length ? students : fallback;
-  if (!matched.length) return null;
+  if (!account) {
+    if (!students.length) return { ok: false, reason: "not-found" };
+    return { ok: false, reason: "no-auth" };
+  }
+
+  if (account.parentLockUntil && Date.now() < account.parentLockUntil) {
+    return { ok: false, reason: "locked", lockUntil: account.parentLockUntil };
+  }
+
+  const validHash = account.parentPassHash || account.parentActivationHash;
+  if (!validHash) return { ok: false, reason: "no-auth" };
+
+  const h = await hashSecret(secret, account.id);
+  if (h !== validHash) {
+    account.parentFails = (account.parentFails || 0) + 1;
+    let locked = false;
+    if (account.parentFails >= MAX_PARENT_FAILS) {
+      account.parentLockUntil = Date.now() + PARENT_LOCK_MS;
+      account.parentFails = 0;
+      locked = true;
+    }
+    saveParentAccounts(getParentAccounts());
+    return {
+      ok: false,
+      reason: "bad-secret",
+      fails: locked ? 0 : account.parentFails,
+      locked,
+      lockUntil: account.parentLockUntil || 0,
+    };
+  }
+
+  account.parentFails = 0;
+  account.parentLockUntil = 0;
+  saveParentAccounts(getParentAccounts());
 
   const groups = readJSON(KEYS.groups, []);
-  const enriched = matched.map((s) => ({
+  const enriched = students.map((s) => ({
     id: s.id,
     name: s.name,
     code: s.code,
@@ -749,26 +932,181 @@ export function parentLogin(phone) {
     loggedInAt: Date.now(),
   };
   writeJSON(KEYS.session, session);
-  return { session, students: enriched };
+  return { ok: true, session, students: enriched, needsPassword: !account.parentPassHash };
+}
+
+/** ولي الأمر يختار كلمة مروره بعد أول دخول ناجح بكود التفعيل */
+export async function setParentPassword(phone, password) {
+  const p = String(password || "").trim();
+  if (p.length < 4 || p.length > 8) return false;
+  const account = ensureParentAccount(phone);
+  if (!account) return false;
+  account.parentPassHash = await hashSecret(p, account.id);
+  account.parentActivationHash = null;
+  account.parentFails = 0;
+  account.parentLockUntil = 0;
+  saveParentAccounts(getParentAccounts());
+  return true;
+}
+
+/** السنتر يضع (أو يصفّر) كود التفعيل — أول دخول فقط، وبعدها ولي الأمر يختار كلمة مروره */
+export async function setParentActivationCode(phone, code) {
+  const c = String(code || "").trim();
+  if (!c) return false;
+  const account = ensureParentAccount(phone);
+  if (!account) return false;
+  account.parentActivationHash = await hashSecret(c, account.id);
+  account.parentPassHash = null;
+  account.parentFails = 0;
+  account.parentLockUntil = 0;
+  saveParentAccounts(getParentAccounts());
+  return true;
+}
+
+/** ترحيل بيانات الدخول القديمة (على مستوى الطالب) إلى حسابات على مستوى رقم التليفون */
+function migrateParentAccounts() {
+  const students = getStudents();
+  const accounts = getParentAccounts();
+  let changed = false;
+
+  for (const s of students) {
+    const norm = normalizeParentPhone(s.parentPhone);
+    if (!norm) continue;
+    const hasLegacy = s.parentPassHash || s.parentActivationHash || s.parentFails || s.parentLockUntil;
+    if (hasLegacy) {
+      let account = accounts.find((a) => a.phone === norm);
+      if (!account) {
+        account = { id: generateId("PAR"), phone: norm, createdAt: Date.now() };
+        accounts.push(account);
+      }
+      if (!account.parentPassHash && !account.parentActivationHash) {
+        if (s.parentActivationHash) account.parentActivationHash = s.parentActivationHash;
+        if (s.parentPassHash) account.parentPassHash = s.parentPassHash;
+        if (s.parentFails) account.parentFails = s.parentFails;
+        if (s.parentLockUntil) account.parentLockUntil = s.parentLockUntil;
+      }
+    }
+    if ("parentPassHash" in s || "parentActivationHash" in s || "parentFails" in s || "parentLockUntil" in s) {
+      delete s.parentPassHash;
+      delete s.parentActivationHash;
+      delete s.parentFails;
+      delete s.parentLockUntil;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveParentAccounts(accounts);
+    saveStudents(students);
+    console.log("✅ parent accounts migrated");
+  }
+}
+
+/* ---------------- Student Auth (حساب لكل طالب: يوزر نيم + باسورد) ---------------- */
+export const MAX_STUDENT_FAILS = 5;
+export const STUDENT_LOCK_MS = 10 * 60 * 1000;
+
+export const getStudentAccounts = () => readJSON(KEYS.studentAccounts, []);
+export const saveStudentAccounts = (list) => writeJSON(KEYS.studentAccounts, list);
+
+/** حساب الطالب حسب رقم الطالب الداخلي */
+export function findStudentAccount(studentId) {
+  return getStudentAccounts().find((a) => a.studentId === studentId) || null;
+}
+
+/** البحث عن حساب الطالب باسم المستخدم */
+export function findStudentAccountByUsername(username) {
+  const norm = String(username || "").trim();
+  if (!norm) return null;
+  return getStudentAccounts().find((a) => a.username === norm) || null;
+}
+
+/** يهيّئ حساب طالب لو مش موجود (اليوزر نيم الافتراضي = كود الطالب) */
+function ensureStudentAccount(studentId) {
+  const accounts = getStudentAccounts();
+  let account = accounts.find((a) => a.studentId === studentId);
+  if (!account) {
+    account = { studentId, username: "", passwordHash: null, fails: 0, lockUntil: 0, createdAt: Date.now() };
+    accounts.push(account);
+    saveStudentAccounts(accounts);
+  }
+  return account;
+}
+
+/** السنتر يضع (أو يصفّر) باسورد الطالب — اليوزر نيم يفضل الكود ما لم يتغير */
+export async function setStudentPassword(studentId, password) {
+  const p = String(password || "").trim();
+  if (!p) return false;
+  const account = ensureStudentAccount(studentId);
+  if (!account.username) {
+    const student = getStudents().find((s) => s.id === studentId);
+    account.username = student ? String(student.code || "").trim() : "";
+  }
+  account.passwordHash = await hashSecret(p, studentId);
+  account.fails = 0;
+  account.lockUntil = 0;
+  saveStudentAccounts(getStudentAccounts());
+  return true;
+}
+
+/** السنتر/ولي الأمر يغيّر اسم مستخدم الطالب */
+export function setStudentUsername(studentId, username) {
+  const u = String(username || "").trim();
+  if (!u) return { ok: false, reason: "empty" };
+  const taken = getStudentAccounts().find((a) => a.username === u && a.studentId !== studentId);
+  if (taken) return { ok: false, reason: "taken" };
+  const account = ensureStudentAccount(studentId);
+  account.username = u;
+  saveStudentAccounts(getStudentAccounts());
+  return { ok: true };
 }
 
 /**
- * Student login by student code.
- * Looks up an active student whose `code` matches.
- * Returns { session, students: [...] } or null.
- * Creates a restricted view-only session with role="student".
+ * Student login by username + password.
+ * اليوزر نيم الافتراضي = كود الطالب، والباسورد بيضعه السنتر من صفحة الإدارة.
+ * Returns:
+ *   { ok:true, session, students }
+ *   { ok:false, reason:"not-found" }
+ *   { ok:false, reason:"no-auth" }
+ *   { ok:false, reason:"locked", lockUntil }
+ *   { ok:false, reason:"bad-secret", fails, locked, lockUntil }
  */
-export function studentLogin(code) {
-  const normalized = String(code || "").trim();
-  if (!normalized) return null;
+export async function studentLogin(username, password) {
+  const u = String(username || "").trim();
+  const p = String(password || "");
+  if (!u || !p) return { ok: false, reason: "not-found" };
 
-  const student = getStudents().find(
-    (s) => s.status !== "graduated" && String(s.code).trim() === normalized
-  );
-  if (!student) return null;
+  const account = findStudentAccountByUsername(u);
+  if (!account) return { ok: false, reason: "not-found" };
+
+  const student = getStudents().find((s) => s.id === account.studentId && s.status !== "graduated");
+  if (!student) return { ok: false, reason: "not-found" };
+
+  if (account.lockUntil && Date.now() < account.lockUntil) {
+    return { ok: false, reason: "locked", lockUntil: account.lockUntil };
+  }
+
+  if (!account.passwordHash) return { ok: false, reason: "no-auth" };
+
+  const h = await hashSecret(p, account.studentId);
+  if (h !== account.passwordHash) {
+    account.fails = (account.fails || 0) + 1;
+    let locked = false;
+    if (account.fails >= MAX_STUDENT_FAILS) {
+      account.lockUntil = Date.now() + STUDENT_LOCK_MS;
+      account.fails = 0;
+      locked = true;
+    }
+    saveStudentAccounts(getStudentAccounts());
+    return { ok: false, reason: "bad-secret", fails: locked ? 0 : account.fails, locked, lockUntil: account.lockUntil || 0 };
+  }
+
+  account.fails = 0;
+  account.lockUntil = 0;
+  saveStudentAccounts(getStudentAccounts());
 
   const session = {
-    username: "student_" + student.code,
+    username: account.username,
     name: student.name,
     role: "student",
     permissions: ["visit"],
@@ -781,14 +1119,47 @@ export function studentLogin(code) {
 
   const groups = readJSON(KEYS.groups, []);
   return {
+    ok: true,
     session,
     students: [{
       id: student.id,
       name: student.name,
       code: student.code,
+      username: account.username,
       groupName: (groups.find((g) => g.id === student.groupId) || {}).name || "",
     }],
   };
+}
+
+/** تغيير كلمة مرور الطالب من داخل البوابة بعد تأكيد الباسورد الحالي */
+export async function changeStudentPassword(studentId, currentPassword, newPassword) {
+  const p = String(newPassword || "").trim();
+  if (p.length < 4 || p.length > 8) return { ok: false, reason: "weak" };
+  const account = findStudentAccount(studentId);
+  if (!account?.passwordHash) return { ok: false, reason: "no-auth" };
+  const cur = await hashSecret(String(currentPassword || ""), studentId);
+  if (cur !== account.passwordHash) return { ok: false, reason: "bad-current" };
+  account.passwordHash = await hashSecret(p, studentId);
+  account.fails = 0;
+  account.lockUntil = 0;
+  saveStudentAccounts(getStudentAccounts());
+  return { ok: true };
+}
+
+/** تغيير يوزر نيم الطالب من داخل البوابة بعد تأكيد الباسورد */
+export async function changeStudentUsername(studentId, currentPassword, newUsername) {
+  const u = String(newUsername || "").trim();
+  if (!u) return { ok: false, reason: "empty" };
+  if (u.length < 3) return { ok: false, reason: "short" };
+  const account = findStudentAccount(studentId);
+  if (!account?.passwordHash) return { ok: false, reason: "no-auth" };
+  const cur = await hashSecret(String(currentPassword || ""), studentId);
+  if (cur !== account.passwordHash) return { ok: false, reason: "bad-current" };
+  const taken = getStudentAccounts().find((a) => a.username === u && a.studentId !== studentId);
+  if (taken) return { ok: false, reason: "taken" };
+  account.username = u;
+  saveStudentAccounts(getStudentAccounts());
+  return { ok: true };
 }
 
 export function isLoggedIn() {
@@ -1049,6 +1420,64 @@ export async function resetAllData() {
   }
 }
 
+/** مسح بيانات الطلاب والتشغيلية — المشروع يظهر فاضي مع الحفاظ على الأساسيات:
+ *  الإعدادات (المستخدمون/حسابات الدخول، اسم السنتر، المادة، إعدادات النظام)،
+ *  السنوات الدراسية، حالات الطالب، الهيكل الأكاديمي (سنوات/أترام/شهور)،
+ *  المواد والدروس وبنك الأسئلة. ويمنع إعادة زرع البيانات التجريبية بعد المسح. */
+export async function clearStudentData() {
+  const keep = {
+    [KEYS.settings]: readJSON(KEYS.settings, {}),
+    [KEYS.grades]: readJSON(KEYS.grades, []),
+    [KEYS.studentStatuses]: readJSON(KEYS.studentStatuses, []),
+    [KEYS.academicPeriods]: readJSON(KEYS.academicPeriods, []),
+    [KEYS.academicYears]: readJSON(KEYS.academicYears, []),
+    [KEYS.terms]: readJSON(KEYS.terms, []),
+    [KEYS.academicMonths]: readJSON(KEYS.academicMonths, []),
+    [KEYS.subjects]: readJSON(KEYS.subjects, []),
+    [KEYS.topics]: readJSON(KEYS.topics, []),
+    [KEYS.questions]: readJSON(KEYS.questions, []),
+    [KEYS.users]: readJSON(KEYS.users, []),
+    [KEYS.session]: readJSON(KEYS.session, null),
+  };
+
+  const wipeKeys = [
+    KEYS.students,
+    KEYS.groups,
+    KEYS.attendance,
+    KEYS.payments,
+    KEYS.exams,
+    KEYS.examAnswers,
+    KEYS.extraCharges,
+    KEYS.walletTransactions,
+    KEYS.ledger,
+    KEYS.shifts,
+    KEYS.sessionLogs,
+    KEYS.followupLogs,
+    KEYS.skillMastery,
+    KEYS.achievements,
+    KEYS.escalationLogs,
+    KEYS.advancePermissions,
+    KEYS.termSnapshots,
+    KEYS.rolloverLogs,
+    KEYS.expenses,
+    KEYS.parentAccounts,
+    KEYS.studentAccounts,
+  ];
+
+  for (const k of wipeKeys) {
+    cache[k] = [];
+    trackWrite(idbDelete(k).catch(() => {}));
+  }
+
+  // علامة تمنع زرع البيانات التجريبية في الزيارات القادمة + تثبيت رقم النسخة حتى لا يعيد التحميل من mock
+  cache[KEYS.freshStart] = true;
+  trackWrite(idbSet(KEYS.freshStart, true).catch(() => {}));
+  cache[KEYS.seeded] = SEED_VERSION;
+  trackWrite(idbSet(KEYS.seeded, SEED_VERSION).catch(() => {}));
+
+  Object.entries(keep).forEach(([k, v]) => writeJSON(k, v));
+}
+
 /* =========================================================
    SHIFT RECONCILIATION — تقفيل الوردية الأعمى
    ========================================================= */
@@ -1114,6 +1543,24 @@ export function closeShift(closingCash, closedBy) {
   shift.expectedCash = expected;
   shift.variance = actual - expected;
   shift.status = "closed";
+  saveShifts(shifts);
+  return shift;
+}
+
+/** إغلاق الوردية المفتوحة تلقائيًا (تسوية = التحصيلات، عجز صفر) — يستخدم في الوضع التلقائي المخفي */
+export function autoCloseShift(closedBy) {
+  const shifts = getShifts();
+  const shift = shifts.find((s) => s.status === "open");
+  if (!shift) return null;
+  const expected = computeExpectedCash(shift);
+  shift.closedBy = closedBy || "النظام";
+  shift.closedAt = Date.now();
+  shift.closedDate = todayISO();
+  shift.closingCash = expected;
+  shift.expectedCash = expected;
+  shift.variance = 0;
+  shift.status = "closed";
+  shift.autoClosed = true;
   saveShifts(shifts);
   return shift;
 }

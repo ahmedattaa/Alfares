@@ -4,8 +4,8 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession, isFeatureEnabled, getSkillMasteryAllForStudent } from "./storage.js";
-import { escapeHTML, initials, formatMoney, formatDateAr, todayISO, generateId } from "./helpers.js";
+import { getStudents, saveStudents, getAttendance, getPayments, getExams, getGrades, getGroups, getStudentStatuses, getExtraCharges, getLedgerEntries, getWalletTransactions, getAchievementsForStudent, getAdvancePermissionsForStudent, addAdvancePermission, deleteAdvancePermission, getSession, isFeatureEnabled, getSkillMasteryAllForStudent, findParentAccount, setParentActivationCode, getSettings, isStudentPortalEnabled, isParentPortalEnabled, findStudentAccount, setStudentPassword, setStudentUsername } from "./storage.js";
+import { escapeHTML, initials, formatMoney, formatDateAr, todayISO, generateId, compressImage, studentAvatar } from "./helpers.js";
 import { emptyStateHTML, toast, whatsappPreviewDialog, formModal, confirmDialog } from "./ui.js";
 import { gradeName, groupName, findGroup, statusesByCategory } from "./lookups.js";
 import { openWhatsApp } from "./whatsapp.js";
@@ -71,7 +71,11 @@ function render() {
     <div class="card card-pad" style="margin-bottom:22px;">
       <div class="flex-between" style="flex-wrap:wrap; gap:16px;">
         <div class="flex-gap">
-          <div class="avatar-sm" style="width:58px;height:58px;font-size:18px;">${initials(student.name)}</div>
+          <div class="std-photo-wrap">
+            ${studentAvatar(student, 64)}
+            <button class="std-photo-btn" id="photoBtn" title="تغيير صورة الطالب">${icons.edit}</button>
+            <input type="file" id="photoInput" accept="image/*" hidden>
+          </div>
           <div>
             <div style="font-weight:800; font-size:19px;">${escapeHTML(student.name)}</div>
             <div class="text-muted" style="font-size:13.5px; margin-top:3px;">
@@ -103,6 +107,8 @@ function render() {
         <div><div class="text-muted" style="font-size:12.5px;">وظيفة الأب</div><div style="font-weight:700; margin-top:3px;">${escapeHTML(student.fatherJob || "-")}</div></div>
         <div><div class="text-muted" style="font-size:12.5px;">اسم المدرسة</div><div style="font-weight:700; margin-top:3px;">${escapeHTML(student.school || "-")}</div></div>
       </div>
+      ${isParentPortalEnabled() ? renderParentAuthCard(student) : ""}
+      ${isStudentPortalEnabled() ? renderStudentAuthCard(student) : ""}
       ${group ? `<div class="field__hint" style="margin-top:14px;">سعر الحصة فى مجموعته: <strong>${formatMoney(group.sessionPrice)}</strong></div>` : ""}
     </div>
 
@@ -237,6 +243,30 @@ function render() {
 
   document.getElementById("monthlyReportBtn").addEventListener("click", () => sendMonthlyReport(student, attendance, exams, extraCharges));
   document.getElementById("contactParentBtn").addEventListener("click", () => contactParent(student));
+  document.getElementById("parentAuthBtn")?.addEventListener("click", () => openParentAuthModal(student));
+  document.getElementById("studentAuthBtn")?.addEventListener("click", () => openStudentAuthModal(student));
+
+  const photoBtn = document.getElementById("photoBtn");
+  const photoInput = document.getElementById("photoInput");
+  if (photoBtn) photoBtn.addEventListener("click", () => photoInput?.click());
+  if (photoInput) {
+    photoInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const dataUrl = await compressImage(file);
+        const students = getStudents();
+        const st = students.find((s) => s.id === id);
+        if (!st) { toast("تعذر تحديث الصورة", "danger"); return; }
+        st.photo = dataUrl;
+        saveStudents(students);
+        toast("تم تحديث صورة الطالب ✓", "success");
+        render();
+      } catch (err) {
+        toast("تعذر قراءة الصورة — جرّب صورة أصغر", "danger");
+      }
+    });
+  }
   if (canPerformAction(getSession(), "students", "exceptional_action")) {
     document.getElementById("actionBtn")?.addEventListener("click", () => openActionModal(student));
   }
@@ -269,6 +299,8 @@ function statCard(tone, icon, value, label) {
 
 /* ── علاج الأخطاء — مهارات الطالب ── */
 function renderMasteryCard(studentId) {
+  // بوابة الطالب مقفولة → الطالب مش بيحل → الكارت بالكامل مش منطقي
+  if (!isStudentPortalEnabled()) return "";
   const nb = buildErrorNotebook(studentId);
   const st = notebookStats(nb);
   const recs = getSkillMasteryAllForStudent(studentId)
@@ -326,6 +358,227 @@ function simpleTable(headers, rows) {
       </table>
     </div>
   `;
+}
+
+/* ── بوابة ولي الأمر — كود التفعيل / تصفير ── */
+function renderParentAuthCard(student) {
+  if (!student.parentPhone) {
+    return `
+      <div style="margin-top:16px; padding:14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span style="font-size:18px;">🔑</span>
+        <div style="flex:1; min-width:180px;">
+          <div style="font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:8px;">بوابة ولي الأمر <span class="badge badge-neutral">بدون رقم</span></div>
+          <div style="font-size:12.5px; color:var(--muted); margin-top:3px;">مفيش رقم ولي أمر مسجل — عدّل بيانات الطالب لتفعيل البوابة.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const account = findParentAccount(student.parentPhone);
+  let statusBadge, statusText, btnLabel;
+  if (account?.parentPassHash) {
+    statusBadge = `<span class="badge badge-success"><span class="badge-dot"></span>كلمة مرور مفعّلة</span>`;
+    statusText = "ولى الأمر اختار كلمة مروره — بيدخل برقم الهاتف + كلمته مباشرة. التصفير يرجع البوابة لأول مرة (كود تفعيل جديد).";
+    btnLabel = "تصفير وإعادة كود التفعيل";
+  } else if (account?.parentActivationHash) {
+    statusBadge = `<span class="badge badge-warning"><span class="badge-dot"></span>كود تفعيل مفعّل</span>`;
+    statusText = "أول دخول: رقم الهاتف + الكود → يختار ولي الأمر كلمة مروره. الكود على الرقم ويصلح لكل الأبناء المسجلين عليه.";
+    btnLabel = "تجديد الكود";
+  } else {
+    statusBadge = `<span class="badge badge-neutral"><span class="badge-dot"></span>غير مفعّل</span>`;
+    statusText = "ولى الأمر مش هيقدر يدخل البوابة لحد ما تولّد كود تفعيل وتوصله.";
+    btnLabel = "توليد كود الدخول";
+  }
+
+  return `
+    <div style="margin-top:16px; padding:14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <span style="font-size:18px;">🔑</span>
+      <div style="flex:1; min-width:180px;">
+        <div style="font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">بوابة ولي الأمر ${statusBadge}</div>
+        <div style="font-size:12.5px; color:var(--muted); margin-top:3px;">${statusText}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" id="parentAuthBtn">${icons.shield} ${btnLabel}</button>
+    </div>
+  `;
+}
+
+async function openParentAuthModal(student) {
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const centerName = getSettings().centerName || "السنتر";
+  const whatsappMsg = `أهلاً ولي أمر ${student.name} 👋\n\nتفعيل بوابة المتابعة على ${centerName}:\n\n• رقم الهاتف: ${student.parentPhone}\n• كود الدخول المبدئي: ${code}\n\nأول مرة بيدخل بالكود ده وبعدها يختار كلمة مروره.\n\n${centerName}`;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal__head"><div class="modal__title">${icons.shield} كود دخول ولي الأمر — ${escapeHTML(student.name)}</div></div>
+      <div class="modal__body">
+        <p style="font-size:13px; color:var(--muted); line-height:1.7;">الكود على رقم التليفون ويصلح لكل الأبناء المسجلين عليه. أول دخول بالكود ده، وبعدها يختار ولي الأمر كلمة مروره.</p>
+        <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin:16px 0; flex-wrap:wrap;">
+          <code style="font-size:30px; font-weight:800; letter-spacing:8px; direction:ltr; background:var(--surface); padding:12px 20px; border-radius:var(--r-md); border:1px dashed var(--primary);">${code}</code>
+          <button type="button" class="btn btn-outline btn-sm" id="copyParentCodeBtn" style="flex-shrink:0;">📋 نسخ</button>
+        </div>
+      </div>
+      <div class="modal__actions" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline" id="parentCodeCancel">إلغاء</button>
+        <button type="button" class="btn btn-success" id="parentCodeWhatsappBtn">${icons.whatsapp} إرسال واتساب</button>
+        <button type="button" class="btn btn-primary" id="parentCodeConfirm">${icons.check} تم — حفظ الكود</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("#parentCodeCancel").addEventListener("click", close);
+
+  overlay.querySelector("#copyParentCodeBtn").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(code); toast("تم نسخ الكود ✓", "success"); }
+    catch (e) { toast("تعذر النسخ — انسخ الكود يدويًا", "warning"); }
+  });
+
+  // حفظ الكود (hash فقط) — لازم يتحفظ قبل ما الكود يبقي صالح للدخول
+  const saveCode = async (btn) => {
+    if (btn) btn.disabled = true;
+    const ok = await setParentActivationCode(student.parentPhone, code);
+    if (!ok) {
+      if (btn) btn.disabled = false;
+      toast("تعذر حفظ الكود — تأكد من وجود رقم ولي أمر", "danger");
+      return false;
+    }
+    return true;
+  };
+
+  overlay.querySelector("#parentCodeWhatsappBtn").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const ok = await saveCode(e.currentTarget);
+    if (!ok) return;
+    close();
+    toast("تم حفظ كود الدخول وإرسال واتساب — أول دخول بالكود ثم يختار كلمة المرور", "success");
+    openWhatsApp(student.parentPhone, whatsappMsg);
+  });
+
+  overlay.querySelector("#parentCodeConfirm").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const ok = await saveCode(e.currentTarget);
+    if (!ok) return;
+    close();
+    toast("تم حفظ كود الدخول — أول دخول بالكود ثم يختار كلمة المرور", "success");
+    render();
+  });
+}
+
+/* ── بوابة الطالب — يوزر نيم + باسورد ── */
+function renderStudentAuthCard(student) {
+  const account = findStudentAccount(student.id);
+  const username = account?.username || String(student.code || "").trim() || "-";
+  const hasPass = !!account?.passwordHash;
+
+  const statusBadge = hasPass
+    ? `<span class="badge badge-success"><span class="badge-dot"></span>باسورد مفعّل</span>`
+    : `<span class="badge badge-neutral"><span class="badge-dot"></span>غير مفعّل</span>`;
+
+  const statusText = hasPass
+    ? `اليوزر نيم: <strong dir="ltr">${escapeHTML(username)}</strong> — الطالب بيدخل بيه وباسوره مباشرة من بوابة الطالب.`
+    : `الطالب مش هيقدر يدخل بوابة الطالب لحد ما تضع كلمة مرور له. اليوزر نيم الافتراضي = كود الطالب.`;
+
+  return `
+    <div style="margin-top:16px; padding:14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <span style="font-size:18px;">👤</span>
+      <div style="flex:1; min-width:180px;">
+        <div style="font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">بوابة الطالب ${statusBadge}</div>
+        <div style="font-size:12.5px; color:var(--muted); margin-top:3px;">${statusText}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" id="studentAuthBtn">${icons.shield} ${hasPass ? "تغيير كلمة المرور" : "ضبط كلمة المرور"}</button>
+    </div>
+  `;
+}
+
+async function openStudentAuthModal(student) {
+  const account = findStudentAccount(student.id);
+  const username = account?.username || String(student.code || "").trim() || "";
+  const centerName = getSettings().centerName || "السنتر";
+  const hasPass = !!account?.passwordHash;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal__head"><div class="modal__title">${icons.shield} بيانات دخول الطالب — ${escapeHTML(student.name)}</div></div>
+      <div class="modal__body">
+        <p style="font-size:13px; color:var(--muted); line-height:1.7;">اليوزر نيم الافتراضي = كود الطالب (${escapeHTML(username) || "—"}). ضع كلمة مرور (4–8 أرقام) — الطالب يغيّرها بعد أول دخول من بوابة الطالب.</p>
+        <div class="field">
+          <label class="field__label">اسم المستخدم</label>
+          <input class="input ltr" type="text" id="studentAuthUsername" value="${escapeHTML(username)}" dir="ltr" autocomplete="off">
+        </div>
+        <div class="field">
+          <label class="field__label">كلمة المرور</label>
+          <input class="input ltr" type="password" id="studentAuthPassword" placeholder="4–8 أرقام" dir="ltr" inputmode="numeric" maxlength="8" autocomplete="new-password">
+        </div>
+        <p style="font-size:12px; color:var(--muted);">تُحفظ كلمة المرور كرمز مشفر — لا يُظهرها أحد بعد الحفظ.</p>
+      </div>
+      <div class="modal__actions" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-outline" id="studentAuthCancel">إلغاء</button>
+        <button type="button" class="btn btn-success" id="studentAuthWhatsappBtn">${icons.whatsapp} حفظ وإرسال واتساب</button>
+        <button type="button" class="btn btn-primary" id="studentAuthConfirm">${icons.check} تم — الحفظ</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("#studentAuthCancel").addEventListener("click", close);
+
+  const collect = () => {
+    const u = overlay.querySelector("#studentAuthUsername").value.trim();
+    const p = overlay.querySelector("#studentAuthPassword").value.trim();
+    if (!u) { toast("أدخل اسم المستخدم", "warning"); return null; }
+    if (!p || p.length < 4) { toast("كلمة المرور من 4 إلى 8 أرقام", "warning"); return null; }
+    return { u, p };
+  };
+
+  const save = async (btn) => {
+    const data = collect();
+    if (!data) return false;
+    if (btn) btn.disabled = true;
+    const userRes = setStudentUsername(student.id, data.u);
+    if (!userRes?.ok) {
+      if (btn) btn.disabled = false;
+      toast(userRes?.reason === "taken" ? "اسم المستخدم هذا مستخدم لطالب آخر" : "تعذر حفظ اسم المستخدم", "danger");
+      return false;
+    }
+    const ok = await setStudentPassword(student.id, data.p);
+    if (!ok) {
+      if (btn) btn.disabled = false;
+      toast("تعذر حفظ كلمة المرور", "danger");
+      return false;
+    }
+    return true;
+  };
+
+  overlay.querySelector("#studentAuthWhatsappBtn").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const data = collect();
+    if (!data) return;
+    const ok = await save(e.currentTarget);
+    if (!ok) return;
+    const whatsappMsg = `أهلاً ${student.name} 👋\n\nبيانات دخولك بوابة المتابعة على ${centerName}:\n\n• اسم المستخدم: ${data.u}\n• كلمة المرور: ${data.p}\n\nتقدر تغيّرهم بعد أول دخول من داخل البوابة.\n\n${centerName}`;
+    close();
+    toast("تم حفظ بيانات الدخول وإرسال واتساب", "success");
+    openWhatsApp(student.phone || student.parentPhone, whatsappMsg);
+  });
+
+  overlay.querySelector("#studentAuthConfirm").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const ok = await save(e.currentTarget);
+    if (!ok) return;
+    close();
+    toast(hasPass ? "تم تحديث بيانات الدخول" : "تم تفعيل دخول الطالب", "success");
+    render();
+  });
 }
 
 function renderAdvancePermissions(studentId) {

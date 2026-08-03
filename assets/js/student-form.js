@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getStudents, saveStudents, getGrades, getGroups, flushPendingWrites, applyPendingCharges } from "./storage.js";
+import { getStudents, saveStudents, getGrades, getGroups, flushPendingWrites, applyPendingCharges, setParentActivationCode, findParentAccount, isParentPortalEnabled } from "./storage.js";
 import { escapeHTML, todayISO, generateId } from "./helpers.js";
 import { toast } from "./ui.js";
 import { groupsForGrade, suggestStudentCode, findGroup } from "./lookups.js";
@@ -35,6 +35,16 @@ function render() {
   const defaultGroupId = editing?.groupId || (preselectedGroupId && groupsForDefaultGrade.some((g) => g.id === preselectedGroupId) ? preselectedGroupId : groupsForDefaultGrade[0]?.id) || "";
   const defaultGroup = findGroup(groups, defaultGroupId);
   const suggestedCode = editing ? editing.code : suggestStudentCode(students, defaultGroup);
+
+  const randomCode = () => String(Math.floor(100000 + Math.random() * 900000));
+  const parentAccount = findParentAccount(editing?.parentPhone);
+  const hasAuth = parentAccount && (parentAccount.parentPassHash || parentAccount.parentActivationHash);
+  const defaultActivation = hasAuth ? "" : randomCode();
+  const activationStatusHint = parentAccount?.parentPassHash
+    ? "ولي الأمر اختار كلمة مروره بالفعل ✅ — لو دخلت كود جديد هنا، هيتصفّر ويرجع أول مرة بكود التفعيل."
+    : parentAccount?.parentActivationHash
+      ? "كود التفعيل مفعّل — أول دخول لولي الأمر هيختار كلمة مروره الخاصة."
+      : "الكود على رقم التليفون — يصلح لكل الأبناء المسجلين على نفس الرقم. أول دخول: رقم الهاتف + الكود → ثم يختار كلمة مروره الخاصة.";
 
   content.innerHTML = `
     <a href="students.html" class="btn btn-ghost btn-sm" style="margin-bottom:14px;">${icons.arrowLeft} العودة للطلاب</a>
@@ -96,6 +106,19 @@ function render() {
           </div>
         </div>
 
+        ${isParentPortalEnabled() ? `
+        <div class="divider"></div>
+        <div class="form-section__title">دخول ولي الأمر</div>
+        <div class="field">
+          <label class="field__label">كود التفعيل المبدئي</label>
+          <div style="display:flex; gap:8px; align-items:stretch;">
+            <input class="input" name="parentActivationCode" id="parentActivationCode" value="${escapeHTML(defaultActivation)}" style="direction:ltr; letter-spacing:3px; font-weight:800; max-width:180px;" maxlength="6" inputmode="numeric" placeholder="6 أرقام">
+            <button type="button" class="btn btn-outline" id="genParentCodeBtn">${icons.reload} توليد</button>
+          </div>
+          <div class="field__hint">${activationStatusHint}</div>
+        </div>
+        ` : ""}
+
         <div class="divider"></div>
         <div class="form-section__title">بيانات إضافية</div>
         <div class="form-grid">
@@ -141,6 +164,11 @@ function render() {
   const gradeSelect = document.getElementById("studentGradeSelect");
   const groupSelect = document.getElementById("studentGroupSelect");
   const codeField = document.getElementById("studentCodeField");
+  const parentCodeField = document.getElementById("parentActivationCode");
+
+  document.getElementById("genParentCodeBtn")?.addEventListener("click", () => {
+    if (parentCodeField) parentCodeField.value = String(Math.floor(100000 + Math.random() * 900000));
+  });
 
   gradeSelect.addEventListener("change", (e) => {
     const relevantGroups = groupsForGrade(groups, e.target.value);
@@ -159,6 +187,10 @@ function render() {
     data.discount = Number(data.discount) || 0;
     data.lateBalance = editing ? editing.lateBalance || 0 : 0;
 
+    // كود تفعيل دخول ولي الأمر — لا يُحفظ كنص صريح أبدًا (فقط hash)
+    const activationCode = String(data.parentActivationCode || "").trim();
+    delete data.parentActivationCode;
+
     if (editing) {
       Object.assign(editing, data);
       if (editing.dataStatus === "minimal") editing.dataStatus = "complete";
@@ -172,6 +204,11 @@ function render() {
       if (data.groupId) applyPendingCharges(newStudent.id, data.groupId);
       Sounds.studentAdded();
       toast("تم إضافة الطالب بنجاح", "success");
+    }
+
+    // كود تفعيل دخول ولي الأمر (فارغ = إبقاء الوضع الحالي) — الكود على رقم التليفون
+    if (activationCode) {
+      await setParentActivationCode(data.parentPhone, activationCode);
     }
 
     setTimeout(async () => {

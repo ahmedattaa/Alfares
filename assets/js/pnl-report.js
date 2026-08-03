@@ -8,6 +8,8 @@ import {
   getWalletTransactions,
   getShifts,
   getExtraCharges,
+  getExpenses,
+  EXPENSE_CATEGORIES,
   getStudents,
   getGroups,
   getAttendance,
@@ -102,6 +104,16 @@ export function computePnL(periodType, periodId) {
   const chargesCollected = periodCharges.filter((c) => c.status === "paid").reduce((s, c) => s + Number(c.amount || 0), 0);
   const chargesPending = periodCharges.filter((c) => c.status === "unpaid").reduce((s, c) => s + Number(c.amount || 0), 0);
 
+  // ---Expenses (المصاريف التشغيلية)---
+  const periodExpenses = getExpenses().filter((e) => e.date >= start && e.date <= end);
+  const totalExpenses = periodExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const expenseByCategory = EXPENSE_CATEGORIES.map((c) => ({
+    id: c.id,
+    label: c.label,
+    icon: c.icon,
+    amount: periodExpenses.filter((e) => e.category === c.id).reduce((s, e) => s + Number(e.amount || 0), 0),
+  })).filter((x) => x.amount > 0);
+
   // ---Attendance summary---
   const periodAttendance = getAttendance().filter((a) => a.category === "attendance" && a.date >= start && a.date <= end);
   const attCount = periodAttendance.length;
@@ -176,6 +188,9 @@ export function computePnL(periodType, periodId) {
   const collectionRate = totalRevenueTarget > 0 ? ((totalCollected / totalRevenueTarget) * 100).toFixed(1) : 0;
   const shiftVarianceRate = shiftExpected > 0 ? (((shiftVariance) / shiftExpected) * 100).toFixed(1) : 0;
 
+  const grossIncome = totalCollected + chargesCollected;
+  const netProfit = grossIncome - totalExpenses;
+
   return {
     period: { type: periodType, id: periodId, name, typeName: type, start, end },
     revenue: {
@@ -184,8 +199,18 @@ export function computePnL(periodType, periodId) {
       sessionCollected: totalCollected,
       sessionWalletUsed: totalWalletUsed,
       extraCollected: chargesCollected,
-      totalActual: totalCollected + chargesCollected,
+      totalActual: grossIncome,
       collectionRate,
+    },
+    expenses: {
+      count: periodExpenses.length,
+      total: totalExpenses,
+      byCategory: expenseByCategory,
+    },
+    profit: {
+      gross: grossIncome,
+      expenses: totalExpenses,
+      net: netProfit,
     },
     debts: {
       totalPending,
@@ -223,10 +248,11 @@ export function computePnL(periodType, periodId) {
 export function renderPnLHTML(data) {
   if (!data) return `<div class="empty-state">لا توجد بيانات لهذه الفترة</div>`;
 
-  const { period, revenue, debts, wallet, shifts, attendance, groupBreakdown, topDebtors } = data;
+  const { period, revenue, expenses, profit, debts, wallet, shifts, attendance, groupBreakdown, topDebtors } = data;
 
   const varianceColor = shifts.variance >= 0 ? "var(--success)" : "var(--danger)";
   const varianceSign = shifts.variance >= 0 ? "+" : "";
+  const netColor = profit.net >= 0 ? "var(--success)" : "var(--danger)";
 
   return `
     <div class="pnl-report">
@@ -239,11 +265,24 @@ export function renderPnLHTML(data) {
       <!-- KPI Cards -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:20px;">
         ${kpiCard("💰", "إجمالي الإيرادات الفعلية", formatMoney(revenue.totalActual), "var(--success)")}
+        ${kpiCard("🧾", "المصاريف التشغيلية", formatMoney(expenses.total), "var(--danger)")}
+        ${kpiCard("📊", "صافي الربح", formatMoney(profit.net), netColor)}
         ${kpiCard("📈", "الإيراد المتوقع", formatMoney(revenue.totalRevenueTarget), "var(--info)")}
         ${kpiCard("📊", "نسبة التحصيل", revenue.collectionRate + "%", Number(revenue.collectionRate) >= 80 ? "var(--success)" : "var(--warning)")}
         ${kpiCard("⚠️", "ديون معلقة", formatMoney(debts.totalOutstanding), "var(--danger)")}
         ${kpiCard("🏦", "رصيد المحافظ", formatMoney(wallet.currentBalance), "var(--info)")}
         ${kpiCard("📉", "عجز/زيادة الورديات", varianceSign + formatMoney(shifts.variance), varianceColor)}
+      </div>
+
+      <!-- Profit summary banner -->
+      <div class="card card-pad" style="margin-bottom:20px; padding:16px 20px; border:2px solid ${netColor}; background:color-mix(in srgb, ${netColor} 6%, transparent);">
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+          <div style="font-size:30px;">${profit.net >= 0 ? "🟢" : "🔴"}</div>
+          <div style="flex:1; min-width:180px;">
+            <div style="font-weight:800; font-size:17px; color:${netColor};">صافي الربح: ${formatMoney(profit.net)}</div>
+            <div style="font-size:12.5px; color:var(--muted); margin-top:3px;">الإيرادات الفعلية (${formatMoney(profit.gross)}) − المصاريف (${formatMoney(profit.expenses)}) — ${expenses.count} عملية مصروف في الفترة.</div>
+          </div>
+        </div>
       </div>
 
       <!-- Two-column layout -->
@@ -259,6 +298,19 @@ export function renderPnLHTML(data) {
             ${financeRow("إجمالي الإيرادات الفعلية", formatMoney(revenue.totalActual), true)}
             ${financeRow("الإيراد المتوقع", formatMoney(revenue.totalRevenueTarget))}
             ${financeRow("نسبة التحصيل", revenue.collectionRate + "%")}
+          </div>
+        </div>
+
+        <!-- Expenses Breakdown -->
+        <div class="card card-pad">
+          <div class="card__head"><div class="card__title">🧾 تفصيل المصاريف</div></div>
+          <div class="finance-panel">
+            ${expenses.byCategory.filter((c) => c.amount > 0).length
+              ? expenses.byCategory.filter((c) => c.amount > 0).map((c) => financeRow(`${c.icon} ${c.label}`, formatMoney(c.amount))).join("")
+              : `<div style="font-size:12.5px; color:var(--muted); padding:6px 0;">لا توجد مصاريف مسجلة في هذه الفترة.</div>`}
+            <div class="finance-panel__divider"></div>
+            ${financeRow("إجمالي المصاريف", formatMoney(expenses.total), true, "var(--danger)")}
+            ${financeRow("صافي الربح", formatMoney(profit.net), true, netColor)}
           </div>
         </div>
 

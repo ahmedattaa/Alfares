@@ -15,6 +15,7 @@ import {
   getAchievementsForStudent, getFollowupLogs, getEscalationLogsForStudent,
   getSettings, isStudentPortalEnabled, getTeachingSubject,
   advanceSkillMastery, getDueSkillReviews,
+  findStudentAccount, changeStudentPassword, changeStudentUsername,
 } from "./storage.js";
 import { escapeHTML, formatMoney, todayISO, formatDateAr, initials, addDays, weekdayNameAr } from "./helpers.js";
 import { findGroup, gradeName } from "./lookups.js";
@@ -1293,8 +1294,22 @@ function profileView() {
 
 function settingsView() {
   const current = portalTheme();
+  const acc = findStudentAccount(S.student.id);
+  const accUsername = acc?.username || String(S.student.code || "").trim() || "—";
   return `
     ${pageHead(`${icons.settings} الإعدادات`, "تخصيص تجربتك")}
+
+    <div class="sc-card sc-mb">
+      <div class="sc-set">
+        <div class="sc-set__ic">${icons.users}</div>
+        <div class="sc-set__body">
+          <div class="sc-set__t">بيانات الدخول</div>
+          <div class="sc-set__s">اسم المستخدم الحالي: <strong dir="ltr" style="unicode-bidi:embed;">${escapeHTML(accUsername)}</strong> — تقدر تغيّر اسم المستخدم أو كلمة المرور (مطلوبة كلمة المرور الحالية للتأكيد).</div>
+        </div>
+        <button class="sc-btn sc-btn--ghost sc-btn--sm" data-sc-action="account-username">تغيير الاسم</button>
+        <button class="sc-btn sc-btn--primary sc-btn--sm" data-sc-action="account-pass">${icons.unlock} تغيير كلمة المرور</button>
+      </div>
+    </div>
 
     <div class="sc-card sc-mb">
       <div class="sc-set">
@@ -1339,6 +1354,65 @@ function settingsView() {
       </div>
     </div>
   `;
+}
+
+/* ── نافذة تغيير بيانات الدخول ── */
+function accountModalHTML(mode) {
+  const isPass = mode === "pass";
+  return `
+    <div class="sc-modal-wrap" id="scAccountModal">
+      <div class="sc-modal">
+        <div class="sc-modal__head">
+          <div class="sc-modal__title">${isPass ? `${icons.unlock} تغيير كلمة المرور` : `${icons.users} تغيير اسم المستخدم`}</div>
+          <button class="sc-modal__x" data-sc-action="account-close">${icons.x}</button>
+        </div>
+        <div class="sc-modal__body" style="padding:18px;">
+          <p style="font-size:12.5px; color:var(--muted); margin-bottom:14px;">${isPass ? "كلمة المرور الجديدة من 4 إلى 8 أرقام." : "اسم مستخدم جديد (3 أحرف على الأقل) — يظهر في شاشة الدخول بدلًا من كود الطالب."} أدخل كلمة المرور الحالية للتأكيد.</p>
+          <div class="sc-field">
+            <label class="sc-field__label">كلمة المرور الحالية</label>
+            <input class="sc-input" style="direction:ltr;" type="password" id="accCurPass" inputmode="numeric" maxlength="8" autocomplete="current-password">
+          </div>
+          <div class="sc-field">
+            <label class="sc-field__label">${isPass ? "كلمة المرور الجديدة" : "اسم المستخدم الجديد"}</label>
+            <input class="sc-input" style="direction:ltr;" type="${isPass ? "password" : "text"}" id="accNewVal" ${isPass ? `inputmode="numeric" maxlength="8" placeholder="4–8 أرقام"` : `minlength="3" placeholder="مثال: omar2026"`} autocomplete="new-password">
+          </div>
+        </div>
+        <div class="sc-modal__foot">
+          <button class="sc-btn sc-btn--ghost" data-sc-action="account-close">إلغاء</button>
+          <button class="sc-btn sc-btn--primary" data-sc-action="account-save" data-mode="${isPass ? "pass" : "username"}">${icons.check} حفظ</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function saveAccountChange(mode) {
+  const cur = document.getElementById("accCurPass")?.value || "";
+  const val = document.getElementById("accNewVal")?.value || "";
+  if (!cur || !val) {
+    toast(mode === "pass" ? "أدخل كلمة المرور الحالية والجديدة" : "أدخل كلمة المرور الحالية واسم المستخدم الجديد", "warning");
+    return;
+  }
+  const res = mode === "pass"
+    ? await changeStudentPassword(S.student.id, cur, val.trim())
+    : await changeStudentUsername(S.student.id, cur, val.trim());
+
+  if (!res?.ok) {
+    const msgs = {
+      "weak": "كلمة المرور من 4 إلى 8 أرقام",
+      "bad-current": "كلمة المرور الحالية غير صحيحة",
+      "taken": "اسم المستخدم ده مستخدم لطالب آخر",
+      "short": "اسم المستخدم قصير جدًا (3 أحرف على الأقل)",
+      "empty": "أدخل قيمة صحيحة",
+      "no-auth": "حسابك غير مفعّل — تواصل مع السنتر",
+    };
+    toast(msgs[res?.reason] || "تعذر الحفظ", "danger");
+    return;
+  }
+
+  document.getElementById("scAccountModal")?.remove();
+  toast(mode === "pass" ? "تم تغيير كلمة المرور ✓" : "تم تغيير اسم المستخدم ✓", "success");
+  navigate("settings");
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1872,6 +1946,21 @@ function onAppClick(e) {
       navigate("notifications");
       break;
     }
+    case "account-pass":
+    case "account-username": {
+      document.getElementById("scAccountModal")?.remove();
+      const wrap = document.createElement("div");
+      wrap.innerHTML = accountModalHTML(action === "account-pass" ? "pass" : "username");
+      const modalEl = wrap.firstElementChild;
+      document.body.appendChild(modalEl);
+      break;
+    }
+    case "account-close":
+      document.getElementById("scAccountModal")?.remove();
+      break;
+    case "account-save":
+      saveAccountChange(el.dataset.mode);
+      break;
   }
 }
 

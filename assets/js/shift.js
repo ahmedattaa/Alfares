@@ -26,13 +26,13 @@ if (content) render();
 function render() {
   const session = getSession();
   const shift = getCurrentShift();
-  const shiftMode = getSettings().shiftMode || "mandatory";
+  const shiftMode = getSettings().shiftMode || "hidden";
 
   content.innerHTML = `
     <div class="page__header">
       <div>
         <div class="page__title">${icons.wallet} الصندوق — تقفيل الوردية</div>
-        <div class="page__subtitle">${shiftMode === "no_custody" ? "وضع بدون عهدة — افتح الوردية بدون عد فلوس" : shiftMode === "disabled" ? "الوردية معطّلة — انتبه: لن يتم تسجيل التحصيلات بالصندوق" : "لا يعرض الإجمالي على السكرتير — أنت من يدخل الفلوس بالفئات"}</div>
+        <div class="page__subtitle">${shiftMode === "no_custody" ? "وضع بدون عهدة — افتح الوردية بدون عد فلوس" : shiftMode === "hidden" ? "وضع تلقائي — الوردية بتتسجل تلقائيًا بدون عهدة أو تقفيل يومي" : shiftMode === "disabled" ? "الوردية معطّلة — انتبه: لن يتم تسجيل التحصيلات بالصندوق" : "لا يعرض الإجمالي على السكرتير — أنت من يدخل الفلوس بالفئات"}</div>
       </div>
     </div>
 
@@ -250,11 +250,11 @@ function updateClosingTotal() {
 }
 
 /* ================= فتح وردية — صفحه كامله ================= */
-function renderOpeningPage(shiftMode = "mandatory") {
+function renderOpeningPage(shiftMode = "hidden") {
   const shifts = getShifts().filter((s) => s.status === "closed");
   const lastShift = shifts.length ? shifts[shifts.length - 1] : null;
 
-  if (shiftMode === "no_custody") {
+  if (shiftMode === "no_custody" || shiftMode === "hidden") {
     return `
       ${lastShift ? `
         <div style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.7;">
@@ -324,12 +324,12 @@ function renderOpeningPage(shiftMode = "mandatory") {
   `;
 }
 
-function bindOpeningPageEvents(shiftMode = "mandatory") {
+function bindOpeningPageEvents(shiftMode = "hidden") {
   document.getElementById("openingConfirmBtn")?.addEventListener("click", () => {
     const session = getSession();
     let total = 0;
 
-    if (shiftMode === "no_custody") {
+    if (shiftMode === "no_custody" || shiftMode === "hidden") {
       total = 0;
     } else {
       document.querySelectorAll(".opening-denom-input").forEach((input) => {
@@ -342,12 +342,12 @@ function bindOpeningPageEvents(shiftMode = "mandatory") {
     const shift = openShift(total, session?.username || "النظام");
     if (shift) {
       Sounds.success();
-      toast(shiftMode === "no_custody" ? "تم فتح الوردية بدون عهدة ✓" : `تم فتح الوردية — العهدة: ${formatMoney(total)} ✓`, "success");
+      toast(shiftMode === "no_custody" || shiftMode === "hidden" ? "تم فتح الوردية بدون عهدة ✓" : `تم فتح الوردية — العهدة: ${formatMoney(total)} ✓`, "success");
       render();
     }
   });
 
-  if (shiftMode === "no_custody") return;
+  if (shiftMode === "no_custody" || shiftMode === "hidden") return;
 
   const updateOpeningTotal = () => {
     let total = 0;

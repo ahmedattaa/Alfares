@@ -2,10 +2,11 @@
 // App — نقطة الإقلاع المشتركة لكل الصفحات الداخلية
 // =========================================================
 
-import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift, getSettings } from "./storage.js";
+import { seedIfNeeded, isLoggedIn, getSession, getCurrentShift, getSettings, openShift, autoCloseShift } from "./storage.js";
 import { renderShell } from "./ui.js";
 import { canAccessPage, firstAccessiblePage } from "./permissions.js";
 import { appPath } from "./paths.js";
+import { todayISO } from "./helpers.js";
 
 /** الصفحات التى تتطلب صندوق مفتوح (وردية نشطة) */
 const SHIFT_REQUIRED_PAGES = [
@@ -29,9 +30,21 @@ export async function initPage(activePage) {
     return null;
   }
 
+  // الوضع التلقائي المخفي: افتح وردية بصمت لكل الموظفين بدون عهدة/توجيه،
+  // وأغلق أي وردية من يوم سابق تلقائيًا (تسوية = التحصيلات)
+  const shiftMode = getSettings().shiftMode || "hidden";
+  if (session.role !== "parent" && session.role !== "student" && shiftMode === "hidden") {
+    const current = getCurrentShift();
+    if (current && current.openedDate !== todayISO()) {
+      autoCloseShift(session?.username || "النظام");
+    }
+    if (!getCurrentShift()) {
+      openShift(0, session?.username || "النظام");
+    }
+  }
+
   // لو الصفحة تتطلب صندوق مفتوح ومفيش وردية → توجيه لصفحة الصندوق (ما عدا ولي الأمر والطالب)
-  const shiftMode = getSettings().shiftMode || "mandatory";
-  if (session.role !== "parent" && session.role !== "student" && SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift() && shiftMode !== "disabled") {
+  if (session.role !== "parent" && session.role !== "student" && SHIFT_REQUIRED_PAGES.includes(activePage) && !getCurrentShift() && shiftMode !== "disabled" && shiftMode !== "hidden") {
     window.location.href = appPath("staff/shift.html");
     return null;
   }

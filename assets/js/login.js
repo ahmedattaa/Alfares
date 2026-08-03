@@ -2,7 +2,7 @@
 // Login — منطق صفحة تسجيل الدخول
 // =========================================================
 
-import { seedIfNeeded, login, parentLogin, studentLogin, getSettings, getStudents, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled } from "./storage.js";
+import { seedIfNeeded, login, parentLogin, studentLogin, setParentPassword, MAX_PARENT_FAILS, MAX_STUDENT_FAILS, getSettings, getStudents, flushPendingWrites, isParentPortalEnabled, isStudentPortalEnabled } from "./storage.js";
 import { redirectIfLoggedIn } from "./app.js";
 import { toast } from "./ui.js";
 import { initials, fakeDelay } from "./helpers.js";
@@ -19,15 +19,15 @@ const MODES = {
   },
   parent: {
     label: "ولي أمر",
-    fields: ["parentPhone"],
+    fields: ["parentPhone", "parentSecret"],
     subtitle: "تسجيل الدخول لمتابعة أبنائك",
-    hint: "أدخل رقم هاتف ولي الأمر المسجل في بيانات الطالب",
+    hint: "أدخل رقم هاتف ولي الأمر المسجل + كود الدخول (أول مرة: كود التفعيل من السنتر)",
   },
   student: {
     label: "طالب",
-    fields: ["studentCode"],
+    fields: ["studentUsername", "studentPassword"],
     subtitle: "دخول الطالب لمتابعة الدرجات والحضور",
-    hint: "أدخل كود الطالب المسجل في السنتر — للاختبار: 101",
+    hint: "اسم المستخدم = كود الطالب + كلمة المرور من السنتر — للاختبار: 101 / 1234",
   },
 };
 
@@ -55,12 +55,7 @@ async function bootstrap() {
   }
 
   // أرقام ولي أمر تجريبية جاهزة للاختبار (أول 3 طلاب مسجلين)
-  if (currentMode === "parent" || MODES.parent) {
-    const samples = sampleParentPhones();
-    if (samples.length) {
-      hint.textContent = `أدخل رقم هاتف ولي الأمر المسجل في بيانات الطالب — للاختبار: ${samples.join(" · ")}`;
-    }
-  }
+  updateHint(currentMode);
 
   // بوابات الدخول حسب إعدادات السنتر
   const parentEnabled = isParentPortalEnabled();
@@ -108,8 +103,34 @@ function switchMode(mode) {
 
   // Update subtitle + hint
   subtitle.textContent = MODES[mode].subtitle;
-  hint.textContent = MODES[mode].hint;
+  updateHint(mode);
 
+  // تصفير مسار "أول مرة — اختيار كلمة المرور" عند تغيير التبويب
+  resetParentFlow();
+}
+
+function updateHint(mode) {
+  if (mode === "parent") {
+    const samples = sampleParentPhones();
+    hint.textContent = samples.length
+      ? `أدخل رقم الهاتف المسجل + كود الدخول — للاختبار: ${samples.join(" · ")}`
+      : MODES.parent.hint;
+  } else {
+    hint.textContent = MODES[mode].hint;
+  }
+}
+
+let pendingParentSession = null;
+
+function resetParentFlow() {
+  pendingParentSession = null;
+  const wrap = document.getElementById("setPassWrap");
+  if (wrap) wrap.style.display = "none";
+  const secretField = document.getElementById("parentSecretField");
+  if (secretField) secretField.style.display = "";
+  loginBtn.style.display = "";
+  const h = document.getElementById("parentHint");
+  if (h) h.textContent = "أدخل رقم الهاتف المسجل + كود الدخول (أول مرة استخدم كود التفعيل اللي أرسله لك السنتر)";
 }
 
 tabs.forEach((tab) => {
@@ -120,6 +141,11 @@ tabs.forEach((tab) => {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorBox.classList.remove("is-open");
+
+  if (pendingParentSession) {
+    await handleSetParentPass();
+    return;
+  }
 
   if (currentMode === "admin") {
     await handleAdminLogin();
@@ -159,9 +185,14 @@ async function handleAdminLogin() {
 
 async function handleParentLogin() {
   const phone = document.getElementById("parentPhone").value.trim();
+  const secret = document.getElementById("parentSecret").value.trim();
 
   if (!phone) {
     showError("برجاء إدخال رقم هاتف ولي الأمر");
+    return;
+  }
+  if (!secret) {
+    showError("برجاء إدخال كود الدخول — أول مرة استخدم كود التفعيل من السنتر");
     return;
   }
 
@@ -171,20 +202,21 @@ async function handleParentLogin() {
   setLoading(true);
   await fakeDelay(400);
 
-  const result = parentLogin(normalized);
+  const result = await parentLogin(normalized, secret);
   setLoading(false);
 
-  if (!result) {
-    const samples = sampleParentPhones();
-    const msg = samples.length
-      ? `لم يتم العثور على ولي أمر بهذا الرقم — الرقم لازم يكون المسجل في بيانات الطالب. للاختبار جرّب: ${samples.join("، ")}`
-      : "لم يتم العثور على طالب بهذا الرقم";
-    showError(msg);
-    toast(msg, "warning");
+  if (!result?.ok) {
+    handleParentLoginFailure(result);
     return;
   }
 
   const { session, students } = result;
+
+  // أول مرة ناجحة بكود التفعيل — إجبار ولي الأمر على اختيار كلمة مرور
+  if (result.needsPassword) {
+    showSetPasswordStep(session, students);
+    return;
+  }
 
   toast(students.length === 1
     ? `مرحبًا بعودتك ولي أمر ${students[0].name}`
@@ -192,29 +224,139 @@ async function handleParentLogin() {
   finalizeLogin(session);
 }
 
-async function handleStudentLogin() {
-  const code = document.getElementById("studentCode").value.trim();
+function handleParentLoginFailure(result) {
+  const reason = result?.reason;
 
-  if (!code) {
-    showError("برجاء إدخال كود الطالب");
+  if (reason === "locked") {
+    const mins = Math.ceil((result.lockUntil - Date.now()) / 60000);
+    const msg = `تم قفل الدخول مؤقتًا بعد عدة محاولات خاطئة — حاول بعد ${mins} دقيقة`;
+    showError(msg);
+    toast(msg, "danger");
+    return;
+  }
+
+  if (reason === "no-auth") {
+    const msg = "لم يتم تفعيل دخول ولي الأمر لهذا الرقم بعد — تواصل مع السنتر لاستلام كود التفعيل";
+    showError(msg);
+    toast(msg, "warning");
+    return;
+  }
+
+  if (reason === "bad-secret") {
+    let msg;
+    if (result.locked) {
+      const mins = Math.ceil((result.lockUntil - Date.now()) / 60000);
+      msg = `كود الدخول غير صحيح — تم قفل الدخول، حاول بعد ${mins} دقيقة`;
+    } else {
+      msg = `كود الدخول غير صحيح — المحاولات المتبقية: ${Math.max(0, MAX_PARENT_FAILS - result.fails)}`;
+    }
+    showError(msg);
+    toast(msg, "danger");
+    return;
+  }
+
+  const samples = sampleParentPhones();
+  const msg = samples.length
+    ? `لم يتم العثور على ولي أمر بهذا الرقم — الرقم لازم يكون المسجل في بيانات الطالب. للاختبار جرّب: ${samples.join("، ")}`
+    : "لم يتم العثور على طالب بهذا الرقم";
+  showError(msg);
+  toast(msg, "warning");
+}
+
+function showSetPasswordStep(session, students) {
+  pendingParentSession = session;
+  document.getElementById("setPassWrap").style.display = "block";
+  loginBtn.style.display = "none";
+  document.getElementById("parentSecretField").style.display = "none";
+  const hintEl = document.getElementById("parentHint");
+  hintEl.textContent = `أهلًا ولي أمر ${students[0].name} — لأول مرة فقط، اختر كلمة مرور خاصة بيك هتستخدمها في الدخول من دلوقتي.`;
+  errorBox.classList.remove("is-open");
+  document.getElementById("newParentPass").focus();
+}
+
+async function handleSetParentPass() {
+  if (!pendingParentSession) return;
+  const pass = document.getElementById("newParentPass").value.trim();
+  if (!pass || pass.length < 4 || pass.length > 8) {
+    showError("كلمة المرور لازم تكون من 4 إلى 8 أرقام");
+    return;
+  }
+
+  setLoading(true);
+  await fakeDelay(300);
+  const ok = await setParentPassword(pendingParentSession.parentPhone, pass);
+  setLoading(false);
+
+  if (!ok) {
+    showError("تعذر حفظ كلمة المرور، حاول مرة أخرى");
+    return;
+  }
+
+  toast("تم إنشاء كلمة المرور بنجاح — استخدمها من الآن للدخول", "success");
+  finalizeLogin(pendingParentSession);
+}
+
+document.getElementById("setPassBtn").addEventListener("click", handleSetParentPass);
+
+async function handleStudentLogin() {
+  const username = document.getElementById("studentUsername").value.trim();
+  const password = document.getElementById("studentPassword").value.trim();
+
+  if (!username || !password) {
+    showError("برجاء إدخال اسم المستخدم وكلمة المرور");
     return;
   }
 
   setLoading(true);
   await fakeDelay(400);
 
-  const result = studentLogin(code);
+  const result = await studentLogin(username, password);
   setLoading(false);
 
-  if (!result) {
-    showError("لم يتم العثور على طالب بهذا الكود");
-    toast("لم يتم العثور على طالب بهذا الكود", "warning");
+  if (!result?.ok) {
+    handleStudentLoginFailure(result);
     return;
   }
 
-  const { students } = result;
+  const { session, students } = result;
   toast(`مرحبًا بعودتك، ${students[0].name}`, "success");
-  finalizeLogin(result.session);
+  finalizeLogin(session);
+}
+
+function handleStudentLoginFailure(result) {
+  const reason = result?.reason;
+
+  if (reason === "locked") {
+    const mins = Math.ceil((result.lockUntil - Date.now()) / 60000);
+    const msg = `تم قفل الدخول مؤقتًا بعد عدة محاولات خاطئة — حاول بعد ${mins} دقيقة`;
+    showError(msg);
+    toast(msg, "danger");
+    return;
+  }
+
+  if (reason === "no-auth") {
+    const msg = "لم يتم تفعيل دخول الطالب بعد — تواصل مع السنتر لاستلام كلمة المرور";
+    showError(msg);
+    toast(msg, "warning");
+    return;
+  }
+
+  if (reason === "bad-secret") {
+    let msg;
+    if (result.locked) {
+      const mins = Math.ceil((result.lockUntil - Date.now()) / 60000);
+      msg = `كلمة المرور غير صحيحة — تم قفل الدخول، حاول بعد ${mins} دقيقة`;
+    } else {
+      msg = `كلمة المرور غير صحيحة — المحاولات المتبقية: ${Math.max(0, MAX_STUDENT_FAILS - result.fails)}`;
+    }
+    showError(msg);
+    toast(msg, "danger");
+    return;
+  }
+
+  const msg = "لم يتم العثور على حساب طالب بهذا الاسم — اسم المستخدم = كود الطالب (مثال: 101)";
+  showError(msg);
+  toast(msg, "warning");
 }
 
 /* ---- Helpers ---- */
@@ -234,6 +376,11 @@ function showError(msg) {
 function setLoading(on) {
   loginBtn.disabled = on;
   loginBtnText.innerHTML = on ? `<span class="spinner"></span>` : "تسجيل الدخول";
+  const passBtn = document.getElementById("setPassBtn");
+  if (passBtn) {
+    passBtn.disabled = on;
+    passBtn.innerHTML = on ? `<span class="spinner"></span>` : "حفظ كلمة المرور والدخول";
+  }
 }
 
 async function finalizeLogin(session, redirectUrl) {

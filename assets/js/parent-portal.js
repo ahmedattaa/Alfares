@@ -15,8 +15,9 @@ import {
   getAchievementsForStudent, getEscalationLogsForStudent,
   getSettings, getWhatsApp, isFeatureEnabled,
   isParentPortalEnabled, isStudentPortalEnabled, getTeachingSubject,
+  findStudentAccount, setStudentPassword, setStudentUsername,
 } from "./storage.js";
-import { escapeHTML, formatMoney, todayISO, formatDateAr, initials, addDays } from "./helpers.js";
+import { escapeHTML, formatMoney, todayISO, formatDateAr, initials, addDays, studentAvatar } from "./helpers.js";
 import { gradeName, findGroup, dueAmount } from "./lookups.js";
 import { computeHealthScore, getHealthColor, getHealthLabel } from "./health-score.js";
 import { isStudentLocked } from "./attendance-service.js";
@@ -136,12 +137,18 @@ if (content) {
 
 function render() {
   const showDashboard = !selectedStudentId && allowedStudentIds.length !== 1;
+  const headStudent = !showDashboard ? getStudents().find((s) => s.id === selectedStudentId) : null;
 
   content.innerHTML = `
     <div class="pp-page-head">
-      <div class="pp-page-title">${showDashboard ? icons.grid + " لوحة العائلة" : isStudent ? icons.shield + " ملفي الدراسي" : icons.shield + " متابعة ابنك"}</div>
-      <div class="pp-page-subtitle">${showDashboard ? "جميع أبنائك المسجلين في السنتر — اختر أحدهم لعرض تفاصيله" : isStudent ? "متابعة درجاتك وحضورك وملفك الدراسي وترتيبك" : "نظرة عامة على وضع ابنك في دقيقة — الصحة، الحضور، الدرجات، والمتابعة"}</div>
-      ${!showDashboard ? `<div class="pp-readonly-note">${icons.info} وضع العرض فقط — لا يمكن تعديل أو تحصيل أي مبالغ من هنا</div>` : ""}
+      <div class="pp-page-head__top">
+        <div class="pp-page-head__main">
+          <div class="pp-page-title">${showDashboard ? icons.grid + " لوحة العائلة" : isStudent ? icons.shield + " ملفي الدراسي" : icons.shield + " متابعة ابنك"}</div>
+          <div class="pp-page-subtitle">${showDashboard ? "جميع أبنائك المسجلين في السنتر — اختر أحدهم لعرض تفاصيله" : isStudent ? "متابعة درجاتك وحضورك وملفك الدراسي وترتيبك" : "نظرة عامة على وضع ابنك في دقيقة — الصحة، الحضور، الدرجات، والمتابعة"}</div>
+        </div>
+        ${headStudent ? `<div class="pp-page-head__photo" title="${escapeHTML(headStudent.name || "")}"><span class="pp-photo-frame">${studentAvatar(headStudent, 84)}</span></div>` : ""}
+      </div>
+      ${!showDashboard ? `<div class="pp-tagline"><span class="pp-tagline__star">✦</span> مركز الفارس للمتابعة الدقيقة — نرصد الأداء لنصنع التفوق</div>` : ""}
     </div>
     ${showDashboard ? renderFamilyDashboardHTML() : `<div id="ppStudentZone"></div>`}
   `;
@@ -186,7 +193,6 @@ function renderFamilyDashboardHTML() {
           const g = groups.find((gr) => gr.id === s.groupId);
           const wallet = Number(s.walletBalance || 0);
           const debt = Number(s.lateBalance || 0);
-          const inits = initials(s.name || "?");
           const c = colors[i % colors.length];
 
           let badges = "";
@@ -197,8 +203,8 @@ function renderFamilyDashboardHTML() {
 
           return `
           <div class="ps-card" data-sid="${s.id}" style="--c:${c}">
-            <div class="ps-card__top">
-              <div class="ps-card__av" style="background:linear-gradient(135deg,${c},${c}88)">${escapeHTML(inits)}</div>
+              <div class="ps-card__top">
+              ${studentAvatar(s, 46)}
               <div class="ps-card__info">
                 <div class="ps-card__name">${escapeHTML(s.name)}</div>
                 <div class="ps-card__meta">${g ? escapeHTML(g.name) : "بدون مجموعة"}</div>
@@ -253,13 +259,12 @@ function renderStudentZone() {
   const debt = Number(student.lateBalance || 0);
   const locked = isStudentLocked(student);
   const showBack = allowedStudentIds.length > 1;
-  const inits = initials(student.name || "?");
 
   zone.innerHTML = `
     ${showBack ? `<div style="margin-bottom:14px;"><button class="pp-back-btn" id="ppBackBtn"><span class="pp-back-btn__arrow">›</span> العودة لجميع الأبناء</button></div>` : ""}
     <div class="vst-profile-card">
       <div class="vst-profile-card__header">
-        <div class="vst-profile-card__avatar">${escapeHTML(inits)}</div>
+        ${studentAvatar(student, 56)}
         <div class="vst-profile-card__info">
           <div class="vst-profile-card__name">${escapeHTML(student.name)}</div>
           <div class="vst-profile-card__meta">
@@ -442,8 +447,9 @@ function renderOverviewTab(box, student) {
   const analytics = computeComparativeAnalytics(student);
   const rank = computeStudentRank(student);
   const narrative = fpNarrative(student, h, analytics);
-  const mastery = masteryBySubject(student.id);
-  const mistakeT = mistakeTopics(student.id);
+  const practiceEnabled = isStudentPortalEnabled();
+  const mastery = practiceEnabled ? masteryBySubject(student.id) : null;
+  const mistakeT = practiceEnabled ? mistakeTopics(student.id) : [];
   const weekEvents = fpWeekEvents(student).slice(0, 3);
   const followups = getFollowupLogs().filter((l) => l.studentId === student.id).reverse().slice(0, 4);
   const escalations = getEscalationLogsForStudent(student.id).slice(-3).reverse();
@@ -500,9 +506,7 @@ function renderOverviewTab(box, student) {
         </div>
         ${fpWeekTimelineHTML(weekEvents)}
       </div>
-      <div>
-        ${fpSkillsBlock(mastery, mistakeT)}
-      </div>
+      ${practiceEnabled ? `<div>${fpSkillsBlock(mastery, mistakeT)}</div>` : ""}
     </div>
 
     <div class="card card-pad" style="margin-top:16px;">
@@ -588,7 +592,8 @@ function fpStatusCards(student, h, rank, analytics) {
   const attRate = last30.length ? Math.round((present / last30.length) * 100) : 0;
 
   const avg = analytics?.overallStudentAvg ?? h.examAvg;
-  const answers = getExamAnswersForStudent(student.id);
+  const practiceEnabled = isStudentPortalEnabled();
+  const answers = practiceEnabled ? getExamAnswersForStudent(student.id) : [];
   const correct = answers.filter((a) => a.isCorrect).length;
   const accuracy = answers.length ? Math.round((correct / answers.length) * 100) : null;
 
@@ -686,7 +691,8 @@ function fpNarrative(student, h, analytics) {
   const absent = attWin.filter((a) => !presentIds.has(a.statusId)).length;
 
   const answers = getExamAnswersForStudent(student.id);
-  const mastery = masteryBySubject(student.id);
+  const practiceEnabled = isStudentPortalEnabled();
+  const mastery = practiceEnabled ? masteryBySubject(student.id) : null;
 
   if (h.hasExams && analytics) {
     const gAvg = analytics.overallGroupAvg;
@@ -698,12 +704,12 @@ function fpNarrative(student, h, analytics) {
   if (h.attendanceRate >= 85) out.push({ tone: "success", emoji: "✅", text: `الالتزام بالحضور ممتاز (${h.attendanceRate}%)${absent ? ` — ${absent} غياب فقط` : ""}` });
   else if (absent > 0) out.push({ tone: "warning", emoji: "⚠️", text: `سُجّل ${absent} غياب${attWin.length < 10 ? " في السجل" : " خلال آخر 30 يوم"} — الالتزام بالحضور أساس التحسن` });
 
-  if (answers.length) {
+  if (practiceEnabled && answers.length) {
     const correct = answers.filter((a) => a.isCorrect).length;
     const acc = Math.round((correct / answers.length) * 100);
     out.push({ tone: acc >= 60 ? "primary" : "warning", emoji: "🎯", text: `حلّ ${answers.length} سؤالاً في بنك الأسئلة بدقة ${acc}% — التدريب العملي يبني الثقة` });
   }
-  if (mastery?.length) {
+  if (practiceEnabled && mastery?.length) {
     const weak = [...mastery].sort((a, b) => a.pct - b.pct)[0];
     if (weak && weak.pct < 60) out.push({ tone: "danger", emoji: "🎯", text: `أضعف مادة: ${weak.sub.name} (${weak.pct}%) — ننصح بمراجعة مواضيعها هذا الأسبوع` });
   }
@@ -937,6 +943,8 @@ function renderProfileTab(box, student) {
       </div>
     </div>
 
+    ${!isStudent && isStudentPortalEnabled() ? renderParentStudentAccountCard(student) : ""}
+
     <div class="card card-pad" style="margin-top:16px;">
       <div class="card__head"><div class="card__title">${icons.clock} جدول حصص الطالب</div></div>
       ${fpScheduleHTML(group)}
@@ -949,6 +957,101 @@ function renderProfileTab(box, student) {
       <div style="font-size:13px;">${escapeHTML(lastLog.text)}</div>
     </div>` : ""}
   `;
+
+  box.querySelector("#ppStudentPassBtn")?.addEventListener("click", () => openParentStudentAccountModal(student, "pass"));
+  box.querySelector("#ppStudentUserBtn")?.addEventListener("click", () => openParentStudentAccountModal(student, "username"));
+}
+
+/* ── إدارة بيانات دخول الطالب (من بوابة ولي الأمر) ── */
+function renderParentStudentAccountCard(student) {
+  const account = findStudentAccount(student.id);
+  const username = account?.username || String(student.code || "").trim() || "—";
+  const hasPass = !!account?.passwordHash;
+
+  const statusBadge = hasPass
+    ? `<span class="badge badge-success"><span class="badge-dot"></span>مفعّل</span>`
+    : `<span class="badge badge-neutral"><span class="badge-dot"></span>غير مفعّل</span>`;
+
+  return `
+    <div class="card card-pad" style="margin-top:16px;">
+      <div class="card__head">
+        <div class="card__title">${icons.shield} بيانات دخول الطالب (بوابة الطالب)</div>
+        ${statusBadge}
+      </div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:12px;">
+        اسم المستخدم الحالي: <strong dir="ltr" style="unicode-bidi:embed; color:var(--text);">${escapeHTML(username)}</strong>${hasPass ? " — الطالب بيدخل بيه وباسوره مباشرة." : " — الطالب مش هيدخل لحد ما تضع كلمة مرور."}
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" id="ppStudentPassBtn">${icons.unlock} ${hasPass ? "تغيير كلمة المرور" : "ضبط كلمة المرور"}</button>
+        <button class="btn btn-outline btn-sm" id="ppStudentUserBtn">${icons.users} تغيير اسم المستخدم</button>
+      </div>
+    </div>
+  `;
+}
+
+function openParentStudentAccountModal(student, mode) {
+  const isPass = mode === "pass";
+  const account = findStudentAccount(student.id);
+  const username = account?.username || String(student.code || "").trim() || "";
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal__head"><div class="modal__title">${isPass ? `${icons.unlock} كلمة مرور ${escapeHTML(student.name)}` : `${icons.users} اسم المستخدم — ${escapeHTML(student.name)}`}</div></div>
+      <div class="modal__body">
+        ${isPass ? `
+          <div class="field">
+            <label class="field__label">كلمة المرور الجديدة</label>
+            <input class="input ltr" type="password" id="ppAccNewPass" dir="ltr" inputmode="numeric" maxlength="8" placeholder="4–8 أرقام" autocomplete="new-password">
+          </div>
+          <p style="font-size:12px; color:var(--muted); margin-top:10px;">تُحفظ كرمز مشفر — الطالب يغيّرها بعد أول دخول من بوابة الطالب.</p>
+        ` : `
+          <div class="field">
+            <label class="field__label">اسم المستخدم الجديد</label>
+            <input class="input ltr" type="text" id="ppAccNewUser" dir="ltr" minlength="3" value="${escapeHTML(username)}" autocomplete="off">
+          </div>
+          <p style="font-size:12px; color:var(--muted); margin-top:10px;">يظهر في شاشة دخول الطالب بدلًا من كود الطالب.</p>
+        `}
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-outline" id="ppAccCancel">إلغاء</button>
+        <button type="button" class="btn btn-primary" id="ppAccConfirm">${icons.check} حفظ</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.classList.add("is-open");
+
+  const close = () => { overlay.classList.remove("is-open"); overlay.remove(); };
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("#ppAccCancel").addEventListener("click", close);
+
+  overlay.querySelector("#ppAccConfirm").addEventListener("click", async (e) => {
+    e.currentTarget.disabled = true;
+    if (isPass) {
+      const p = overlay.querySelector("#ppAccNewPass").value.trim();
+      if (!p || p.length < 4 || p.length > 8) {
+        toast("كلمة المرور من 4 إلى 8 أرقام", "warning");
+        e.currentTarget.disabled = false;
+        return;
+      }
+      const ok = await setStudentPassword(student.id, p);
+      if (!ok) { toast("تعذر الحفظ", "danger"); e.currentTarget.disabled = false; return; }
+      toast("تم حفظ كلمة المرور — الطالب يدخل بها الآن", "success");
+    } else {
+      const u = overlay.querySelector("#ppAccNewUser").value.trim();
+      const res = setStudentUsername(student.id, u);
+      if (!res?.ok) {
+        toast(res?.reason === "taken" ? "اسم المستخدم هذا مستخدم لطالب آخر" : "اسم المستخدم غير صالح", "danger");
+        e.currentTarget.disabled = false;
+        return;
+      }
+      toast("تم تغيير اسم المستخدم ✓", "success");
+    }
+    close();
+    render();
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -44,15 +44,39 @@
 .pp-user-chip__name { font-size: 12px; font-weight: 700; }
 .pp-user-chip__role { font-size: 10.5px; color: var(--muted); }
 .pp-main { flex: 1; max-width: 1100px; width: 100%; margin: 0 auto; padding: 24px 20px 60px; }
-.pp-page-head { margin-bottom: 20px; }
-.pp-page-title { font-size: 22px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 10px; }
-.pp-page-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
-.pp-readonly-note {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11.5px; font-weight: 700; color: var(--muted);
-  background: var(--bg-2); border: 1px dashed var(--border);
-  padding: 6px 12px; border-radius: 99px; margin-top: 10px;
+.pp-page-head { margin-bottom: 24px; }
+.pp-page-head__top { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.pp-page-head__main { min-width: 0; }
+.pp-page-title { font-size: 25px; font-weight: 900; color: var(--text); display: flex; align-items: center; gap: 10px; letter-spacing: -.3px; }
+.pp-page-title svg { width: 26px; height: 26px; flex-shrink: 0; color: var(--primary); }
+.pp-page-subtitle { font-size: 14px; color: var(--muted); margin-top: 5px; font-weight: 600; }
+/* إطار الصورة — مربع بحواف دائرية بإطار ذهبي */
+.pp-page-head__photo { flex-shrink: 0; }
+.pp-photo-frame {
+  display: inline-flex; padding: 4px; position: relative;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #f8d477, #e0b13c 50%, #c9921f);
+  box-shadow: 0 10px 28px color-mix(in srgb, #f5c849 35%, transparent);
 }
+.pp-photo-frame .sv-photo { border-radius: 20px; border: none; }
+.pp-photo-frame::after {
+  content: "🏅"; position: absolute; top: -11px; left: -11px;
+  font-size: 21px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
+}
+/* الجملة التي تتصدر المشهد */
+.pp-tagline {
+  margin-top: 16px; width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  text-align: center; line-height: 1.5;
+  font-size: 16px; font-weight: 900; letter-spacing: -.2px;
+  color: #4a3305;
+  background: linear-gradient(135deg, #fce9b4, #f5d27a 45%, #ecc04f);
+  border: 1px solid rgba(255,255,255,.5);
+  border-radius: 16px;
+  padding: 13px 20px;
+  box-shadow: 0 6px 20px color-mix(in srgb, #f5c849 30%, transparent), inset 0 1px 0 rgba(255,255,255,.7);
+}
+.pp-tagline__star { color: #b97d0e; font-size: 18px; line-height: 1; }
 
 /* ---------- Parent dashboard (اختيار الابن) ---------- */
 .parent-dashboard { margin-top: 8px; }
@@ -1147,12 +1171,6 @@ body[data-page="parent"] .card:hover {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
 }
 .pp-note-hint svg { filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--primary) 32%, transparent)); }
-.pp-readonly-note {
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
-}
 
 /* أزرار عامة داخل البوابة — توهج لوني */
 body[data-page="parent"] .btn-primary { box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 32%, transparent); }
@@ -1161,6 +1179,13 @@ body[data-page="parent"] .btn-success { box-shadow: 0 4px 14px color-mix(in srgb
 body[data-page="parent"] .btn-success:hover { box-shadow: 0 8px 22px color-mix(in srgb, var(--success) 38%, transparent); }
 
 /* حركة مخفّضة للوصولية */
+@media (max-width: 640px) {
+  .pp-page-head__top { gap: 12px; }
+  .pp-page-title { font-size: 21px; }
+  .pp-tagline { font-size: 14px; padding: 11px 14px; }
+  .pp-photo-frame { border-radius: 20px; }
+  .pp-photo-frame .sv-photo { border-radius: 16px; }
+}
 @media (prefers-reduced-motion: reduce) {
   body[data-page="parent"] *, body[data-page="parent"] *::before, body[data-page="parent"] *::after {
     animation-duration: .01ms !important;

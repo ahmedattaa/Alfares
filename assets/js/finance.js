@@ -4,7 +4,7 @@
 
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
-import { getAttendance, getPayments, getStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, getAcademicYears, getTerms, getAcademicMonths, getActiveAcademicTerm } from "./storage.js";
+import { getAttendance, getPayments, getStudents, getStudentStatuses, getSessionLogs, getGroups, getGrades, getExtraCharges, saveExtraCharges, getWalletTransactions, getAcademicYears, getTerms, getAcademicMonths, getActiveAcademicTerm, getExpenses, addExpense, updateExpense, deleteExpense, EXPENSE_CATEGORIES } from "./storage.js";
 import { escapeHTML, initials, formatMoney, todayISO, formatDateAr, addDays, startOfWeek, weekdayNameAr, generateId, GROUP_CARD_PALETTE } from "./helpers.js";
 import { toast, confirmDialog, formModal, emptyStateHTML } from "./ui.js";
 import { groupName, gradeName, groupsForGrade, findGroup, dueAmount } from "./lookups.js";
@@ -37,9 +37,10 @@ function render() {
     <div class="tabs" id="financeTabs">
       <button class="tab-btn ${activeTab === "daily" ? "is-active" : ""}" data-tab="daily">${icons.wallet}<span>اليومى</span></button>
       <button class="tab-btn ${activeTab === "weekly" ? "is-active" : ""}" data-tab="weekly">${icons.chart}<span>الأسبوعى</span></button>
+      ${isFeatureEnabled("extraCharges") ? `<button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات</span></button>` : ""}
+      <button class="tab-btn ${activeTab === "expenses" ? "is-active" : ""}" data-tab="expenses">${icons.money}<span>المصاريف</span></button>
       <button class="tab-btn ${activeTab === "late" ? "is-active" : ""}" data-tab="late">${icons.alert}<span>المتأخرات</span></button>
       <button class="tab-btn ${activeTab === "monthly" ? "is-active" : ""}" data-tab="monthly">${icons.shield}<span>الإيرادات الشهرية</span></button>
-      ${isFeatureEnabled("extraCharges") ? `<button class="tab-btn ${activeTab === "charges" ? "is-active" : ""}" data-tab="charges">${icons.money}<span>استحقاقات</span></button>` : ""}
       <button class="tab-btn ${activeTab === "pnl" ? "is-active" : ""}" data-tab="pnl">${icons.chart}<span>التقرير الختامي</span></button>
     </div>
 
@@ -64,6 +65,7 @@ function renderTabContent() {
   if (activeTab === "late") return renderLateTab(box);
   if (activeTab === "monthly") return renderMonthlyTab(box);
   if (activeTab === "pnl") return renderPnLTab(box);
+  if (activeTab === "expenses") return renderExpensesTab(box);
   return renderChargesTab(box);
 }
 
@@ -980,6 +982,189 @@ function renderMonthlyTab(box) {
 }
 
 /* ================= التقرير الختامي P&L ================= */
+/* ================= المصاريف التشغيلية ================= */
+function renderExpensesTab(box) {
+  const months = getAcademicMonths().slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const expenses = getExpenses().slice().sort((a, b) => (b.date < a.date ? 1 : -1));
+  const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+
+  box.innerHTML = `
+    <div class="page__header" style="margin-bottom:14px;">
+      <div class="page__subtitle" style="margin:0;">المصاريف التشغيلية — بتظهر في التقرير الختامي لحساب صافي الربح</div>
+      <button class="btn btn-primary btn-sm" id="addExpenseBtn">${icons.money} إضافة مصروف</button>
+    </div>
+
+    <div class="finance-total-card" style="margin-bottom:16px;">
+      <div class="finance-total-card__title">${icons.money} ملخص المصاريف</div>
+      <div class="finance-total-card__grid">
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${formatMoney(total)}</span>
+          <span class="finance-total-card__label">إجمالي المصاريف</span>
+        </div>
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${expenses.length}</span>
+          <span class="finance-total-card__label">عدد العمليات</span>
+        </div>
+        <div class="finance-total-card__item">
+          <span class="finance-total-card__value">${expenses.length ? formatMoney(Math.round(total / expenses.length)) : 0}</span>
+          <span class="finance-total-card__label">متوسط العملية</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:14px;">
+      <div class="flex-between" style="flex-wrap:wrap; gap:10px;">
+        <div style="font-weight:800; font-size:14px;">فلترة المصاريف</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <select class="select" id="expMonthFilter" style="max-width:220px;">
+            <option value="">كل الفترات</option>
+            ${months.map((m) => `<option value="${m.id}">${escapeHTML(m.name)}</option>`).join("")}
+          </select>
+          <select class="select" id="expCategoryFilter" style="max-width:220px;">
+            <option value="">كل الفئات</option>
+            ${EXPENSE_CATEGORIES.map((c) => `<option value="${c.id}">${escapeHTML(c.icon)} ${escapeHTML(c.label)}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="expCategorySummary"></div>
+    <div class="card card-pad" style="margin-top:14px;">
+      <div class="card__head"><div class="card__title">سجل المصاريف</div></div>
+      <div id="expList"></div>
+    </div>
+  `;
+
+  const monthSel = document.getElementById("expMonthFilter");
+  const catSel = document.getElementById("expCategoryFilter");
+
+  function inRange(e) {
+    const monthId = monthSel.value;
+    if (!monthId) return true;
+    const m = months.find((x) => x.id === monthId);
+    return m && e.date >= m.startDate && e.date <= m.endDate;
+  }
+
+  function filtered() {
+    const cat = catSel.value;
+    return expenses.filter((e) => (!cat || e.category === cat) && inRange(e));
+  }
+
+  function catLabel(id) {
+    return EXPENSE_CATEGORIES.find((c) => c.id === id) || EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
+  }
+
+  function renderList() {
+    const list = filtered();
+    const totalShown = list.reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    document.getElementById("expCategorySummary").innerHTML = `
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px;">
+        ${EXPENSE_CATEGORIES.map((c) => {
+          const amount = list.filter((e) => e.category === c.id).reduce((s, e) => s + Number(e.amount || 0), 0);
+          if (!amount) return "";
+          const pct = totalShown ? Math.round((amount / totalShown) * 100) : 0;
+          return `
+            <div style="padding:12px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r-md);">
+              <div style="font-size:11px; color:var(--muted);">${c.icon} ${escapeHTML(c.label)}</div>
+              <div style="font-weight:800; font-size:15px; margin-top:3px;">${formatMoney(amount)}</div>
+              <div style="height:5px; background:var(--bg-2); border-radius:3px; margin-top:6px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:var(--danger);"></div></div>
+              <div style="font-size:10.5px; color:var(--muted); margin-top:3px;">${pct}%</div>
+            </div>`;
+        }).join("")}
+      </div>
+    `;
+
+    document.getElementById("expList").innerHTML = list.length ? `
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>التاريخ</th><th>الفئة</th><th>البيان</th><th>المبلغ</th><th></th></tr></thead>
+        <tbody>
+          ${list.map((e) => {
+            const c = catLabel(e.category);
+            return `<tr>
+              <td>${escapeHTML(e.date)}</td>
+              <td>${c.icon} ${escapeHTML(c.label)}</td>
+              <td>${escapeHTML(e.note || "—")}</td>
+              <td style="color:var(--danger); font-weight:700;">${formatMoney(e.amount)}</td>
+              <td>
+                <button class="btn btn-ghost btn-sm expEditBtn" data-id="${e.id}" title="تعديل">✏️</button>
+                <button class="btn btn-danger btn-sm expDeleteBtn" data-id="${e.id}" title="حذف">🗑</button>
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table></div>
+      <div style="text-align:left; margin-top:10px; font-weight:800; color:var(--danger);">إجمالي المعروض: ${formatMoney(totalShown)}</div>
+    ` : emptyStateHTML({ icon: icons.money, title: "لا توجد مصاريف", text: "أضف أول مصروف (إيجار، فواتير، مستلزمات...) ليظهر هنا ويدخل في حساب صافي الربح." });
+
+    box.querySelectorAll(".expEditBtn").forEach((btn) =>
+      btn.addEventListener("click", () => openExpenseForm(btn.dataset.id))
+    );
+    box.querySelectorAll(".expDeleteBtn").forEach((btn) =>
+      btn.addEventListener("click", () =>
+        confirmDialog({ title: "حذف المصروف", body: "هل أنت متأكد من حذف هذا المصروف؟", confirmText: "حذف", tone: "danger" }).then((ok) => {
+          if (ok) {
+            deleteExpense(btn.dataset.id);
+            toast("تم حذف المصروف", "success");
+            renderExpensesTab(box);
+          }
+        })
+      )
+    );
+  }
+
+  monthSel.addEventListener("change", renderList);
+  catSel.addEventListener("change", renderList);
+  document.getElementById("addExpenseBtn").addEventListener("click", () => openExpenseForm());
+  renderList();
+}
+
+async function openExpenseForm(editId = null) {
+  const exp = editId ? getExpenses().find((x) => x.id === editId) : null;
+  const catOptions = EXPENSE_CATEGORIES.map((c) => `<option value="${c.id}" ${exp?.category === c.id ? "selected" : ""}>${c.icon} ${escapeHTML(c.label)}</option>`).join("");
+
+  const data = await formModal({
+    title: exp ? "تعديل المصروف" : "إضافة مصروف",
+    bodyHTML: `
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label">الفئة</label>
+          <select class="select" name="category" required>${catOptions}</select>
+        </div>
+        <div class="field">
+          <label class="field__label">المبلغ (ج.م)</label>
+          <input class="input" name="amount" type="number" min="0" step="0.01" required value="${exp?.amount ?? ""}" placeholder="0.00" style="direction:ltr;">
+        </div>
+        <div class="field">
+          <label class="field__label">التاريخ</label>
+          <input class="input" name="date" type="date" required value="${exp?.date || todayISO()}">
+        </div>
+        <div class="field">
+          <label class="field__label">البيان (اختياري)</label>
+          <input class="input" name="note" value="${exp ? escapeHTML(exp.note || "") : ""}" placeholder="مثال: إيجار شهر أكتوبر">
+        </div>
+      </div>
+    `,
+    submitText: exp ? "حفظ التعديل" : "إضافة",
+  });
+  if (!data) return;
+
+  const amount = Number(data.amount);
+  if (!data.category || !data.date || !(amount > 0)) {
+    toast("أدخل فئة ومبلغ وتاريخ صحيحين", "danger");
+    return;
+  }
+
+  if (exp) {
+    updateExpense(exp.id, { category: data.category, amount, date: data.date, note: data.note });
+    toast("تم تحديث المصروف", "success");
+  } else {
+    addExpense({ category: data.category, amount, date: data.date, note: data.note });
+    toast("تم إضافة المصروف", "success");
+  }
+  renderExpensesTab(document.getElementById("tabContent"));
+}
+
 function renderPnLTab(box) {
   const terms = getTerms().sort((a, b) => b.startDate.localeCompare(a.startDate));
   const months = getAcademicMonths().sort((a, b) => b.startDate.localeCompare(a.startDate));

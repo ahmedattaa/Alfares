@@ -5,7 +5,7 @@
 import { initPage } from "./app.js";
 import { icons } from "./icons.js";
 import { getStudents, saveStudents, getGrades, getGroups, getStudentStatuses, getSession } from "./storage.js";
-import { escapeHTML, initials, formatMoney, debounce } from "./helpers.js";
+import { escapeHTML, formatMoney, debounce, studentAvatar } from "./helpers.js";
 import { toast, confirmDialog, emptyStateHTML, skeletonRows } from "./ui.js";
 import { gradeName, groupName, groupsForGrade, statusesByCategory } from "./lookups.js";
 import { canPerformAction } from "./permissions.js";
@@ -158,7 +158,7 @@ function renderTable() {
               <td><span class="code-pill">${escapeHTML(s.code || "-")}</span></td>
               <td>
                 <a class="cell-user" href="student.html?id=${s.id}">
-                  <div class="avatar-sm">${initials(s.name)}</div>
+                  ${studentAvatar(s, 36)}
                   <div class="cell-user__name">${escapeHTML(s.name)}</div>
                 </a>
               </td>
